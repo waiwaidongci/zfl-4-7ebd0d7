@@ -195,6 +195,48 @@ type ImportError = {
   details?: string[];
 };
 
+type SyncDataType = 'elders' | 'volunteers' | 'tasks' | 'exceptionRecords';
+
+type DataVersionMap = Record<SyncDataType, number>;
+
+type DataSnapshot = {
+  elders: Elder[];
+  volunteers: Volunteer[];
+  tasks: MealTask[];
+  exceptionRecords: ExceptionRecord[];
+};
+
+type ConflictField = {
+  field: string;
+  localValue: any;
+  remoteValue: any;
+};
+
+type ItemConflict = {
+  id: string;
+  label: string;
+  type: SyncDataType;
+  fields: ConflictField[];
+  localOnly: boolean;
+  remoteOnly: boolean;
+};
+
+type ConflictSummary = {
+  elders: ItemConflict[];
+  volunteers: ItemConflict[];
+  tasks: ItemConflict[];
+  exceptionRecords: ItemConflict[];
+};
+
+type SyncStatus = 'idle' | 'remote-changes' | 'conflict';
+
+type SyncNotification = {
+  status: SyncStatus;
+  remoteVersions: DataVersionMap;
+  conflictSummary: ConflictSummary | null;
+  pendingRemoteData: DataSnapshot | null;
+};
+
 @Component({
   selector: 'app-root',
   imports: [CommonModule, FormsModule],
@@ -213,6 +255,27 @@ type ImportError = {
         </div>
         <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
       </header>
+
+      <div class="sync-alert" *ngIf="syncNotification.status !== 'idle'" [class.conflict]="syncNotification.status === 'conflict'" (click)="openSyncPanel()">
+        <div class="sync-alert-icon">
+          <ng-container *ngIf="syncNotification.status === 'conflict'">⚠️</ng-container>
+          <ng-container *ngIf="syncNotification.status === 'remote-changes'">🔄</ng-container>
+        </div>
+        <div class="sync-alert-content">
+          <ng-container *ngIf="syncNotification.status === 'conflict'">
+            <strong>检测到数据冲突</strong>
+            <span>本窗口有未保存的修改，同时其他窗口更新了 {{ syncSummaryCounts.total }} 项数据。点击查看详情并解决。</span>
+          </ng-container>
+          <ng-container *ngIf="syncNotification.status === 'remote-changes'">
+            <strong>发现新数据可同步</strong>
+            <span>其他窗口更新了 {{ syncSummaryCounts.total }} 项数据，本窗口无冲突，可一键同步。</span>
+          </ng-container>
+        </div>
+        <div class="sync-alert-actions">
+          <button type="button" class="ghost sm" (click)="$event.stopPropagation(); closeSyncPanel()">忽略</button>
+          <button type="button" class="sm" (click)="$event.stopPropagation(); openSyncPanel()">查看详情</button>
+        </div>
+      </div>
 
       <section class="layout">
         <aside class="stack">
@@ -1133,6 +1196,171 @@ type ImportError = {
           </div>
         </div>
       </div>
+
+      <div class="modal-overlay" *ngIf="syncPanelVisible" (click)="closeSyncPanel()">
+        <div class="modal-panel sync-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>多窗口数据同步</h2>
+              <p class="muted">
+                <ng-container *ngIf="syncNotification.status === 'conflict'">
+                  ⚠️ 检测到数据冲突，请选择处理方式
+                </ng-container>
+                <ng-container *ngIf="syncNotification.status === 'remote-changes'">
+                  🔄 其他窗口有更新数据，可直接同步
+                </ng-container>
+              </p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeSyncPanel()">关闭</button>
+          </div>
+
+          <div class="sync-modal-actions">
+            <div class="sync-bulk-actions">
+              <button type="button" class="ghost sm" (click)="keepAllLocal()">📝 保留本窗口全部</button>
+              <button type="button" class="sm" style="background:#4a9f6d" (click)="adoptAllRemote()">🔄 采用最新数据</button>
+              <button type="button" *ngIf="syncNotification.conflictSummary" class="sm" style="background:#5a8fd9" (click)="applyFullMerge()">🔀 按选择合并</button>
+            </div>
+          </div>
+
+          <div class="modal-tabs">
+            <button type="button" [class.active-tab]="syncPanelTab === 'summary'" (click)="syncPanelTab = 'summary'">
+              📊 总览
+              <span class="badge" *ngIf="getBadgeCount('summary') > 0">{{ getBadgeCount('summary') }}</span>
+            </button>
+            <button type="button" [class.active-tab]="syncPanelTab === 'elders'" (click)="syncPanelTab = 'elders'">
+              👴 老人
+              <span class="badge" *ngIf="getBadgeCount('elders') > 0">{{ getBadgeCount('elders') }}</span>
+            </button>
+            <button type="button" [class.active-tab]="syncPanelTab === 'volunteers'" (click)="syncPanelTab = 'volunteers'">
+              👥 志愿者
+              <span class="badge" *ngIf="getBadgeCount('volunteers') > 0">{{ getBadgeCount('volunteers') }}</span>
+            </button>
+            <button type="button" [class.active-tab]="syncPanelTab === 'tasks'" (click)="syncPanelTab = 'tasks'">
+              📋 任务
+              <span class="badge" *ngIf="getBadgeCount('tasks') > 0">{{ getBadgeCount('tasks') }}</span>
+            </button>
+            <button type="button" [class.active-tab]="syncPanelTab === 'exceptionRecords'" (click)="syncPanelTab = 'exceptionRecords'">
+              ⚠️ 异常
+              <span class="badge" *ngIf="getBadgeCount('exceptionRecords') > 0">{{ getBadgeCount('exceptionRecords') }}</span>
+            </button>
+          </div>
+
+          <div class="modal-body sync-modal-body">
+            <div *ngIf="syncPanelTab === 'summary'" class="sync-summary">
+              <div class="sync-summary-card" *ngFor="let t of SYNC_DATA_TYPES">
+                <div class="sync-summary-icon">
+                  <ng-container [ngSwitch]="t">
+                    <ng-container *ngSwitchCase="'elders'">👴</ng-container>
+                    <ng-container *ngSwitchCase="'volunteers'">👥</ng-container>
+                    <ng-container *ngSwitchCase="'tasks'">📋</ng-container>
+                    <ng-container *ngSwitchCase="'exceptionRecords'">⚠️</ng-container>
+                  </ng-container>
+                </div>
+                <div class="sync-summary-info">
+                  <h4>{{ getDataTypeLabel(t) }}</h4>
+                  <div class="sync-summary-counts">
+                    <span *ngIf="syncNotification.conflictSummary">
+                      冲突 {{ getTabConflictCount(t) }} 项
+                    </span>
+                    <span *ngIf="!syncNotification.conflictSummary && syncNotification.pendingRemoteData">
+                      变更 {{ getSyncTypeCount(t) }} 项
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sync-tips" *ngIf="syncNotification.status === 'conflict'">
+                <h4>💡 冲突解决建议</h4>
+                <ul>
+                  <li><strong>保留本窗口</strong>：以当前页面的修改为准，其他窗口的更新会被覆盖。</li>
+                  <li><strong>采用最新数据</strong>：使用其他窗口的最新数据，本窗口的未保存修改将丢失。</li>
+                  <li><strong>按选择合并</strong>：在各分类标签中逐条选择保留本窗口或采用新数据，灵活处理。</li>
+                </ul>
+              </div>
+            </div>
+
+            <ng-container *ngIf="syncNotification.conflictSummary">
+              <ng-container *ngIf="syncPanelTab !== 'summary'">
+                <div class="conflict-list">
+                  <div class="conflict-item" *ngFor="let c of getTabConflicts(syncPanelTab)">
+                    <div class="conflict-item-header">
+                      <div class="conflict-item-title">
+                        <span class="conflict-tag" [class.local-only]="c.localOnly" [class.remote-only]="c.remoteOnly">
+                          <ng-container *ngIf="c.localOnly">仅本窗口新增</ng-container>
+                          <ng-container *ngIf="c.remoteOnly">仅其他窗口新增</ng-container>
+                          <ng-container *ngIf="!c.localOnly && !c.remoteOnly">字段冲突</ng-container>
+                        </span>
+                        <strong>{{ c.label }}</strong>
+                      </div>
+                      <div class="conflict-choose" *ngIf="c.localOnly || c.remoteOnly">
+                        <label>
+                          <input type="radio" [name]="'conf-' + c.id" value="keep" [checked]="getMergeSelection(syncPanelTab, c.id) === 'keep'" (change)="setMergeSelection(syncPanelTab, c.id, 'keep')" />
+                          <span>保留{{ c.localOnly ? '（不删除）' : '（不添加）' }}</span>
+                        </label>
+                        <label>
+                          <input type="radio" [name]="'conf-' + c.id" value="adopt" [checked]="getMergeSelection(syncPanelTab, c.id) === 'adopt'" (change)="setMergeSelection(syncPanelTab, c.id, 'adopt')" />
+                          <span>采用{{ c.remoteOnly ? '（添加）' : '（删除）' }}</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div class="conflict-fields" *ngIf="!c.localOnly && !c.remoteOnly">
+                      <div class="conflict-field-item" *ngFor="let f of c.fields">
+                        <div class="field-name">{{ fieldLabel(c.type, f.field) }}</div>
+                        <div class="field-compare">
+                          <div class="field-col local">
+                            <div class="field-col-label">📝 本窗口
+                              <label class="choose-radio">
+                                <input type="radio" [name]="'field-' + c.id + '-' + f.field" value="keep"
+                                  [checked]="getMergeSelection(syncPanelTab, c.id) === 'keep'"
+                                  (change)="setMergeSelection(syncPanelTab, c.id, 'keep')" />
+                                选这个
+                              </label>
+                            </div>
+                            <div class="field-value">{{ formatValue(f.localValue) }}</div>
+                          </div>
+                          <div class="field-arrow">↔</div>
+                          <div class="field-col remote">
+                            <div class="field-col-label">🔄 最新
+                              <label class="choose-radio">
+                                <input type="radio" [name]="'field-' + c.id + '-' + f.field" value="adopt"
+                                  [checked]="getMergeSelection(syncPanelTab, c.id) === 'adopt'"
+                                  (change)="setMergeSelection(syncPanelTab, c.id, 'adopt')" />
+                                选这个
+                              </label>
+                            </div>
+                            <div class="field-value">{{ formatValue(f.remoteValue) }}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p class="muted center" *ngIf="getTabConflictCount(syncPanelTab) === 0">
+                    该类型无冲突
+                  </p>
+                </div>
+              </ng-container>
+            </ng-container>
+
+            <ng-container *ngIf="!syncNotification.conflictSummary && syncPanelTab !== 'summary' && syncNotification.pendingRemoteData">
+              <div class="no-conflict-info">
+                <div class="no-conflict-icon">✅</div>
+                <h4>该类型无冲突</h4>
+                <p class="muted">本窗口对 {{ getDataTypeLabel(syncPanelTab) }} 无未保存修改，点击「采用最新数据」即可一键同步。</p>
+              </div>
+            </ng-container>
+          </div>
+
+          <div class="sync-modal-footer">
+            <button type="button" class="ghost" (click)="closeSyncPanel()">暂不处理</button>
+            <button type="button" class="ghost sm" (click)="keepAllLocal()">📝 保留本窗口</button>
+            <button type="button" class="sm" style="background:#4a9f6d" (click)="adoptAllRemote()">🔄 采用最新数据</button>
+            <button type="button" *ngIf="syncNotification.conflictSummary" class="sm" style="background:#5a8fd9" (click)="applyFullMerge()">🔀 确认合并</button>
+          </div>
+        </div>
+      </div>
+
     </main>
   `,
   styles: [`
@@ -1496,6 +1724,71 @@ type ImportError = {
       .weekly-toolbar .week-nav { justify-content: center; }
       .weekly-toolbar button { width: 100%; }
     }
+
+    .sync-alert { display: flex; align-items: center; gap: 16px; padding: 14px 20px; margin-top: 16px; border-radius: 10px; background: #e8f3ec; border: 1px solid #c4d6ba; cursor: pointer; transition: all .15s; }
+    .sync-alert:hover { box-shadow: 0 4px 14px rgba(74,159,109,.15); }
+    .sync-alert.conflict { background: #fff3e6; border-color: #f0d2b4; }
+    .sync-alert-icon { font-size: 28px; flex-shrink: 0; }
+    .sync-alert-content { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    .sync-alert-content strong { font-size: 15px; color: #315448; }
+    .sync-alert-content span { font-size: 13px; color: #5a6b53; }
+    .sync-alert.conflict .sync-alert-content strong { color: #b36a2e; }
+    .sync-alert-actions { display: flex; gap: 8px; }
+
+    .sync-modal { max-width: 960px !important; width: 92vw; }
+    .sync-modal-actions { padding: 14px 22px; border-bottom: 1px solid #e8ede1; background: #fafbf7; }
+    .sync-bulk-actions { display: flex; gap: 10px; }
+    .sync-modal-body { padding-top: 0 !important; padding-bottom: 0 !important; }
+    .sync-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid #e8ede1; background: #fafbf7; }
+
+    .sync-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 20px 0; }
+    .sync-summary-card { display: flex; align-items: center; gap: 14px; padding: 16px; border: 1px solid #e2e7da; border-radius: 10px; background: #fbfcf9; }
+    .sync-summary-icon { font-size: 36px; flex-shrink: 0; }
+    .sync-summary-info h4 { margin: 0 0 6px; font-size: 15px; color: #315448; }
+    .sync-summary-counts { font-size: 13px; color: #5a8fd9; font-weight: 500; }
+
+    .sync-tips { grid-column: 1 / -1; padding: 16px; background: #fff7ef; border: 1px solid #f0d9c4; border-radius: 10px; margin-top: 8px; }
+    .sync-tips h4 { margin: 0 0 10px; font-size: 14px; color: #b36a2e; }
+    .sync-tips ul { margin: 0; padding-left: 20px; color: #8a6a2a; font-size: 13px; line-height: 1.8; }
+    .sync-tips li strong { color: #5a4a2a; }
+
+    .conflict-list { padding: 20px 0; display: flex; flex-direction: column; gap: 14px; }
+    .conflict-item { border: 1px solid #e0e6d8; border-radius: 10px; padding: 14px 16px; background: #fbfcf9; }
+    .conflict-item-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed #e0e6d8; }
+    .conflict-item-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .conflict-item-title strong { font-size: 15px; color: #315448; }
+    .conflict-tag { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #fff3e6; color: #b36a2e; border: 1px solid #f0d2b4; }
+    .conflict-tag.local-only { background: #eef3ea; color: #315448; border-color: #c4d6ba; }
+    .conflict-tag.remote-only { background: #f0f5fc; color: #5a8fd9; border-color: #c4d9f0; }
+    .conflict-choose { display: flex; gap: 14px; flex-shrink: 0; }
+    .conflict-choose label { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #5a6b53; cursor: pointer; }
+    .conflict-choose input { accent-color: #315448; margin: 0; }
+
+    .conflict-fields { display: flex; flex-direction: column; gap: 10px; }
+    .conflict-field-item { border: 1px solid #edf0e8; border-radius: 8px; padding: 10px 12px; background: #fff; }
+    .field-name { font-size: 12px; font-weight: 600; color: #5a6b53; margin-bottom: 8px; }
+    .field-compare { display: flex; gap: 10px; align-items: stretch; }
+    .field-col { flex: 1; border-radius: 6px; padding: 10px; background: #f7f8f4; border: 1px solid #e2e7da; }
+    .field-col.local { background: #eef3ea; border-color: #c4d6ba; }
+    .field-col.remote { background: #f0f5fc; border-color: #c4d9f0; }
+    .field-col-label { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 500; margin-bottom: 6px; color: #3d4a38; }
+    .field-col.local .field-col-label { color: #315448; }
+    .field-col.remote .field-col-label { color: #5a8fd9; }
+    .choose-radio { font-size: 11px; font-weight: normal; display: inline-flex; align-items: center; gap: 4px; color: #5a6b53; cursor: pointer; }
+    .choose-radio input { accent-color: #315448; margin: 0; width: auto; }
+    .field-value { font-size: 13px; color: #3d4a38; line-height: 1.5; word-break: break-all; }
+    .field-arrow { display: flex; align-items: center; justify-content: center; font-size: 18px; color: #99a593; flex-shrink: 0; width: 30px; }
+
+    .no-conflict-info { text-align: center; padding: 60px 20px; }
+    .no-conflict-icon { font-size: 56px; margin-bottom: 16px; }
+    .no-conflict-info h4 { margin: 0 0 8px; font-size: 18px; color: #4a9f6d; }
+
+    @media (max-width: 800px) {
+      .sync-summary { grid-template-columns: 1fr; }
+      .field-compare { flex-direction: column; }
+      .field-arrow { transform: rotate(90deg); margin: 4px 0; }
+      .conflict-item-header { flex-direction: column; align-items: flex-start; }
+    }
   `],
 })
 export class App {
@@ -1581,6 +1874,29 @@ export class App {
   EXCEPTION_STATUSES: ExceptionStatus[] = ['待处理', '处理中', '已解决'];
 
   NOTIFICATION_STATUSES: NotificationStatus[] = ['未通知', '已通知', '未接通', '稍后再拨'];
+
+  // ===== 多窗口数据一致性 =====
+  readonly SYNC_DATA_TYPES: SyncDataType[] = ['elders', 'volunteers', 'tasks', 'exceptionRecords'];
+  private readonly LS_VERSIONS_KEY = 'zfl-4-sync-versions';
+  private readonly WINDOW_ID = crypto.randomUUID().slice(0, 8);
+  private readonly LS_WRITER_KEY = 'zfl-4-last-writer';
+
+  localVersions: DataVersionMap = { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0 };
+  lastSyncSnapshot: DataSnapshot = { elders: [], volunteers: [], tasks: [], exceptionRecords: [] };
+
+  syncNotification: SyncNotification = {
+    status: 'idle',
+    remoteVersions: { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0 },
+    conflictSummary: null,
+    pendingRemoteData: null
+  };
+
+  syncPanelVisible = false;
+  syncPanelTab: 'summary' | 'elders' | 'volunteers' | 'tasks' | 'exceptionRecords' = 'summary';
+  mergeSelections: Record<SyncDataType, Record<string, 'keep' | 'adopt'>> = {
+    elders: {}, volunteers: {}, tasks: {}, exceptionRecords: {}
+  };
+  // ==============================
 
   get selectedElderForVisit(): Elder | undefined {
     return this.elders.find((e) => e.id === this.selectedElderIdForVisit);
@@ -1679,8 +1995,368 @@ export class App {
     this.loadMealTags();
     this.loadExceptions();
     this.loadPhoneNotifications();
+    this.initSyncState();
+    this.setupStorageListener();
     if (this.tasks.length === 0) this.generateTasks();
   }
+
+  // ===== 多窗口数据一致性：初始化 =====
+  private initSyncState() {
+    const rawVersions = localStorage.getItem(this.LS_VERSIONS_KEY);
+    if (rawVersions) {
+      try {
+        this.localVersions = JSON.parse(rawVersions);
+      } catch {
+        this.localVersions = { elders: Date.now(), volunteers: Date.now(), tasks: Date.now(), exceptionRecords: Date.now() };
+      }
+    } else {
+      this.localVersions = { elders: Date.now(), volunteers: Date.now(), tasks: Date.now(), exceptionRecords: Date.now() };
+    }
+    this.updateSyncSnapshot();
+  }
+
+  private updateSyncSnapshot() {
+    this.lastSyncSnapshot = {
+      elders: JSON.parse(JSON.stringify(this.elders)),
+      volunteers: JSON.parse(JSON.stringify(this.volunteers)),
+      tasks: JSON.parse(JSON.stringify(this.tasks)),
+      exceptionRecords: JSON.parse(JSON.stringify(this.exceptionRecords))
+    };
+  }
+
+  private setupStorageListener() {
+    window.addEventListener('storage', (e) => this.handleStorageEvent(e));
+  }
+
+  private handleStorageEvent(e: StorageEvent) {
+    if (e.key === this.LS_VERSIONS_KEY && e.newValue) {
+      const writer = localStorage.getItem(this.LS_WRITER_KEY);
+      if (writer === this.WINDOW_ID) return;
+      try {
+        const remoteVersions: DataVersionMap = JSON.parse(e.newValue);
+        this.checkRemoteChanges(remoteVersions);
+      } catch {}
+    }
+  }
+
+  private checkRemoteChanges(remoteVersions: DataVersionMap) {
+    const changedTypes = this.SYNC_DATA_TYPES.filter(t => remoteVersions[t] > this.localVersions[t]);
+    if (changedTypes.length === 0) return;
+
+    const remoteData: DataSnapshot = {
+      elders: changedTypes.includes('elders') ? this.loadRemoteData('elders') : [...this.lastSyncSnapshot.elders],
+      volunteers: changedTypes.includes('volunteers') ? this.loadRemoteData('volunteers') : [...this.lastSyncSnapshot.volunteers],
+      tasks: changedTypes.includes('tasks') ? this.loadRemoteData('tasks') : [...this.lastSyncSnapshot.tasks],
+      exceptionRecords: changedTypes.includes('exceptionRecords') ? this.loadRemoteData('exceptionRecords') : [...this.lastSyncSnapshot.exceptionRecords]
+    };
+
+    const hasLocalChanges = this.hasUnsavedLocalChanges();
+
+    if (!hasLocalChanges) {
+      this.applyRemoteData(remoteData, remoteVersions, changedTypes);
+    } else {
+      const conflictSummary = this.buildConflictSummary(remoteData);
+      const hasConflicts = this.SYNC_DATA_TYPES.some(t => conflictSummary[t].length > 0);
+
+      this.syncNotification = {
+        status: hasConflicts ? 'conflict' : 'remote-changes',
+        remoteVersions,
+        conflictSummary: hasConflicts ? conflictSummary : null,
+        pendingRemoteData: remoteData
+      };
+    }
+  }
+
+  private loadRemoteData<T>(type: SyncDataType): T[] {
+    const keyMap: Record<SyncDataType, string> = {
+      elders: 'zfl-4-elders',
+      volunteers: 'zfl-4-volunteers',
+      tasks: 'zfl-4-tasks',
+      exceptionRecords: 'zfl-4-exceptions'
+    };
+    const raw = localStorage.getItem(keyMap[type]);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  private hasUnsavedLocalChanges(): boolean {
+    return this.SYNC_DATA_TYPES.some(t => !this.deepEqual(
+      this[t as keyof DataSnapshot] as any[],
+      this.lastSyncSnapshot[t] as any[]
+    ));
+  }
+
+  private deepEqual(a: any[], b: any[]): boolean {
+    if (a.length !== b.length) return false;
+    const mapB = new Map(b.map(x => [x.id, x]));
+    for (const item of a) {
+      const match = mapB.get(item.id);
+      if (!match) return false;
+      if (JSON.stringify(item) !== JSON.stringify(match)) return false;
+    }
+    return true;
+  }
+
+  private applyRemoteData(remoteData: DataSnapshot, remoteVersions: DataVersionMap, types: SyncDataType[]) {
+    for (const t of types) {
+      (this as any)[t] = (remoteData[t] as any[]).map((x: any) => ({ ...x }));
+      this.localVersions[t] = remoteVersions[t];
+    }
+    this.updateSyncSnapshot();
+    this.persistVersions();
+  }
+
+  private buildConflictSummary(remote: DataSnapshot): ConflictSummary {
+    return {
+      elders: this.compareArrays(this.elders, remote.elders, this.lastSyncSnapshot.elders, 'elders', (e) => e.name),
+      volunteers: this.compareArrays(this.volunteers, remote.volunteers, this.lastSyncSnapshot.volunteers, 'volunteers', (v) => v.name),
+      tasks: this.compareArrays(this.tasks, remote.tasks, this.lastSyncSnapshot.tasks, 'tasks', (t) => `${this.elderName(t.elderId)}(${t.date})`),
+      exceptionRecords: this.compareArrays(this.exceptionRecords, remote.exceptionRecords, this.lastSyncSnapshot.exceptionRecords, 'exceptionRecords', (e) => `${this.elderName(e.elderId)}·${e.category}`)
+    };
+  }
+
+  private compareArrays<T extends { id: string }>(
+    local: T[], remote: T[], base: T[],
+    type: SyncDataType,
+    labelFn: (item: T) => string
+  ): ItemConflict[] {
+    const conflicts: ItemConflict[] = [];
+    const localMap = new Map(local.map(x => [x.id, x]));
+    const remoteMap = new Map(remote.map(x => [x.id, x]));
+    const baseMap = new Map(base.map(x => [x.id, x]));
+    const allIds = new Set([...localMap.keys(), ...remoteMap.keys()]);
+
+    for (const id of allIds) {
+      const l = localMap.get(id);
+      const r = remoteMap.get(id);
+      const b = baseMap.get(id);
+
+      if (l && !r) {
+        conflicts.push({ id, label: labelFn(l), type, fields: [], localOnly: true, remoteOnly: false });
+        continue;
+      }
+      if (!l && r) {
+        conflicts.push({ id, label: labelFn(r), type, fields: [], localOnly: false, remoteOnly: true });
+        continue;
+      }
+      if (l && r) {
+        const localChanged = !b || JSON.stringify(l) !== JSON.stringify(b);
+        const remoteChanged = !b || JSON.stringify(r) !== JSON.stringify(b);
+        if (localChanged && remoteChanged && JSON.stringify(l) !== JSON.stringify(r)) {
+          const fields = this.findDiffFields(l, r);
+          if (fields.length > 0) {
+            conflicts.push({ id, label: labelFn(l), type, fields, localOnly: false, remoteOnly: false });
+          }
+        }
+      }
+    }
+    return conflicts;
+  }
+
+  private findDiffFields<T extends Record<string, any>>(a: T, b: T): ConflictField[] {
+    const fields: ConflictField[] = [];
+    const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const key of allKeys) {
+      const va = a[key];
+      const vb = b[key];
+      if (JSON.stringify(va) !== JSON.stringify(vb)) {
+        fields.push({ field: key, localValue: va, remoteValue: vb });
+      }
+    }
+    return fields;
+  }
+
+  private persistVersions() {
+    localStorage.setItem(this.LS_VERSIONS_KEY, JSON.stringify(this.localVersions));
+  }
+
+  private bumpVersion(type: SyncDataType) {
+    this.localVersions[type] = Date.now() + Math.floor(Math.random() * 1000);
+    this.persistVersions();
+    localStorage.setItem(this.LS_WRITER_KEY, this.WINDOW_ID);
+  }
+
+  openSyncPanel() {
+    if (this.syncNotification.status === 'idle') return;
+    this.syncPanelVisible = true;
+    this.syncPanelTab = 'summary';
+    this.initMergeSelections();
+  }
+
+  closeSyncPanel() {
+    this.syncPanelVisible = false;
+  }
+
+  private initMergeSelections() {
+    if (!this.syncNotification.conflictSummary) return;
+    for (const type of this.SYNC_DATA_TYPES) {
+      this.mergeSelections[type] = {};
+      for (const c of this.syncNotification.conflictSummary[type]) {
+        this.mergeSelections[type][c.id] = 'keep';
+      }
+    }
+  }
+
+  get syncSummaryCounts() {
+    const s = this.syncNotification;
+    const counts = { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, total: 0 };
+    if (s.conflictSummary) {
+      for (const t of this.SYNC_DATA_TYPES) {
+        counts[t] = s.conflictSummary[t].length;
+        counts.total += counts[t];
+      }
+    } else if (s.pendingRemoteData) {
+      for (const t of this.SYNC_DATA_TYPES) {
+        const remoteLen = (s.pendingRemoteData[t] as any[]).length;
+        const baseLen = (this.lastSyncSnapshot[t] as any[]).length;
+        counts[t] = Math.abs(remoteLen - baseLen);
+        counts.total += counts[t];
+      }
+    }
+    return counts;
+  }
+
+  adoptAllRemote() {
+    if (!this.syncNotification.pendingRemoteData) return;
+    const rd = this.syncNotification.pendingRemoteData;
+    const rv = this.syncNotification.remoteVersions;
+    this.applyRemoteData(rd, rv, this.SYNC_DATA_TYPES);
+    this.resetSyncNotification();
+    this.syncPanelVisible = false;
+  }
+
+  keepAllLocal() {
+    this.SYNC_DATA_TYPES.forEach(t => this.bumpVersion(t));
+    this.updateSyncSnapshot();
+    this.resetSyncNotification();
+    this.syncPanelVisible = false;
+  }
+
+  applyMergeByType(type: SyncDataType) {
+    if (!this.syncNotification.pendingRemoteData || !this.syncNotification.conflictSummary) return;
+    const conflicts = this.syncNotification.conflictSummary[type];
+    const remoteArr = (this.syncNotification.pendingRemoteData[type] as any[]).slice();
+    const result: any[] = [];
+    const processedIds = new Set<string>();
+
+    for (const c of conflicts) {
+      processedIds.add(c.id);
+      const choice = this.mergeSelections[type][c.id];
+      if (c.localOnly) {
+        if (choice === 'keep') result.push(...(this as any)[type].filter((x: any) => x.id === c.id));
+      } else if (c.remoteOnly) {
+        if (choice === 'adopt') result.push(...remoteArr.filter((x: any) => x.id === c.id));
+      } else {
+        if (choice === 'keep') {
+          result.push(...(this as any)[type].filter((x: any) => x.id === c.id));
+        } else {
+          result.push(...remoteArr.filter((x: any) => x.id === c.id));
+        }
+      }
+    }
+
+    const remoteMap = new Map(remoteArr.map(x => [x.id, x]));
+    const localMap = new Map((this as any)[type].map((x: any) => [x.id, x]));
+    const allNonConflict = new Set([...remoteMap.keys(), ...localMap.keys()]);
+    for (const id of allNonConflict) {
+      if (processedIds.has(id)) continue;
+      if (remoteMap.has(id)) result.push(remoteMap.get(id));
+      else if (localMap.has(id)) result.push(localMap.get(id));
+    }
+
+    (this as any)[type] = result;
+    this.localVersions[type] = this.syncNotification.remoteVersions[type];
+    this.updateSyncSnapshot();
+  }
+
+  applyFullMerge() {
+    for (const t of this.SYNC_DATA_TYPES) {
+      this.applyMergeByType(t);
+    }
+    this.persistVersions();
+    this.resetSyncNotification();
+    this.syncPanelVisible = false;
+  }
+
+  private resetSyncNotification() {
+    this.syncNotification = {
+      status: 'idle',
+      remoteVersions: { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0 },
+      conflictSummary: null,
+      pendingRemoteData: null
+    };
+  }
+
+  formatValue(v: any): string {
+    if (v === null || v === undefined) return '（空）';
+    if (Array.isArray(v)) return v.length > 0 ? `[${v.join(', ')}]` : '（空数组）';
+    if (typeof v === 'boolean') return v ? '是' : '否';
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+  }
+
+  fieldLabel(type: SyncDataType, field: string): string {
+    const labels: Record<string, Record<string, string>> = {
+      elders: { name: '姓名', preference: '餐食偏好', address: '地址', contact: '联系方式', note: '备注', mealTags: '餐食标签', deliveryDays: '送餐日期', pauseDates: '暂停日期', specialMealNote: '特殊备注' },
+      volunteers: { name: '姓名', phone: '电话', capacity: '每日容量', area: '片区', availableDays: '可服务日期' },
+      tasks: { volunteerId: '志愿者', status: '状态', exception: '异常描述', isManuallyModified: '手动标记', specialMealNote: '特殊餐食备注', elderId: '老人', date: '日期' },
+      exceptionRecords: { category: '分类', severity: '严重程度', description: '描述', handler: '负责人', status: '状态', result: '处理结果', updatedAt: '更新时间' }
+    };
+    return labels[type]?.[field] || field;
+  }
+
+  getTabConflicts(tab: string): ItemConflict[] {
+    if (!this.syncNotification.conflictSummary) return [];
+    const type = tab as SyncDataType;
+    return (this.syncNotification.conflictSummary[type] as ItemConflict[]) || [];
+  }
+
+  getTabConflictCount(tab: string): number {
+    return this.getTabConflicts(tab).length;
+  }
+
+  getMergeSelection(tab: string, itemId: string): 'keep' | 'adopt' {
+    const type = tab as SyncDataType;
+    return this.mergeSelections[type]?.[itemId] || 'keep';
+  }
+
+  setMergeSelection(tab: string, itemId: string, value: 'keep' | 'adopt') {
+    const type = tab as SyncDataType;
+    if (!this.mergeSelections[type]) this.mergeSelections[type] = {};
+    this.mergeSelections[type][itemId] = value;
+  }
+
+  getDataTypeLabel(tab: string): string {
+    const map: Record<string, string> = {
+      elders: '老人档案', volunteers: '志愿者', tasks: '送餐任务', exceptionRecords: '异常记录'
+    };
+    return map[tab] || tab;
+  }
+
+  getSyncTypeCount(tab: string): number {
+    const t = tab as SyncDataType;
+    const s = this.syncNotification;
+    if (s.conflictSummary) {
+      return s.conflictSummary[t]?.length || 0;
+    } else if (s.pendingRemoteData) {
+      const remoteLen = (s.pendingRemoteData[t] as any[]).length;
+      const baseLen = (this.lastSyncSnapshot[t] as any[]).length;
+      return Math.abs(remoteLen - baseLen);
+    }
+    return 0;
+  }
+
+  getBadgeCount(tab: string): number {
+    if (tab === 'summary') {
+      return this.syncSummaryCounts.total;
+    }
+    return this.getSyncTypeCount(tab);
+  }
+  // ===== 多窗口一致性结束 =====
 
   addElder() {
     if (!this.elderForm.name.trim()) return;
@@ -2402,6 +3078,10 @@ export class App {
     localStorage.setItem('zfl-4-elders', JSON.stringify(this.elders));
     localStorage.setItem('zfl-4-volunteers', JSON.stringify(this.volunteers));
     localStorage.setItem('zfl-4-tasks', JSON.stringify(this.tasks));
+    this.bumpVersion('elders');
+    this.bumpVersion('volunteers');
+    this.bumpVersion('tasks');
+    this.updateSyncSnapshot();
   }
 
   selectElder(id: string) {
@@ -2582,6 +3262,8 @@ export class App {
 
   private saveExceptions() {
     localStorage.setItem('zfl-4-exceptions', JSON.stringify(this.exceptionRecords));
+    this.bumpVersion('exceptionRecords');
+    this.updateSyncSnapshot();
   }
 
   private loadExceptions() {
