@@ -16,6 +16,9 @@ type Elder = {
   address: string;
   contact: string;
   note: string;
+  deliveryDays: number[];
+  pauseDates: string[];
+  specialMealNote: string;
 };
 
 type Volunteer = {
@@ -24,6 +27,7 @@ type Volunteer = {
   phone: string;
   capacity: number;
   area: string;
+  availableDays: number[];
 };
 
 type MealTask = {
@@ -33,6 +37,35 @@ type MealTask = {
   volunteerId: string;
   status: '待分配' | '配送中' | '已送达' | '异常';
   exception: string;
+  isManuallyModified: boolean;
+  specialMealNote: string;
+};
+
+type ScheduleFailureReason = 'paused' | 'no_volunteer' | 'capacity_full' | 'not_scheduled_day';
+
+type ScheduleFailure = {
+  elderId: string;
+  elderName: string;
+  date: string;
+  reason: ScheduleFailureReason;
+  reasonText: string;
+};
+
+type WeeklyScheduleResult = {
+  weekStart: string;
+  weekEnd: string;
+  generatedTasks: MealTask[];
+  assignedTasks: AutoAssignEntry[];
+  failures: ScheduleFailure[];
+  skippedManualTasks: string[];
+};
+
+type WeeklyDayColumn = {
+  date: string;
+  dayName: string;
+  dayOfWeek: number;
+  tasks: MealTask[];
+  failures: ScheduleFailure[];
 };
 
 type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收' | '餐食问题' | '配送延误' | '老人身体不适' | '其他';
@@ -135,7 +168,10 @@ type BackupData = {
   visitRecords: VisitRecord[];
   phoneNotifications: PhoneNotification[];
   kanbanSort: KanbanSortMap;
+  weeklyScheduleStart?: string;
 };
+
+const WEEK_DAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 type ImportPreviewItem<T> = {
   item: T;
@@ -192,9 +228,19 @@ type ImportError = {
                 </label>
               </div>
             </div>
+            <div class="tag-select">
+              <label class="tag-select-label">固定送餐周期</label>
+              <div class="tag-select-grid">
+                <label class="tag-check" *ngFor="let day of WEEK_DAYS; let i = index">
+                  <input type="checkbox" [checked]="elderForm.deliveryDays.includes(i)" (change)="toggleElderDeliveryDay(i)" />
+                  <span>{{ day }}</span>
+                </label>
+              </div>
+            </div>
+            <textarea name="elderSpecialNote" [(ngModel)]="elderForm.specialMealNote" rows="2" placeholder="特殊餐食备注（如：少糖、不吃辣等）"></textarea>
             <input name="elderAddress" [(ngModel)]="elderForm.address" placeholder="送餐地址" />
             <input name="elderContact" [(ngModel)]="elderForm.contact" placeholder="紧急联系" />
-            <input name="elderNote" [(ngModel)]="elderForm.note" placeholder="备注" />
+            <input name="elderNote" [(ngModel)]="elderForm.note" placeholder="其他备注" />
             <button>保存老人</button>
           </form>
 
@@ -240,6 +286,29 @@ type ImportError = {
                       </label>
                     </div>
                   </div>
+                  <div class="tag-select">
+                    <label class="tag-select-label">固定送餐周期</label>
+                    <div class="tag-select-grid">
+                      <label class="tag-check" *ngFor="let day of WEEK_DAYS; let i = index">
+                        <input type="checkbox" [checked]="elderEditForm.deliveryDays.includes(i)" (change)="toggleElderEditDeliveryDay(i)" />
+                        <span>{{ day }}</span>
+                      </label>
+                    </div>
+                  </div>
+                  <textarea [(ngModel)]="elderEditForm.specialMealNote" name="editElderSpecialNote" rows="2" placeholder="特殊餐食备注（如：少糖、不吃辣等）"></textarea>
+                  <div class="pause-dates-section">
+                    <label class="tag-select-label">暂停送餐日期</label>
+                    <div class="pause-dates-list">
+                      <span class="pause-date-tag" *ngFor="let pd of elderEditForm.pauseDates">
+                        {{ pd }}
+                        <button type="button" class="tag-del" (click)="removeEditPauseDate(pd)">×</button>
+                      </span>
+                    </div>
+                    <div class="pause-date-input">
+                      <input type="date" #pauseDateInput />
+                      <button type="button" class="sm" (click)="addEditPauseDate(pauseDateInput)">添加</button>
+                    </div>
+                  </div>
                   <input [(ngModel)]="elderEditForm.address" name="editElderAddress" placeholder="送餐地址" />
                   <input [(ngModel)]="elderEditForm.contact" name="editElderContact" placeholder="紧急联系" />
                   <input [(ngModel)]="elderEditForm.note" name="editElderNote" placeholder="备注" />
@@ -280,6 +349,15 @@ type ImportError = {
             <input name="volunteerPhone" [(ngModel)]="volunteerForm.phone" placeholder="电话" />
             <input name="volunteerArea" [(ngModel)]="volunteerForm.area" placeholder="熟悉片区" />
             <input name="volunteerCapacity" type="number" min="1" [(ngModel)]="volunteerForm.capacity" placeholder="每日可送数量" />
+            <div class="tag-select">
+              <label class="tag-select-label">每周可服务日期</label>
+              <div class="tag-select-grid">
+                <label class="tag-check" *ngFor="let day of WEEK_DAYS; let i = index">
+                  <input type="checkbox" [checked]="volunteerForm.availableDays.includes(i)" (change)="toggleVolunteerAvailableDay(i)" />
+                  <span>{{ day }}</span>
+                </label>
+              </div>
+            </div>
             <button>保存志愿者</button>
           </form>
         </aside>
@@ -288,6 +366,7 @@ type ImportError = {
           <div class="toolbar">
             <h2>每日送餐任务</h2>
             <div>
+              <button type="button" class="ghost" (click)="openWeeklySchedulePanel()">📅 多日排班计划</button>
               <input type="date" [(ngModel)]="taskDate" />
               <button type="button" (click)="generateTasks()">生成当日任务</button>
               <button type="button" class="auto-assign-btn" (click)="autoAssignTasks()">自动分配</button>
@@ -321,14 +400,18 @@ type ImportError = {
           </div>
 
           <div class="taskList">
-            <article *ngFor="let task of filteredTasks()" [class.warn]="task.status === '异常'">
+            <article *ngFor="let task of filteredTasks()" [class.warn]="task.status === '异常'" [class.manual-modified]="task.isManuallyModified">
               <div>
-                <strong>{{ elderName(task.elderId) }}</strong>
+                <div class="task-header">
+                  <strong>{{ elderName(task.elderId) }}</strong>
+                  <span class="manual-badge" *ngIf="task.isManuallyModified" title="已手动修改，自动排班不会覆盖">✋ 手动</span>
+                </div>
                 <span>{{ elderAddress(task.elderId) }}</span>
                 <small>{{ elderPreference(task.elderId) }}</small>
                 <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
                   <span class="tag-chip" *ngFor="let tag of elderMealTags(task.elderId)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
                 </div>
+                <p class="special-note" *ngIf="task.specialMealNote">🍽️ {{ task.specialMealNote }}</p>
               </div>
               <select [ngModel]="task.volunteerId" (ngModelChange)="assignTask(task.id, $event)">
                 <option value="">未分配</option>
@@ -937,6 +1020,116 @@ type ImportError = {
           </div>
         </div>
       </div>
+
+      <div class="modal-overlay" *ngIf="showWeeklySchedulePanel" (click)="closeWeeklySchedulePanel()">
+        <div class="modal-panel weekly-schedule-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>📅 多日排班计划</h2>
+              <p class="muted">选择一周，自动生成排班并分配志愿者</p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeWeeklySchedulePanel()">关闭</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="weekly-toolbar">
+              <div class="week-nav">
+                <button type="button" class="ghost sm" (click)="prevWeek()">← 上周</button>
+                <input type="date" [(ngModel)]="weeklyScheduleStart" (change)="onWeekStartChange()" />
+                <button type="button" class="ghost sm" (click)="nextWeek()">下周 →</button>
+                <button type="button" class="ghost sm" (click)="goToCurrentWeek()">本周</button>
+              </div>
+              <button type="button" class="auto-assign-btn" (click)="generateWeeklySchedule()">🔄 生成一周排班</button>
+            </div>
+
+            <div class="weekly-summary" *ngIf="weeklyScheduleResult">
+              <div class="summary-item ok">
+                <strong>{{ weeklyScheduleResult.generatedTasks.length }}</strong>
+                <span>已生成任务</span>
+              </div>
+              <div class="summary-item ok">
+                <strong>{{ weeklyScheduleResult.assignedTasks.length }}</strong>
+                <span>已自动分配</span>
+              </div>
+              <div class="summary-item fail" *ngIf="weeklyScheduleResult.failures.length > 0">
+                <strong>{{ weeklyScheduleResult.failures.length }}</strong>
+                <span>未排上</span>
+              </div>
+              <div class="summary-item warn" *ngIf="weeklyScheduleResult.skippedManualTasks.length > 0">
+                <strong>{{ weeklyScheduleResult.skippedManualTasks.length }}</strong>
+                <span>已跳过（手动修改）</span>
+              </div>
+            </div>
+
+            <div class="skipped-list" *ngIf="weeklyScheduleResult && weeklyScheduleResult.skippedManualTasks.length > 0">
+              <p class="muted"><strong>✋ 以下任务因已手动修改而跳过：</strong></p>
+              <div class="skipped-tags">
+                <span class="tag-chip sm" *ngFor="let s of weeklyScheduleResult.skippedManualTasks">{{ s }}</span>
+              </div>
+            </div>
+
+            <div class="weekly-grid">
+              <div class="weekly-column" *ngFor="let col of getWeeklyDayColumns()" [class.today]="col.date === today">
+                <div class="weekly-column-header">
+                  <strong>{{ col.dayName }}</strong>
+                  <span>{{ col.date }}</span>
+                  <span class="col-count">{{ col.tasks.length }}单</span>
+                </div>
+                <div class="weekly-column-body">
+                  <div class="weekly-task" *ngFor="let task of col.tasks" [class.warn]="task.status === '异常'" [class.manual-modified]="task.isManuallyModified">
+                    <div class="weekly-task-header">
+                      <strong>{{ elderName(task.elderId) }}</strong>
+                      <span class="manual-badge sm" *ngIf="task.isManuallyModified">✋</span>
+                    </div>
+                    <small>{{ elderAddress(task.elderId) }}</small>
+                    <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
+                      <span class="tag-chip sm" *ngFor="let tag of elderMealTags(task.elderId)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                    </div>
+                    <p class="special-note sm" *ngIf="task.specialMealNote">🍽️ {{ task.specialMealNote }}</p>
+                    <p class="weekly-volunteer">
+                      <ng-container *ngIf="task.volunteerId">
+                        👤 {{ getVolunteerName(task.volunteerId) }}
+                      </ng-container>
+                      <ng-container *ngIf="!task.volunteerId">
+                        ⏳ 未分配
+                      </ng-container>
+                      <span class="task-status" [class.status-pending]="task.status === '待分配'" [class.status-delivering]="task.status === '配送中'" [class.status-done]="task.status === '已送达'" [class.status-exception]="task.status === '异常'">{{ task.status }}</span>
+                    </p>
+                  </div>
+
+                  <div class="weekly-failure" *ngFor="let fail of col.failures">
+                    <span class="fail-icon">
+                      <ng-container [ngSwitch]="fail.reason">
+                        <ng-container *ngSwitchCase="'paused'">⏸️</ng-container>
+                        <ng-container *ngSwitchCase="'no_volunteer'">👤❌</ng-container>
+                        <ng-container *ngSwitchCase="'capacity_full'">📦</ng-container>
+                        <ng-container *ngSwitchCase="'not_scheduled_day'">📅</ng-container>
+                        <ng-container *ngSwitchDefault>⚠️</ng-container>
+                      </ng-container>
+                    </span>
+                    <div class="fail-content">
+                      <strong>{{ fail.elderName }}</strong>
+                      <small>{{ fail.reasonText }}</small>
+                    </div>
+                  </div>
+
+                  <p class="muted center" *ngIf="col.tasks.length === 0 && col.failures.length === 0">暂无任务</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="failure-legend" *ngIf="weeklyScheduleResult && weeklyScheduleResult.failures.length > 0">
+              <h4>未排上原因说明</h4>
+              <div class="legend-grid">
+                <div class="legend-item"><span class="fail-icon">⏸️</span><span>老人暂停送餐</span></div>
+                <div class="legend-item"><span class="fail-icon">📅</span><span>非固定送餐日</span></div>
+                <div class="legend-item"><span class="fail-icon">👤❌</span><span>无可用志愿者</span></div>
+                <div class="legend-item"><span class="fail-icon">📦</span><span>志愿者容量已满</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   `,
   styles: [`
@@ -1225,33 +1418,112 @@ type ImportError = {
       .pn-tabs { overflow-x: auto; }
       .pn-tabs button { white-space: nowrap; }
     }
+
+    .task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .manual-badge { display: inline-block; padding: 2px 8px; background: #fff7ef; color: #b36a2e; border: 1px solid #f0d9c4; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .manual-badge.sm { padding: 1px 6px; font-size: 10px; }
+    .manual-modified { border-color: #d9a84a !important; background: #fffbf3 !important; }
+    .special-note { margin: 6px 0 0; padding: 6px 10px; background: #f0f5fc; border-radius: 6px; font-size: 12px; color: #5a8fd9; }
+    .special-note.sm { padding: 4px 8px; font-size: 11px; }
+
+    .pause-dates-section { display: flex; flex-direction: column; gap: 8px; }
+    .pause-dates-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pause-date-tag { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: #fff7ef; color: #b36a2e; border: 1px solid #f0d9c4; border-radius: 10px; font-size: 12px; }
+    .pause-date-input { display: flex; gap: 6px; }
+    .pause-date-input input { flex: 1; }
+
+    .weekly-schedule-modal { max-width: 1400px; width: 95vw; }
+    .weekly-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; padding: 14px; background: #f7f8f4; border-radius: 8px; }
+    .week-nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .week-nav input { width: 140px; }
+
+    .weekly-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+    .summary-item { text-align: center; padding: 14px; border-radius: 8px; border: 1px solid #e2e7da; background: #fbfcf9; }
+    .summary-item strong { display: block; font-size: 28px; margin-bottom: 4px; }
+    .summary-item span { font-size: 13px; color: #65715f; }
+    .summary-item.ok strong { color: #4a9f6d; }
+    .summary-item.fail strong { color: #c75454; }
+    .summary-item.warn strong { color: #d9a84a; }
+
+    .skipped-list { margin-bottom: 16px; padding: 12px 14px; background: #fffbf3; border: 1px solid #f0e6c4; border-radius: 8px; }
+    .skipped-list p { margin: 0 0 8px; }
+    .skipped-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    .weekly-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 16px; }
+    .weekly-column { background: #f7f8f4; border: 1px solid #e2e7da; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+    .weekly-column.today { border-color: #315448; }
+    .weekly-column.today .weekly-column-header { background: #eef3ea; }
+    .weekly-column-header { display: flex; flex-direction: column; gap: 2px; padding: 12px; background: #eef1e8; border-bottom: 1px solid #e2e7da; }
+    .weekly-column-header strong { font-size: 15px; color: #315448; }
+    .weekly-column-header span { font-size: 12px; color: #65715f; }
+    .col-count { display: inline-block; background: #315448; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; width: fit-content; margin-top: 4px; }
+    .weekly-column.today .col-count { background: #315448; }
+    .weekly-column-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: 500px; }
+
+    .weekly-task { background: #fff; border: 1px solid #e0e6d8; border-radius: 8px; padding: 10px; font-size: 13px; }
+    .weekly-task.warn { border-color: #d78b63; background: #fff7ef; }
+    .weekly-task.manual-modified { border-color: #d9a84a; background: #fffbf3; }
+    .weekly-task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .weekly-task-header strong { font-size: 14px; }
+    .weekly-task small { display: block; color: #65715f; margin-bottom: 4px; }
+    .weekly-volunteer { margin: 6px 0 0; padding-top: 6px; border-top: 1px dashed #e0e6d8; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #3d4a38; }
+    .task-status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .task-status.status-pending { background: #eef1ec; color: #8a9783; }
+    .task-status.status-delivering { background: #e8f3ec; color: #4a9f6d; }
+    .task-status.status-done { background: #f0f5fc; color: #5a8fd9; }
+    .task-status.status-exception { background: #fff7ef; color: #c75454; }
+
+    .weekly-failure { display: flex; gap: 8px; padding: 10px; background: #fff7ef; border: 1px solid #f0d9c4; border-radius: 8px; }
+    .fail-icon { font-size: 18px; flex-shrink: 0; }
+    .fail-content { flex: 1; }
+    .fail-content strong { display: block; font-size: 13px; color: #3d4a38; margin-bottom: 2px; }
+    .fail-content small { font-size: 11px; color: #b36a2e; line-height: 1.4; }
+
+    .failure-legend { padding: 14px; background: #fbfcf9; border: 1px solid #e2e7da; border-radius: 8px; }
+    .failure-legend h4 { margin: 0 0 12px; font-size: 14px; color: #315448; }
+    .legend-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .failure-legend .legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #5a6b53; }
+    .failure-legend .legend-item .fail-icon { font-size: 16px; }
+
+    @media (max-width: 1200px) {
+      .weekly-grid { grid-template-columns: repeat(2, 1fr); }
+      .weekly-summary { grid-template-columns: repeat(2, 1fr); }
+      .legend-grid { grid-template-columns: repeat(2, 1fr); }
+      .weekly-toolbar { flex-direction: column; align-items: stretch; }
+      .weekly-toolbar .week-nav { justify-content: center; }
+      .weekly-toolbar button { width: 100%; }
+    }
   `],
 })
 export class App {
   elders: Elder[] = [
-    { id: crypto.randomUUID(), name: '苏阿姨', preference: '少盐软饭', mealTags: ['low-salt', 'soft-food'], address: '松桂里3栋201', contact: '女儿13800001111', note: '午餐需敲门等候' },
-    { id: crypto.randomUUID(), name: '何叔叔', preference: '糖尿病餐', mealTags: ['diabetic'], address: '松桂里5栋104', contact: '邻居王姐', note: '行动慢，放门口需电话确认' },
-    { id: crypto.randomUUID(), name: '林奶奶', preference: '素食', mealTags: ['vegetarian'], address: '梧桐巷12号', contact: '儿子13900002222', note: '周三加汤' }
+    { id: crypto.randomUUID(), name: '苏阿姨', preference: '少盐软饭', mealTags: ['low-salt', 'soft-food'], address: '松桂里3栋201', contact: '女儿13800001111', note: '午餐需敲门等候', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' },
+    { id: crypto.randomUUID(), name: '何叔叔', preference: '糖尿病餐', mealTags: ['diabetic'], address: '松桂里5栋104', contact: '邻居王姐', note: '行动慢，放门口需电话确认', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '少糖' },
+    { id: crypto.randomUUID(), name: '林奶奶', preference: '素食', mealTags: ['vegetarian'], address: '梧桐巷12号', contact: '儿子13900002222', note: '周三加汤', deliveryDays: [1, 3, 5], pauseDates: [], specialMealNote: '' }
   ];
 
   volunteers: Volunteer[] = [
-    { id: crypto.randomUUID(), name: '小赵', phone: '13600003333', capacity: 4, area: '松桂里' },
-    { id: crypto.randomUUID(), name: '陈姐', phone: '13700004444', capacity: 3, area: '梧桐巷' }
+    { id: crypto.randomUUID(), name: '小赵', phone: '13600003333', capacity: 4, area: '松桂里', availableDays: [1, 2, 3, 4, 5] },
+    { id: crypto.randomUUID(), name: '陈姐', phone: '13700004444', capacity: 3, area: '梧桐巷', availableDays: [1, 3, 5] }
   ];
 
   tasks: MealTask[] = [];
   taskDate = today;
   kanbanSort: KanbanSortMap = {};
-  elderForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
-  volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '' };
+  elderForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' };
+  volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '', availableDays: [1, 2, 3, 4, 5] };
+  editingElderId: string | null = null;
+  elderEditForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' };
+  weeklyScheduleStart: string = this.getWeekStart(today);
+  weeklyScheduleResult: WeeklyScheduleResult | null = null;
+  showWeeklySchedulePanel = false;
+  WEEK_DAYS = WEEK_DAYS;
+  today = today;
 
   mealTags: MealTag[] = [...PRESET_TAGS];
   newTagName = '';
   editingTagId: string | null = null;
   editingTagName = '';
-
-  editingElderId: string | null = null;
-  elderEditForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
 
   visitRecords: VisitRecord[] = [];
   visitPanelVisible = false;
@@ -1311,6 +1583,92 @@ export class App {
     return this.elders.find((e) => e.id === this.selectedElderIdForVisit);
   }
 
+  getWeekStart(dateStr: string): string {
+    const date = new Date(dateStr);
+    const day = date.getDay();
+    const diff = date.getDate() - day;
+    const monday = new Date(date);
+    monday.setDate(diff + (day === 0 ? -6 : 1));
+    return monday.toISOString().slice(0, 10);
+  }
+
+  getWeekDates(weekStart: string): string[] {
+    const dates: string[] = [];
+    const start = new Date(weekStart);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    return dates;
+  }
+
+  getDayOfWeek(dateStr: string): number {
+    return new Date(dateStr).getDay();
+  }
+
+  isElderPaused(elderId: string, date: string): boolean {
+    const elder = this.elders.find((e) => e.id === elderId);
+    return elder?.pauseDates.includes(date) || false;
+  }
+
+  isElderScheduled(elderId: string, date: string): boolean {
+    const elder = this.elders.find((e) => e.id === elderId);
+    if (!elder) return false;
+    const dayOfWeek = this.getDayOfWeek(date);
+    return elder.deliveryDays.includes(dayOfWeek);
+  }
+
+  isVolunteerAvailable(volunteerId: string, date: string): boolean {
+    const volunteer = this.volunteers.find((v) => v.id === volunteerId);
+    if (!volunteer) return false;
+    const dayOfWeek = this.getDayOfWeek(date);
+    return volunteer.availableDays.includes(dayOfWeek);
+  }
+
+  toggleElderDeliveryDay(day: number) {
+    const idx = this.elderForm.deliveryDays.indexOf(day);
+    if (idx > -1) {
+      this.elderForm.deliveryDays = this.elderForm.deliveryDays.filter((d) => d !== day);
+    } else {
+      this.elderForm.deliveryDays = [...this.elderForm.deliveryDays, day].sort();
+    }
+  }
+
+  toggleElderEditDeliveryDay(day: number) {
+    const idx = this.elderEditForm.deliveryDays.indexOf(day);
+    if (idx > -1) {
+      this.elderEditForm.deliveryDays = this.elderEditForm.deliveryDays.filter((d) => d !== day);
+    } else {
+      this.elderEditForm.deliveryDays = [...this.elderEditForm.deliveryDays, day].sort();
+    }
+  }
+
+  toggleVolunteerAvailableDay(day: number) {
+    const idx = this.volunteerForm.availableDays.indexOf(day);
+    if (idx > -1) {
+      this.volunteerForm.availableDays = this.volunteerForm.availableDays.filter((d) => d !== day);
+    } else {
+      this.volunteerForm.availableDays = [...this.volunteerForm.availableDays, day].sort();
+    }
+  }
+
+  addPauseDate(elderId: string, date: string) {
+    const elder = this.elders.find((e) => e.id === elderId);
+    if (elder && !elder.pauseDates.includes(date)) {
+      elder.pauseDates = [...elder.pauseDates, date].sort();
+      this.save();
+    }
+  }
+
+  removePauseDate(elderId: string, date: string) {
+    const elder = this.elders.find((e) => e.id === elderId);
+    if (elder) {
+      elder.pauseDates = elder.pauseDates.filter((d) => d !== date);
+      this.save();
+    }
+  }
+
   constructor() {
     this.load();
     this.loadKanbanSort();
@@ -1324,25 +1682,274 @@ export class App {
   addElder() {
     if (!this.elderForm.name.trim()) return;
     this.elders = [{ id: crypto.randomUUID(), ...this.elderForm }, ...this.elders];
-    this.elderForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
+    this.elderForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' };
     this.save();
   }
 
   addVolunteer() {
     if (!this.volunteerForm.name.trim()) return;
     this.volunteers = [{ id: crypto.randomUUID(), ...this.volunteerForm, capacity: Number(this.volunteerForm.capacity || 1) }, ...this.volunteers];
-    this.volunteerForm = { name: '', phone: '', capacity: 3, area: '' };
+    this.volunteerForm = { name: '', phone: '', capacity: 3, area: '', availableDays: [1, 2, 3, 4, 5] };
+    this.save();
+  }
+
+  startEditElder(elder: Elder) {
+    this.editingElderId = elder.id;
+    this.elderEditForm = { ...elder };
+  }
+
+  cancelEditElder() {
+    this.editingElderId = null;
+  }
+
+  saveEditElder() {
+    if (!this.elderEditForm.name.trim() || !this.editingElderId) return;
+    this.elders = this.elders.map((e) => e.id === this.editingElderId ? { ...e, ...this.elderEditForm } : e);
+    this.editingElderId = null;
     this.save();
   }
 
   generateTasks() {
     const existing = new Set(this.tasks.filter((task) => task.date === this.taskDate).map((task) => task.elderId));
     const created = this.elders
-      .filter((elder) => !existing.has(elder.id))
-      .map((elder) => ({ id: crypto.randomUUID(), elderId: elder.id, date: this.taskDate, volunteerId: '', status: '待分配' as const, exception: '' }));
+      .filter((elder) => !existing.has(elder.id) && this.isElderScheduled(elder.id, this.taskDate) && !this.isElderPaused(elder.id, this.taskDate))
+      .map((elder) => ({ id: crypto.randomUUID(), elderId: elder.id, date: this.taskDate, volunteerId: '', status: '待分配' as const, exception: '', isManuallyModified: false, specialMealNote: elder.specialMealNote }));
     this.tasks = [...created, ...this.tasks];
     this.save();
     this.generatePhoneNotificationsForDate(this.taskDate);
+  }
+
+  generateWeeklySchedule() {
+    const weekDates = this.getWeekDates(this.weeklyScheduleStart);
+    const generatedTasks: MealTask[] = [];
+    const assignedTasks: AutoAssignEntry[] = [];
+    const failures: ScheduleFailure[] = [];
+    const skippedManualTasks: string[] = [];
+
+    const dailyLoad = new Map<string, Map<string, number>>();
+    for (const date of weekDates) {
+      dailyLoad.set(date, new Map());
+      for (const v of this.volunteers) {
+        dailyLoad.get(date)!.set(v.id, this.tasks.filter((t) => t.date === date && t.volunteerId === v.id).length);
+      }
+    }
+
+    for (const date of weekDates) {
+      const dayOfWeek = this.getDayOfWeek(date);
+      const existingTasksForDate = this.tasks.filter((t) => t.date === date);
+      const existingElderIds = new Set(existingTasksForDate.map((t) => t.elderId));
+      const manuallyModifiedTasks = existingTasksForDate.filter((t) => t.isManuallyModified);
+      const manuallyModifiedElderIds = new Set(manuallyModifiedTasks.map((t) => t.elderId));
+
+      for (const elder of this.elders) {
+        if (manuallyModifiedElderIds.has(elder.id)) {
+          skippedManualTasks.push(`${elder.name} (${date})`);
+          continue;
+        }
+
+        if (elder.pauseDates.includes(date)) {
+          failures.push({
+            elderId: elder.id,
+            elderName: elder.name,
+            date,
+            reason: 'paused',
+            reasonText: '老人设置了暂停送餐'
+          });
+          continue;
+        }
+
+        if (!elder.deliveryDays.includes(dayOfWeek)) {
+          failures.push({
+            elderId: elder.id,
+            elderName: elder.name,
+            date,
+            reason: 'not_scheduled_day',
+            reasonText: `非固定送餐日（${WEEK_DAYS[dayOfWeek]}）`
+          });
+          continue;
+        }
+
+        if (existingElderIds.has(elder.id)) {
+          continue;
+        }
+
+        const availableVolunteers = this.volunteers
+          .filter((v) => v.availableDays.includes(dayOfWeek))
+          .filter((v) => {
+            const load = dailyLoad.get(date)!.get(v.id) || 0;
+            return load < v.capacity;
+          })
+          .filter((v) => !v.area.trim() || !elder.address.trim() || elder.address.includes(v.area))
+          .sort((a, b) => {
+            const loadA = dailyLoad.get(date)!.get(a.id) || 0;
+            const loadB = dailyLoad.get(date)!.get(b.id) || 0;
+            const remainA = a.capacity - loadA;
+            const remainB = b.capacity - loadB;
+            if (remainA !== remainB) return remainB - remainA;
+            return loadA - loadB;
+          });
+
+        if (availableVolunteers.length === 0) {
+          const matchingAreaVolunteers = this.volunteers.filter((v) =>
+            v.availableDays.includes(dayOfWeek) && v.area.trim() && elder.address.trim() && elder.address.includes(v.area)
+          );
+
+          let reason = '';
+          if (matchingAreaVolunteers.length > 0) {
+            const allFull = matchingAreaVolunteers.every((v) => {
+              const load = dailyLoad.get(date)!.get(v.id) || 0;
+              return load >= v.capacity;
+            });
+            if (allFull) {
+              reason = `片区匹配的志愿者（${matchingAreaVolunteers.map(v => v.name).join('、')}）当日均已满载`;
+              failures.push({
+                elderId: elder.id,
+                elderName: elder.name,
+                date,
+                reason: 'capacity_full',
+                reasonText: reason
+              });
+            } else {
+              reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
+              failures.push({
+                elderId: elder.id,
+                elderName: elder.name,
+                date,
+                reason: 'no_volunteer',
+                reasonText: reason
+              });
+            }
+          } else if (!this.volunteers.some((v) => v.availableDays.includes(dayOfWeek))) {
+            reason = `${WEEK_DAYS[dayOfWeek]}无可用志愿者`;
+            failures.push({
+              elderId: elder.id,
+              elderName: elder.name,
+              date,
+              reason: 'no_volunteer',
+              reasonText: reason
+            });
+          } else {
+            reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
+            failures.push({
+              elderId: elder.id,
+              elderName: elder.name,
+              date,
+              reason: 'no_volunteer',
+              reasonText: reason
+            });
+          }
+          continue;
+        }
+
+        const chosen = availableVolunteers[0];
+        const newTask: MealTask = {
+          id: crypto.randomUUID(),
+          elderId: elder.id,
+          date,
+          volunteerId: chosen.id,
+          status: '配送中' as const,
+          exception: '',
+          isManuallyModified: false,
+          specialMealNote: elder.specialMealNote
+        };
+        generatedTasks.push(newTask);
+        assignedTasks.push({
+          taskId: newTask.id,
+          elderId: elder.id,
+          elderName: elder.name,
+          elderAddress: elder.address,
+          volunteerId: chosen.id,
+          volunteerName: chosen.name
+        });
+
+        const currentLoad = dailyLoad.get(date)!.get(chosen.id) || 0;
+        dailyLoad.get(date)!.set(chosen.id, currentLoad + 1);
+      }
+    }
+
+    this.tasks = [...generatedTasks, ...this.tasks];
+    this.save();
+
+    for (const date of weekDates) {
+      this.generatePhoneNotificationsForDate(date);
+      const dateSort = this.kanbanSort[date];
+      if (!dateSort) {
+        this.kanbanSort[date] = {};
+      }
+      for (const entry of assignedTasks.filter((a) => {
+        const t = generatedTasks.find((gt) => gt.id === a.taskId);
+        return t?.date === date;
+      })) {
+        if (!this.kanbanSort[date][entry.volunteerId]) {
+          this.kanbanSort[date][entry.volunteerId] = this.tasks
+            .filter((t) => t.date === date && t.volunteerId === entry.volunteerId)
+            .map((t) => t.id);
+        } else if (!this.kanbanSort[date][entry.volunteerId].includes(entry.taskId)) {
+          this.kanbanSort[date][entry.volunteerId].push(entry.taskId);
+        }
+      }
+    }
+    this.saveKanbanSort();
+
+    this.weeklyScheduleResult = {
+      weekStart: weekDates[0],
+      weekEnd: weekDates[6],
+      generatedTasks,
+      assignedTasks,
+      failures,
+      skippedManualTasks
+    };
+  }
+
+  getWeeklyDayColumns(): WeeklyDayColumn[] {
+    const weekDates = this.getWeekDates(this.weeklyScheduleStart);
+    return weekDates.map((date) => {
+      const dayOfWeek = this.getDayOfWeek(date);
+      return {
+        date,
+        dayName: WEEK_DAYS[dayOfWeek],
+        dayOfWeek,
+        tasks: this.tasks.filter((t) => t.date === date),
+        failures: this.weeklyScheduleResult?.failures.filter((f) => f.date === date) || []
+      };
+    });
+  }
+
+  openWeeklySchedulePanel() {
+    this.showWeeklySchedulePanel = true;
+    this.weeklyScheduleResult = null;
+  }
+
+  closeWeeklySchedulePanel() {
+    this.showWeeklySchedulePanel = false;
+  }
+
+  prevWeek() {
+    const current = new Date(this.weeklyScheduleStart);
+    current.setDate(current.getDate() - 7);
+    this.weeklyScheduleStart = this.getWeekStart(current.toISOString().slice(0, 10));
+    this.weeklyScheduleResult = null;
+  }
+
+  nextWeek() {
+    const current = new Date(this.weeklyScheduleStart);
+    current.setDate(current.getDate() + 7);
+    this.weeklyScheduleStart = this.getWeekStart(current.toISOString().slice(0, 10));
+    this.weeklyScheduleResult = null;
+  }
+
+  goToCurrentWeek() {
+    this.weeklyScheduleStart = this.getWeekStart(today);
+    this.weeklyScheduleResult = null;
+  }
+
+  onWeekStartChange() {
+    this.weeklyScheduleStart = this.getWeekStart(this.weeklyScheduleStart);
+    this.weeklyScheduleResult = null;
+  }
+
+  getVolunteerName(volunteerId: string): string {
+    return this.volunteers.find((v) => v.id === volunteerId)?.name || '未知';
   }
 
   filteredTasks() {
@@ -1361,7 +1968,7 @@ export class App {
   assignTask(id: string, volunteerId: string) {
     const task = this.tasks.find((t) => t.id === id);
     const oldVolunteerId = task?.volunteerId;
-    this.tasks = this.tasks.map((t) => t.id === id ? { ...t, volunteerId, status: volunteerId ? '配送中' : '待分配' } : t);
+    this.tasks = this.tasks.map((t) => t.id === id ? { ...t, volunteerId, status: volunteerId ? '配送中' : '待分配', isManuallyModified: true } : t);
     const dateSort = this.kanbanSort[this.taskDate];
     if (dateSort) {
       if (oldVolunteerId && dateSort[oldVolunteerId]) {
@@ -1379,19 +1986,18 @@ export class App {
       }
     }
     this.save();
-    if (volunteerId) {
-      this.generatePhoneNotificationsForDate(this.taskDate);
-    }
+    this.generatePhoneNotificationsForDate(this.taskDate);
   }
 
   autoAssignTasks() {
     const dateTasks = this.filteredTasks();
-    const unassigned = dateTasks.filter((t) => !t.volunteerId && t.status === '待分配');
+    const unassigned = dateTasks.filter((t) => !t.volunteerId && t.status === '待分配' && !t.isManuallyModified);
     if (unassigned.length === 0) {
       this.autoAssignResult = { assigned: [], failed: [] };
       return;
     }
 
+    const dayOfWeek = this.getDayOfWeek(this.taskDate);
     const currentLoad = new Map<string, number>();
     for (const v of this.volunteers) {
       currentLoad.set(v.id, this.assignedCount(v.id));
@@ -1408,6 +2014,7 @@ export class App {
       }
 
       const candidates = this.volunteers
+        .filter((v) => v.availableDays.includes(dayOfWeek))
         .filter((v) => {
           const load = currentLoad.get(v.id) || 0;
           if (load >= v.capacity) return false;
@@ -1424,16 +2031,25 @@ export class App {
         });
 
       if (candidates.length === 0) {
+        const dayName = WEEK_DAYS[dayOfWeek];
         const matchingVolunteers = this.volunteers.filter((v) => v.area.trim() && elder.address.trim() && elder.address.includes(v.area));
         let reason = '';
-        if (matchingVolunteers.length > 0) {
-          const fullNames = matchingVolunteers
-            .filter((v) => (currentLoad.get(v.id) || 0) >= v.capacity)
-            .map((v) => v.name);
-          if (fullNames.length === matchingVolunteers.length) {
-            reason = `片区匹配的志愿者（${fullNames.join('、')}）均已满载`;
+        const availableVolunteers = this.volunteers.filter((v) => v.availableDays.includes(dayOfWeek));
+        if (availableVolunteers.length === 0) {
+          reason = `${dayName}无可用志愿者`;
+        } else if (matchingVolunteers.length > 0) {
+          const availableMatching = matchingVolunteers.filter((v) => v.availableDays.includes(dayOfWeek));
+          if (availableMatching.length === 0) {
+            reason = `片区匹配的志愿者${dayName}不值班`;
           } else {
-            reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
+            const fullNames = availableMatching
+              .filter((v) => (currentLoad.get(v.id) || 0) >= v.capacity)
+              .map((v) => v.name);
+            if (fullNames.length === availableMatching.length) {
+              reason = `片区匹配的志愿者（${fullNames.join('、')}）${dayName}均已满载`;
+            } else {
+              reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
+            }
           }
         } else if (!this.volunteers.some((v) => v.area.trim())) {
           reason = '无志愿者配置片区信息';
@@ -1446,7 +2062,7 @@ export class App {
 
       const chosen = candidates[0];
       this.tasks = this.tasks.map((t) =>
-        t.id === task.id ? { ...t, volunteerId: chosen.id, status: '配送中' as const } : t
+        t.id === task.id ? { ...t, volunteerId: chosen.id, status: '配送中' as const, isManuallyModified: false } : t
       );
       currentLoad.set(chosen.id, (currentLoad.get(chosen.id) || 0) + 1);
       assigned.push({
@@ -1479,7 +2095,7 @@ export class App {
   }
 
   setStatus(id: string, status: MealTask['status']) {
-    this.tasks = this.tasks.map((task) => task.id === id ? { ...task, status, exception: status === '异常' ? task.exception : '' } : task);
+    this.tasks = this.tasks.map((task) => task.id === id ? { ...task, status, exception: status === '异常' ? task.exception : '', isManuallyModified: true } : task);
     this.save();
   }
 
@@ -1698,9 +2314,22 @@ export class App {
     const elders = localStorage.getItem('zfl-4-elders');
     const volunteers = localStorage.getItem('zfl-4-volunteers');
     const tasks = localStorage.getItem('zfl-4-tasks');
-    if (elders) this.elders = JSON.parse(elders).map((e: Elder) => ({ ...e, mealTags: e.mealTags || [] }));
-    if (volunteers) this.volunteers = JSON.parse(volunteers);
-    if (tasks) this.tasks = JSON.parse(tasks);
+    if (elders) this.elders = JSON.parse(elders).map((e: Elder) => ({
+      ...e,
+      mealTags: e.mealTags || [],
+      deliveryDays: e.deliveryDays || [1, 2, 3, 4, 5],
+      pauseDates: e.pauseDates || [],
+      specialMealNote: e.specialMealNote || ''
+    }));
+    if (volunteers) this.volunteers = JSON.parse(volunteers).map((v: Volunteer) => ({
+      ...v,
+      availableDays: v.availableDays || [1, 2, 3, 4, 5]
+    }));
+    if (tasks) this.tasks = JSON.parse(tasks).map((t: MealTask) => ({
+      ...t,
+      isManuallyModified: t.isManuallyModified || false,
+      specialMealNote: t.specialMealNote || ''
+    }));
   }
 
   private save() {
@@ -1824,18 +2453,6 @@ export class App {
     }
   }
 
-  startEditElder(elder: Elder) {
-    this.editingElderId = elder.id;
-    this.elderEditForm = {
-      name: elder.name,
-      preference: elder.preference,
-      mealTags: [...(elder.mealTags || [])],
-      address: elder.address,
-      contact: elder.contact,
-      note: elder.note,
-    };
-  }
-
   toggleElderEditTag(tagId: string) {
     const tags = this.elderEditForm.mealTags;
     if (tags.includes(tagId)) {
@@ -1845,18 +2462,16 @@ export class App {
     }
   }
 
-  saveEditElder() {
-    if (!this.editingElderId || !this.elderEditForm.name.trim()) return;
-    this.elders = this.elders.map((e) =>
-      e.id === this.editingElderId ? { ...e, ...this.elderEditForm } : e
-    );
-    this.cancelEditElder();
-    this.save();
+  removeEditPauseDate(date: string) {
+    this.elderEditForm.pauseDates = this.elderEditForm.pauseDates.filter((d) => d !== date);
   }
 
-  cancelEditElder() {
-    this.editingElderId = null;
-    this.elderEditForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
+  addEditPauseDate(input: HTMLInputElement) {
+    const date = input.value;
+    if (date && !this.elderEditForm.pauseDates.includes(date)) {
+      this.elderEditForm.pauseDates = [...this.elderEditForm.pauseDates, date].sort();
+      input.value = '';
+    }
   }
 
   elderMealTags(elderId: string): MealTag[] {
@@ -2097,7 +2712,8 @@ export class App {
       exceptionRecords: [...this.exceptionRecords],
       visitRecords: [...this.visitRecords],
       phoneNotifications: [...this.phoneNotifications],
-      kanbanSort: { ...this.kanbanSort }
+      kanbanSort: { ...this.kanbanSort },
+      weeklyScheduleStart: this.weeklyScheduleStart
     };
 
     const jsonStr = JSON.stringify(backup, null, 2);
@@ -2173,7 +2789,8 @@ export class App {
     } else {
       const ELDER_FIELDS: [string, string][] = [
         ['id', 'string'], ['name', 'string'], ['preference', 'string'],
-        ['mealTags', 'array'], ['address', 'string'], ['contact', 'string'], ['note', 'string']
+        ['mealTags', 'array'], ['address', 'string'], ['contact', 'string'], ['note', 'string'],
+        ['deliveryDays', 'array'], ['pauseDates', 'array'], ['specialMealNote', 'string']
       ];
       for (let i = 0; i < data.elders.length; i++) {
         const elder = data.elders[i];
@@ -2181,6 +2798,9 @@ export class App {
           errors.push(`老人[${i}]: 不是有效的对象`);
           continue;
         }
+        if (!elder.deliveryDays) elder.deliveryDays = [1, 2, 3, 4, 5];
+        if (!elder.pauseDates) elder.pauseDates = [];
+        if (!elder.specialMealNote) elder.specialMealNote = '';
         for (const [field, type] of ELDER_FIELDS) {
           if (!(field in elder)) {
             errors.push(`老人[${i}]: 缺少 ${field} 字段`);
@@ -2198,7 +2818,7 @@ export class App {
     } else {
       const VOLUNTEER_FIELDS: [string, string][] = [
         ['id', 'string'], ['name', 'string'], ['phone', 'string'],
-        ['capacity', 'number'], ['area', 'string']
+        ['capacity', 'number'], ['area', 'string'], ['availableDays', 'array']
       ];
       for (let i = 0; i < data.volunteers.length; i++) {
         const vol = data.volunteers[i];
@@ -2206,6 +2826,7 @@ export class App {
           errors.push(`志愿者[${i}]: 不是有效的对象`);
           continue;
         }
+        if (!vol.availableDays) vol.availableDays = [1, 2, 3, 4, 5];
         for (const [field, type] of VOLUNTEER_FIELDS) {
           if (!(field in vol)) {
             errors.push(`志愿者[${i}]: 缺少 ${field} 字段`);
@@ -2213,6 +2834,8 @@ export class App {
             errors.push(`志愿者[${i}]: ${field} 应为字符串`);
           } else if (type === 'number' && typeof vol[field] !== 'number') {
             errors.push(`志愿者[${i}]: ${field} 应为数字`);
+          } else if (type === 'array' && !Array.isArray(vol[field])) {
+            errors.push(`志愿者[${i}]: ${field} 应为数组`);
           }
         }
       }
@@ -2223,7 +2846,8 @@ export class App {
     } else {
       const TASK_FIELDS: [string, string][] = [
         ['id', 'string'], ['elderId', 'string'], ['date', 'string'],
-        ['volunteerId', 'string'], ['status', 'string'], ['exception', 'string']
+        ['volunteerId', 'string'], ['status', 'string'], ['exception', 'string'],
+        ['isManuallyModified', 'boolean'], ['specialMealNote', 'string']
       ];
       const VALID_STATUSES = ['待分配', '配送中', '已送达', '异常'];
       for (let i = 0; i < data.tasks.length; i++) {
@@ -2232,11 +2856,15 @@ export class App {
           errors.push(`任务[${i}]: 不是有效的对象`);
           continue;
         }
+        if (task.isManuallyModified === undefined) task.isManuallyModified = false;
+        if (!task.specialMealNote) task.specialMealNote = '';
         for (const [field, type] of TASK_FIELDS) {
           if (!(field in task)) {
             errors.push(`任务[${i}]: 缺少 ${field} 字段`);
           } else if (type === 'string' && typeof task[field] !== 'string') {
             errors.push(`任务[${i}]: ${field} 应为字符串`);
+          } else if (type === 'boolean' && typeof task[field] !== 'boolean') {
+            errors.push(`任务[${i}]: ${field} 应为布尔值`);
           }
         }
         if ('status' in task && typeof task.status === 'string' && !VALID_STATUSES.includes(task.status)) {
@@ -2583,6 +3211,10 @@ export class App {
           }
         }
       }
+    }
+
+    if (backup.weeklyScheduleStart && typeof backup.weeklyScheduleStart === 'string') {
+      this.weeklyScheduleStart = backup.weeklyScheduleStart;
     }
 
     this.save();
