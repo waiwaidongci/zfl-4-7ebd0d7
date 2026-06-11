@@ -3,6 +3,12 @@ import { Component, Inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MealPrepComponent } from './meal-prep/meal-prep.component';
 import { MealPrepService, PrepStorageData, ExceptionRecord as PrepExceptionRecord, PhoneNotification as PrepPhoneNotification, MealTask as PrepMealTask } from './meal-prep/meal-prep.service';
+import { VolunteerDeliveryComponent } from './volunteer-delivery/volunteer-delivery.component';
+import {
+  VolunteerDeliveryService,
+  ExceptionRecord as DeliveryExceptionRecord,
+  PhoneNotification as DeliveryPhoneNotification,
+} from './volunteer-delivery/volunteer-delivery.service';
 
 type MealTag = {
   id: string;
@@ -250,10 +256,10 @@ type SyncNotification = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, MealPrepComponent],
+  imports: [CommonModule, FormsModule, MealPrepComponent, VolunteerDeliveryComponent],
   template: `
     <main>
-      <header class="hero">
+      <header class="hero" *ngIf="appViewMode === 'schedule'">
         <div>
           <p>社区老人送餐</p>
           <h1>排班前端</h1>
@@ -264,9 +270,13 @@ type SyncNotification = {
           <span>{{ todayTasks().length }}个今日任务</span>
           <span>{{ todayUnresolvedExceptions().length }}条异常</span>
         </div>
-        <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
+        <div class="hero-actions">
+          <button type="button" class="delivery-view-btn" (click)="openVolunteerDelivery()">📱 志愿者配送端</button>
+          <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
+        </div>
       </header>
 
+      <ng-container *ngIf="appViewMode === 'schedule'">
       <div class="sync-alert" *ngIf="syncNotification.status !== 'idle'" [class.conflict]="syncNotification.status === 'conflict'" [class.editing-conflict]="hasEditingConflicts()" (click)="openSyncPanel()">
         <div class="sync-alert-icon">
           <ng-container *ngIf="hasEditingConflicts()">🚨</ng-container>
@@ -1433,6 +1443,22 @@ type SyncNotification = {
         </div>
       </div>
 
+      </ng-container>
+
+      <app-volunteer-delivery
+        *ngIf="appViewMode === 'delivery'"
+        [date]="taskDate"
+        [volunteerId]="selectedDeliveryVolunteerId"
+        [volunteers]="volunteers"
+        [tasks]="tasks"
+        [elders]="elders"
+        [mealTags]="mealTags"
+        [visitRecords]="visitRecords"
+        [kanbanSort]="kanbanSort"
+        (statusUpdated)="onDeliveryStatusUpdated($event)"
+        (backToSchedule)="closeVolunteerDelivery()"
+      ></app-volunteer-delivery>
+
     </main>
   `,
   styles: [`
@@ -1445,6 +1471,9 @@ type SyncNotification = {
     h2 { margin: 0 0 16px; font-size: 18px; }
     .stats { display: flex; flex-wrap: wrap; gap: 10px; }
     .stats span { padding: 10px 12px; border-radius: 8px; border: 1px solid rgb(255 255 255 / .22); background: rgb(255 255 255 / .12); }
+    .hero-actions { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .delivery-view-btn { background: linear-gradient(135deg, #5a8fd9, #4a7fc9); color: white; padding: 10px 16px; font-size: 13px; font-weight: 500; border: 1px solid rgba(255,255,255,.25); border-radius: 8px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .delivery-view-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(90,143,217,.35); }
     .layout { display: grid; grid-template-columns: 300px 1fr 300px; gap: 16px; margin-top: 16px; align-items: start; }
     .stack { display: grid; gap: 16px; }
     .panel { background: #fff; border: 1px solid #dfe4d8; border-radius: 8px; padding: 18px; box-shadow: 0 10px 28px rgb(38 49 34 / .07); }
@@ -1910,6 +1939,9 @@ export class App {
   tasks: MealTask[] = [];
   taskDate = today;
   kanbanSort: KanbanSortMap = {};
+  appViewMode: 'schedule' | 'delivery' = 'schedule';
+  selectedDeliveryVolunteerId: string = '';
+  private deliveryService: VolunteerDeliveryService | null = null;
   elderForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' };
   volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '', availableDays: [1, 2, 3, 4, 5] };
   editingElderId: string | null = null;
@@ -4241,5 +4273,44 @@ export class App {
         : t
     );
     this.save();
+  }
+
+  openVolunteerDelivery() {
+    this.selectedDeliveryVolunteerId = '';
+    this.appViewMode = 'delivery';
+  }
+
+  closeVolunteerDelivery() {
+    this.appViewMode = 'schedule';
+    this.selectedDeliveryVolunteerId = '';
+  }
+
+  onDeliveryStatusUpdated(update: {
+    taskUpdated?: { taskId: string; status: MealTask['status']; exception: string };
+    exceptionCreated?: ExceptionRecord;
+    notificationCreated?: PhoneNotification;
+  }) {
+    if (update.taskUpdated) {
+      this.tasks = this.tasks.map((t) =>
+        t.id === update.taskUpdated!.taskId
+          ? { ...t, status: update.taskUpdated!.status, exception: update.taskUpdated!.exception, isManuallyModified: true }
+          : t
+      );
+      this.save();
+    }
+    if (update.exceptionCreated) {
+      const existingIdx = this.exceptionRecords.findIndex((e) => e.taskId === update.exceptionCreated!.taskId && e.date === update.exceptionCreated!.date);
+      if (existingIdx === -1) {
+        this.exceptionRecords = [update.exceptionCreated, ...this.exceptionRecords];
+        this.saveExceptions();
+      }
+    }
+    if (update.notificationCreated) {
+      const existingIdx = this.phoneNotifications.findIndex((n) => n.taskId === update.notificationCreated!.taskId && n.date === update.notificationCreated!.date);
+      if (existingIdx === -1) {
+        this.phoneNotifications = [update.notificationCreated, ...this.phoneNotifications];
+        this.savePhoneNotifications();
+      }
+    }
   }
 }

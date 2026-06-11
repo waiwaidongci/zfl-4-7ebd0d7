@@ -1,0 +1,52 @@
+<div class="status-buttons" [class.compact]="compact">
+  <button
+    type="button"
+    *ngFor="let status of DELIVERY_STATUSES"
+    class="status-btn"
+    [class.active]="currentStatus === status"
+    [style.borderColor]="getStatusColor(status)"
+    [style.color]="currentStatus === status ? 'white' : getStatusColor(status)"
+    [style.background]="currentStatus === status ? getStatusColor(status) : 'transparent'"
+    [disabled]="disabled"
+    (click)="onClickStatus(status)"
+  >
+    <span class="status-icon">{{ DELIVERY_STATUS_ICONS[status] }}</span>
+    <span class="status-label">{{ status }}</span>
+  </button>
+</div>
+
+<div class="exception-modal-overlay" *ngIf="showExceptionEditor" (click)="cancelExceptionEditor()">
+  <div class="exception-modal" (click)="$event.stopPropagation()">
+    <div class="exception-modal-header">
+      <h3>
+        <span *ngIf="pendingStatus === '未接通'">📞 标记为未接通</span>
+        <span *ngIf="pendingStatus === '异常'">⚠️ 标记配送异常</span>
+      </h3>
+      <button type="button" class="close-btn" (click)="cancelExceptionEditor()">×</button>
+    </div>
+    <div class="exception-modal-body">
+      <label>请说明情况（将写入异常处置闭环和电话通知清单）：</label>
+      <textarea
+        [(ngModel)]="exceptionNote"
+        rows="4"
+        [placeholder]="pendingStatus === '未接通' ? '如：电话无人接听、门铃无人应答、邻居表示不在家...' : '请详细描述异常情况，如地址错误、老人拒收、餐食问题等...'"
+      ></textarea>
+      <p class="tip">
+        💡 提交后将自动：① 更新任务状态为"异常"
+        <span *ngIf="pendingStatus === '未接通'">（分类：无人应答）</span>
+        ② 写入异常处置闭环 ③ 加入电话通知清单
+      </p>
+    </div>
+    <div class="exception-modal-actions">
+      <button type="button" class="ghost-btn" (click)="cancelExceptionEditor()">取消</button>
+      <button
+        type="button"
+        class="confirm-btn"
+        [style.background]="pendingStatus ? getStatusColor(pendingStatus) : '#c75454'"
+        (click)="confirmException()"
+      >
+        确认提交
+      </button>
+    </div>
+  </div>
+</div>

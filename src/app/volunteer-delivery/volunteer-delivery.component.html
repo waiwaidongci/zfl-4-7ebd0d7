@@ -1,0 +1,193 @@
+<app-volunteer-selector
+  *ngIf="viewMode === 'selector'"
+  [date]="date"
+  [volunteers]="volunteers"
+  [tasks]="tasks"
+  (selectVolunteer)="onSelectVolunteer($event)"
+  (goBack)="onBackToSchedule()"
+></app-volunteer-selector>
+
+<ng-container *ngIf="viewMode === 'delivery' && summary">
+  <div class="mobile-delivery-wrapper">
+    <div class="mobile-header">
+      <button type="button" class="back-btn" (click)="onBackToSelector()">← 选择志愿者</button>
+      <div class="volunteer-info">
+        <div class="volunteer-avatar">{{ summary.volunteer.name.charAt(0) }}</div>
+        <div>
+          <strong>{{ summary.volunteer.name }}</strong>
+          <small>{{ summary.volunteer.area }}</small>
+        </div>
+      </div>
+      <button type="button" class="schedule-btn" (click)="onBackToSchedule()">📋 主排班</button>
+    </div>
+
+    <div class="progress-section" *ngIf="summary.totalTasks > 0">
+      <div class="progress-ring" [class.completed]="isAllCompleted()">
+        <svg viewBox="0 0 120 120" class="progress-svg">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e7da" stroke-width="10" />
+          <circle
+            cx="60" cy="60" r="52"
+            fill="none"
+            [attr.stroke]="isAllCompleted() ? '#4a9f6d' : '#5a8fd9'"
+            stroke-width="10"
+            stroke-linecap="round"
+            [attr.stroke-dasharray]="2 * Math.PI * 52"
+            [attr.stroke-dashoffset]="2 * Math.PI * 52 * (1 - getProgressPct() / 100)"
+            transform="rotate(-90 60 60)"
+            style="transition: stroke-dashoffset .5s ease"
+          />
+        </svg>
+        <div class="progress-text">
+          <span class="progress-pct">{{ getProgressPct() }}%</span>
+          <span class="progress-label">完成</span>
+        </div>
+      </div>
+
+      <div class="progress-details">
+        <div class="progress-main-stats">
+          <div class="stat-item done">
+            <strong>{{ summary.completedTasks }}</strong>
+            <span>已送达</span>
+          </div>
+          <div class="stat-item divider">
+            <strong>{{ summary.totalTasks }}</strong>
+            <span>总任务</span>
+          </div>
+          <div class="stat-item pending">
+            <strong>{{ summary.totalTasks - summary.completedTasks - summary.exceptionTasks - summary.unreachableTasks }}</strong>
+            <span>待完成</span>
+          </div>
+        </div>
+
+        <div class="quick-status-row" *ngIf="getQuickStatusSummary().length > 0">
+          <div
+            class="quick-status-item"
+            *ngFor="let s of getQuickStatusSummary()"
+            [style.borderColor]="s.color"
+            [style.color]="s.color"
+          >
+            <span class="qs-icon">{{ s.icon }}</span>
+            <span class="qs-count">{{ s.count }}</span>
+            <span class="qs-label">{{ s.label }}</span>
+          </div>
+        </div>
+
+        <div class="volunteer-contact">
+          <span class="vc-icon">📱</span>
+          <span class="vc-label">志愿者电话：</span>
+          <a class="vc-phone" [href]="'tel:' + summary.volunteer.phone">{{ summary.volunteer.phone }}</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="route-map-section" *ngIf="summary.tasks.length > 0 && selectedTaskIndex < 0">
+      <h3>📋 今日配送路线（{{ summary.tasks.length }} 单）</h3>
+      <div class="route-list">
+        <div
+          class="route-item"
+          *ngFor="let task of summary.tasks; let i = index"
+          [class.current]="false"
+          [class.done]="task.status === '已送达'"
+          [class.selected]="selectedTaskIndex === i"
+          (click)="onSelectTask(i)"
+        >
+          <div class="route-order" [style.background]="getStatusColor(task.status)">
+            <span [class.done-text]="task.status === '已送达'">{{ task.status === '已送达' ? '✓' : task.routeOrder }}</span>
+          </div>
+
+          <div class="route-line" *ngIf="i < summary!.tasks.length - 1"></div>
+
+          <div class="route-content">
+            <div class="route-header">
+              <strong>{{ task.elder.name }}</strong>
+              <span
+                class="route-status-tag"
+                [style.borderColor]="getStatusColor(task.status)"
+                [style.color]="getStatusColor(task.status)"
+              >
+                {{ DELIVERY_STATUS_ICONS[task.status] }} {{ task.status }}
+              </span>
+            </div>
+            <div class="route-address">📍 {{ task.elder.address }}</div>
+            <div class="route-tags" *ngIf="task.elder.mealTags.length > 0">
+              <span
+                class="mini-tag"
+                *ngFor="let tag of task.elder.mealTags"
+                [style.background]="tag.color + '14'"
+                [style.color]="tag.color"
+                [style.borderColor]="tag.color + '40'"
+              >
+                {{ tag.name }}
+              </span>
+            </div>
+            <div class="route-special" *ngIf="task.elder.specialMealNote">
+              🍽️ {{ task.elder.specialMealNote }}
+            </div>
+            <div class="route-footer" *ngIf="task.elder.contact">
+              📞 {{ task.elder.contact }}
+              <span class="reminder-tag" *ngIf="task.visitReminder">📝 待回访</span>
+            </div>
+          </div>
+
+          <div class="route-action">
+            <button type="button" class="enter-btn">
+              {{ selectedTaskIndex === i ? '查看中' : '查看 →' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <app-delivery-detail
+      *ngIf="selectedTaskIndex >= 0"
+      [task]="getCurrentTask()"
+      [index]="selectedTaskIndex"
+      [total]="summary.tasks.length"
+      (updateStatus)="onUpdateTaskStatus($event)"
+      (prevTask)="onPrevTask()"
+      (nextTask)="onNextTask()"
+      (backToList)="onBackToList()"
+    ></app-delivery-detail>
+
+    <div class="empty-section" *ngIf="summary.totalTasks === 0">
+      <div class="empty-icon">📭</div>
+      <h3>该志愿者今日暂无任务</h3>
+      <p>请先在主排班页分配送餐任务</p>
+      <button type="button" class="go-schedule-btn" (click)="onBackToSchedule()">
+        前往主排班分配
+      </button>
+    </div>
+
+    <div class="completion-banner" *ngIf="isAllCompleted() && summary.totalTasks > 0">
+      <div class="banner-icon">🎉</div>
+      <div class="banner-content">
+        <strong>今日配送任务全部完成！</strong>
+        <span>共送出 {{ summary.totalTasks }} 份爱心餐食</span>
+      </div>
+      <button type="button" class="banner-btn" (click)="onBackToSchedule()">返回排班</button>
+    </div>
+
+    <div class="mobile-footer" *ngIf="summary.tasks.length > 0">
+      <button
+        type="button"
+        class="footer-btn"
+        (click)="selectedTaskIndex = -1"
+        [class.active]="selectedTaskIndex < 0"
+      >
+        📋 路线列表
+      </button>
+      <button
+        type="button"
+        class="footer-btn"
+        *ngIf="summary.tasks.length > 0"
+        (click)="onSelectTask(selectedTaskIndex >= 0 ? selectedTaskIndex : findFirstUndeliveredIndex())"
+        [class.active]="selectedTaskIndex >= 0"
+      >
+        📍 当前配送
+      </button>
+      <button type="button" class="footer-btn ghost" (click)="onBackToSchedule()">
+        📊 主排班
+      </button>
+    </div>
+  </div>
+</ng-container>

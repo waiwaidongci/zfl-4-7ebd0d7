@@ -1,0 +1,58 @@
+<section class="volunteer-selector">
+  <div class="selector-header">
+    <button type="button" class="back-btn" (click)="onGoBack()">← 返回主排班</button>
+    <h2>📱 志愿者移动配送端</h2>
+    <span class="date-tag">{{ date }}</span>
+  </div>
+
+  <p class="selector-tip">选择要查看的志愿者路线，进入移动配送视图</p>
+
+  <div class="volunteer-grid">
+    <div
+      class="volunteer-card"
+      *ngFor="let group of getRouteGroups()"
+      (click)="onSelectVolunteer(group.volunteer.id)"
+    >
+      <div class="volunteer-card-header">
+        <div class="volunteer-info">
+          <div class="volunteer-avatar">{{ group.volunteer.name.charAt(0) }}</div>
+          <div>
+            <strong>{{ group.volunteer.name }}</strong>
+            <small>{{ group.volunteer.area }}</small>
+          </div>
+        </div>
+        <div class="volunteer-phone">
+          <span>📞 {{ group.volunteer.phone }}</span>
+        </div>
+      </div>
+
+      <div class="route-progress">
+        <div class="progress-stats">
+          <span class="progress-completed">✓ {{ group.completedCount }}</span>
+          <span class="progress-total">/ {{ group.taskCount }} 单</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div
+            class="progress-bar-fill"
+            [style.width.%]="getProgressPct(group.taskCount, group.completedCount)"
+            [class.full]="getProgressPct(group.taskCount, group.completedCount) >= 100"
+          ></div>
+        </div>
+        <div class="progress-label">
+          {{ getProgressPct(group.taskCount, group.completedCount) }}% 完成
+        </div>
+      </div>
+
+      <div class="volunteer-card-footer">
+        <button type="button" class="enter-btn">
+          进入配送视图 →
+        </button>
+      </div>
+    </div>
+
+    <div class="empty-card" *ngIf="getRouteGroups().length === 0">
+      <div class="empty-icon">📭</div>
+      <p>今日暂无志愿者路线，请先分配任务</p>
+    </div>
+  </div>
+</section>

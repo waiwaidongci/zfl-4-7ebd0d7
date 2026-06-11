@@ -1,0 +1,125 @@
+<div class="delivery-detail" *ngIf="task">
+  <div class="detail-header">
+    <button type="button" class="back-btn" (click)="onBack()">← 返回列表</button>
+    <div class="route-indicator">
+      <span class="route-index">第 {{ index + 1 }} / {{ total }} 单</span>
+    </div>
+  </div>
+
+  <div class="detail-nav">
+    <button type="button" class="nav-btn" (click)="onPrev()" [disabled]="index === 0">
+      ← 上一单
+    </button>
+    <button type="button" class="nav-btn next" (click)="onNext()" [disabled]="index >= total - 1">
+      下一单 →
+    </button>
+  </div>
+
+  <div class="order-badge">
+    <span class="order-number">{{ task.routeOrder }}</span>
+    <span class="order-label">配送序号</span>
+  </div>
+
+  <div
+    class="status-banner"
+    [style.background]="getStatusColor(task.status) + '18'"
+    [style.borderColor]="getStatusColor(task.status) + '50'"
+  >
+    <span class="status-icon">{{ DELIVERY_STATUS_ICONS[task.status] }}</span>
+    <span class="status-text" [style.color]="getStatusColor(task.status)">
+      当前状态：{{ task.status }}
+    </span>
+    <span class="status-time" *ngIf="task.statusUpdatedAt">
+      {{ task.statusUpdatedAt }}
+    </span>
+  </div>
+
+  <section class="detail-card elder-card">
+    <h3>👴 老人信息</h3>
+    <div class="elder-name-row">
+      <strong class="elder-name">{{ task.elder.name }}</strong>
+      <span
+        class="visit-reminder"
+        *ngIf="task.visitReminder"
+        title="有回访提醒事项"
+      >📝 待回访关注</span>
+    </div>
+
+    <div class="info-row address-row" (click)="openMap(task.elder.address)">
+      <span class="info-icon">📍</span>
+      <div class="info-content">
+        <label>送餐地址</label>
+        <span class="info-value">{{ task.elder.address }}</span>
+      </div>
+      <span class="action-hint">地图导航</span>
+    </div>
+
+    <div class="info-row contact-row" (click)="callPhone(task.elder.contact)">
+      <span class="info-icon">📞</span>
+      <div class="info-content">
+        <label>联系电话</label>
+        <span class="info-value phone">{{ task.elder.contact || '暂无电话' }}</span>
+      </div>
+      <span class="action-hint" *ngIf="task.elder.contact">拨打电话</span>
+    </div>
+
+    <div class="tag-section" *ngIf="task.elder.mealTags.length > 0">
+      <label>🍽️ 餐食标签</label>
+      <div class="tag-row">
+        <span
+          class="meal-tag"
+          *ngFor="let tag of task.elder.mealTags"
+          [style.background]="tag.color + '18'"
+          [style.color]="tag.color"
+          [style.borderColor]="tag.color + '50'"
+        >
+          {{ tag.name }}
+        </span>
+      </div>
+    </div>
+
+    <div class="special-note-section" *ngIf="task.elder.specialMealNote">
+      <label>⚠️ 特殊餐食备注</label>
+      <div class="special-note">
+        {{ task.elder.specialMealNote }}
+      </div>
+    </div>
+
+    <div class="exception-note-section" *ngIf="task.exceptionNote">
+      <label>📋 异常备注</label>
+      <div class="exception-note">
+        {{ task.exceptionNote }}
+      </div>
+    </div>
+  </section>
+
+  <section class="detail-card" *ngIf="task.elder.lastVisit">
+    <h3>📝 上次回访</h3>
+    <div class="visit-info">
+      <div class="visit-meta">
+        <span class="visit-date">{{ task.elder.lastVisit.date }}</span>
+        <span class="visit-method">{{ task.elder.lastVisit.method }}</span>
+      </div>
+      <div class="visit-attention" *ngIf="task.elder.lastVisit.nextAttention">
+        <label>下次关注</label>
+        <p>{{ task.elder.lastVisit.nextAttention }}</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="detail-card status-section">
+    <h3>🔄 更新配送状态</h3>
+    <app-delivery-status-buttons
+      [currentStatus]="task.status"
+      (updateStatus)="onUpdateStatus($event)"
+    ></app-delivery-status-buttons>
+  </section>
+
+  <section class="detail-card sync-tips-section">
+    <h3>💡 同步说明</h3>
+    <p class="sync-tip">
+      状态更新后将自动同步至：主排班页、今日路线看板、异常处置闭环、电话通知清单。
+      多标签页编辑时会自动检测冲突，请留意提示。
+    </p>
+  </section>
+</div>
