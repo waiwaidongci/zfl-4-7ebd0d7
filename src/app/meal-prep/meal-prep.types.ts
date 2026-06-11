@@ -33,6 +33,38 @@ export type PrepBatch = {
   inProgressCount: number;
 };
 
+export type TagBreakdownStat = {
+  tagId: string;
+  tagName: string;
+  tagColor: string;
+  order: number;
+  totalCount: number;
+  uniqueElderCount: number;
+  pausedCount: number;
+  activeCount: number;
+  completedCount: number;
+  inProgressCount: number;
+  missingCount: number;
+  withSpecialNoteCount: number;
+  overlapTags: Array<{ tagId: string; tagName: string; count: number }>;
+};
+
+export type PausedTagStat = {
+  tagId: string;
+  tagName: string;
+  tagColor: string;
+  count: number;
+};
+
+export type PausedSummary = {
+  totalPaused: number;
+  activeTotal: number;
+  pauseRate: number;
+  byTags: PausedTagStat[];
+  pausedWithSpecialNote: PrepItem[];
+  pausedElderList: Array<{ elderName: string; address: string; contact: string; tagNames: string[]; specialNote: string }>;
+};
+
 export type DailyPrepSummary = {
   date: string;
   totalMeals: number;
@@ -45,6 +77,10 @@ export type DailyPrepSummary = {
   specialItems: PrepItem[];
   pausedItems: PrepItem[];
   itemsById: Record<string, PrepItem>;
+  tagBreakdown: TagBreakdownStat[];
+  pausedSummary: PausedSummary;
+  standardOnlyCount: number;
+  noTagCount: number;
 };
 
 export const PREP_STATUSES: PrepStatus[] = ['待备餐', '备餐中', '已完成', '缺餐异常'];

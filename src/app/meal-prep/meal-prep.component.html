@@ -31,6 +31,198 @@
     </div>
   </div>
 
+  <div class="tag-breakdown-section" *ngIf="summary.tagBreakdown.length > 0 || summary.standardOnlyCount > 0">
+    <div class="section-title-row">
+      <h3>📊 标签份数拆分（按餐食要求分别计数）</h3>
+      <small class="muted">
+        统计规则：每位老人的全部标签均计入对应分类（如：「少盐+软饭」同时计入少盐和软饭）。
+        <span *ngIf="summary.noTagCount > 0"> | 无标签标准餐：<strong>{{ summary.noTagCount }} 份</strong></span>
+      </small>
+    </div>
+
+    <div class="tag-breakdown-grid">
+      <div
+        class="tag-breakdown-card"
+        *ngFor="let stat of summary.tagBreakdown"
+        [style.borderTopColor]="stat.tagColor"
+      >
+        <div class="tag-card-header">
+          <div class="tag-name-row">
+            <span
+              class="tag-name-label"
+              [style.background]="stat.tagColor + '18'"
+              [style.color]="stat.tagColor"
+              [style.borderColor]="stat.tagColor + '50'"
+            >🏷️ {{ stat.tagName }}</span>
+            <span class="tag-pct-label" *ngIf="stat.activeCount > 0">
+              完成 {{ pctRound(stat.completedCount, stat.activeCount) }}%
+            </span>
+          </div>
+          <div class="tag-count-big">
+            <strong style="color:{{ stat.tagColor }}">{{ stat.activeCount }}</strong>
+            <span class="tag-unit">份需备餐</span>
+          </div>
+        </div>
+
+        <div class="tag-stat-grid">
+          <div class="tag-stat-cell">
+            <div class="tag-stat-label">总计登记</div>
+            <div class="tag-stat-value">{{ stat.totalCount }} 份 <small>({{ stat.uniqueElderCount }} 位老人)</small></div>
+          </div>
+          <div class="tag-stat-cell">
+            <div class="tag-stat-label">含特殊备注</div>
+            <div class="tag-stat-value special" *ngIf="stat.withSpecialNoteCount > 0">🍽️ {{ stat.withSpecialNoteCount }} 份</div>
+            <div class="tag-stat-value muted" *ngIf="stat.withSpecialNoteCount === 0">—</div>
+          </div>
+          <div class="tag-stat-cell">
+            <div class="tag-stat-label">已完成</div>
+            <div class="tag-stat-value done" *ngIf="stat.completedCount > 0">✓ {{ stat.completedCount }}</div>
+            <div class="tag-stat-value muted" *ngIf="stat.completedCount === 0">0</div>
+          </div>
+          <div class="tag-stat-cell">
+            <div class="tag-stat-label">备餐中</div>
+            <div class="tag-stat-value doing" *ngIf="stat.inProgressCount > 0">⏳ {{ stat.inProgressCount }}</div>
+            <div class="tag-stat-value muted" *ngIf="stat.inProgressCount === 0">0</div>
+          </div>
+          <div class="tag-stat-cell">
+            <div class="tag-stat-label">缺餐异常</div>
+            <div class="tag-stat-value missing" *ngIf="stat.missingCount > 0">⚠ {{ stat.missingCount }}</div>
+            <div class="tag-stat-value muted" *ngIf="stat.missingCount === 0">0</div>
+          </div>
+          <div class="tag-stat-cell">
+            <div class="tag-stat-label">本日暂停</div>
+            <div class="tag-stat-value paused" *ngIf="stat.pausedCount > 0">⏸ {{ stat.pausedCount }}</div>
+            <div class="tag-stat-value muted" *ngIf="stat.pausedCount === 0">0</div>
+          </div>
+        </div>
+
+        <div class="tag-overlap-row" *ngIf="stat.overlapTags.length > 0">
+          <span class="overlap-label">🔗 常与这些标签同时出现：</span>
+          <span
+            class="overlap-chip"
+            *ngFor="let ov of stat.overlapTags"
+            title="与「{{ stat.tagName }}」同时出现 {{ ov.count }} 次"
+          >{{ ov.tagName }} × {{ ov.count }}</span>
+        </div>
+
+        <div class="tag-progress-bar">
+          <div
+            class="progress-fill done"
+            [style.width.%]="stat.activeCount === 0 ? 0 : (stat.completedCount / stat.activeCount) * 100"
+          ></div>
+          <div
+            class="progress-fill doing"
+            [style.width.%]="stat.activeCount === 0 ? 0 : (stat.inProgressCount / stat.activeCount) * 100"
+          ></div>
+          <div
+            class="progress-fill missing"
+            [style.width.%]="stat.activeCount === 0 ? 0 : (stat.missingCount / stat.activeCount) * 100"
+          ></div>
+        </div>
+      </div>
+
+      <div
+        class="tag-breakdown-card standard-extra"
+        *ngIf="summary.standardOnlyCount > 0"
+        style="border-top-color:#5a8fd9"
+      >
+        <div class="tag-card-header">
+          <div class="tag-name-row">
+            <span
+              class="tag-name-label"
+              style="background:#e8effa;color:#5a8fd9;border-color:#b9cde8"
+            >🍚 标准餐（无特殊标签）</span>
+          </div>
+          <div class="tag-count-big">
+            <strong style="color:#5a8fd9">{{ summary.standardOnlyCount }}</strong>
+            <span class="tag-unit">份需备餐</span>
+          </div>
+        </div>
+        <div class="tag-stat-grid">
+          <div class="tag-stat-cell">
+            <div class="tag-stat-label">说明</div>
+            <div class="tag-stat-value">老人未设置餐食偏好标签，按厨房标准菜单备餐</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div
+    class="paused-summary-section"
+    *ngIf="summary.pausedMeals > 0"
+    style="border-left:5px solid #8a9783"
+  >
+    <div class="section-title-row">
+      <h3>⏸ 暂停送餐汇总</h3>
+      <small class="muted">
+        共 {{ summary.pausedSummary.totalPaused }} 位老人暂停，占当日登记老人的
+        <strong>{{ summary.pausedSummary.pauseRate }}%</strong>
+        （活跃 {{ summary.pausedSummary.activeTotal }} 位）
+      </small>
+    </div>
+
+    <div class="paused-content-grid">
+      <div class="paused-tags-panel">
+        <div class="paused-panel-title">按餐食类型统计暂停分布：</div>
+        <div class="paused-tag-chips">
+          <span
+            class="paused-tag-chip"
+            *ngFor="let pt of summary.pausedSummary.byTags"
+            [style.background]="pt.tagColor + '14'"
+            [style.color]="pt.tagColor"
+            [style.borderColor]="pt.tagColor + '40'"
+          >
+            🏷️ {{ pt.tagName }}：<strong>{{ pt.count }}</strong> 份
+          </span>
+          <span
+            class="paused-tag-chip"
+            *ngIf="summary.pausedSummary.byTags.length === 0"
+            style="background:#f1f2f0;color:#777;border-color:#dcdedb"
+          >暂无标签分类</span>
+        </div>
+        <div
+          class="paused-special-alert"
+          *ngIf="summary.pausedSummary.pausedWithSpecialNote.length > 0"
+        >
+          ⚠️ <strong>{{ summary.pausedSummary.pausedWithSpecialNote.length }} 位暂停老人有特殊餐食备注</strong>
+          —— 虽然本日暂停，但请注意后续恢复送餐后需按特殊要求备餐。
+        </div>
+      </div>
+
+      <div class="paused-elder-panel">
+        <div class="paused-panel-title">暂停老人明细（{{ summary.pausedSummary.pausedElderList.length }} 位）：</div>
+        <div class="paused-elder-table">
+          <div class="paused-elder-row header">
+            <span>姓名</span>
+            <span>地址 / 联系</span>
+            <span>餐食标签</span>
+            <span>特殊备注</span>
+          </div>
+          <div class="paused-elder-row" *ngFor="let pe of summary.pausedSummary.pausedElderList">
+            <span class="elder-name-cell">👴 {{ pe.elderName }}</span>
+            <span class="elder-contact-cell">
+              📍 {{ pe.address }}<br />
+              📞 {{ pe.contact || '—' }}
+            </span>
+            <span class="elder-tags-cell">
+              <span
+                *ngFor="let tn of pe.tagNames"
+                class="mini-tag"
+                style="background:#e8ece5;color:#546451;border:1px solid #bfc9bb"
+              >{{ tn }}</span>
+              <span class="muted" *ngIf="pe.tagNames.length === 0">— 标准餐</span>
+            </span>
+            <span class="elder-note-cell">
+              <span *ngIf="pe.specialNote" style="color:#b36a2e">🍽️ {{ pe.specialNote }}</span>
+              <span class="muted" *ngIf="!pe.specialNote">—</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="prep-batches" *ngIf="summary.batches.length > 0">
     <div
       class="prep-batch-card"

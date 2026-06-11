@@ -163,11 +163,14 @@ export class MealPrepComponent implements OnInit, OnChanges {
     this.refresh();
   }
 
-  get batchProgressHint(): (batch: PrepBatch) => string {
-    return (batch: PrepBatch) => {
-      if (batch.totalCount === 0) return '';
-      const pct = Math.round((batch.completedCount / batch.totalCount) * 100);
-      return `${pct}% 完成`;
-    };
+  batchProgressHint(batch: PrepBatch): string {
+    if (batch.totalCount === 0) return '';
+    const pct = Math.round((batch.completedCount / batch.totalCount) * 100);
+    return `${pct}% 完成`;
+  }
+
+  pctRound(numerator: number, denominator: number): number {
+    if (denominator === 0) return 0;
+    return Math.round((numerator / denominator) * 100);
   }
 }

@@ -7,6 +7,9 @@ import {
   ElderRef,
   LS_PREP_DATA_KEY,
   PREP_STATUSES,
+  TagBreakdownStat,
+  PausedTagStat,
+  PausedSummary,
 } from './meal-prep.types';
 
 export type MealTag = {
@@ -261,6 +264,11 @@ export class MealPrepService {
     }
 
     const activeNonPaused = items.filter(i => !i.isPaused);
+    const standardOnlyCount = standardItems.length;
+    const noTagCount = activeNonPaused.filter(i => i.mealTagIds.length === 0).length;
+
+    const tagBreakdown = this.computeTagBreakdown(items, mealTags);
+    const pausedSummary = this.computePausedSummary(pausedItems, activeNonPaused, mealTags);
 
     return {
       date,
@@ -274,6 +282,168 @@ export class MealPrepService {
       specialItems,
       pausedItems,
       itemsById,
+      tagBreakdown,
+      pausedSummary,
+      standardOnlyCount,
+      noTagCount,
+    };
+  }
+
+  private computeTagBreakdown(
+    allItems: PrepItem[],
+    mealTags: MealTag[],
+  ): TagBreakdownStat[] {
+    const tagMap = new Map(mealTags.map(t => [t.id, t]));
+    const stats = new Map<string, {
+      totalCount: number;
+      uniqueElderIds: Set<string>;
+      pausedCount: number;
+      activeCount: number;
+      completedCount: number;
+      inProgressCount: number;
+      missingCount: number;
+      withSpecialNoteCount: number;
+      elderIdToOtherTags: Map<string, Set<string>>;
+      order: number;
+    }>();
+
+    mealTags.forEach((tag, idx) => {
+      stats.set(tag.id, {
+        totalCount: 0,
+        uniqueElderIds: new Set<string>(),
+        pausedCount: 0,
+        activeCount: 0,
+        completedCount: 0,
+        inProgressCount: 0,
+        missingCount: 0,
+        withSpecialNoteCount: 0,
+        elderIdToOtherTags: new Map<string, Set<string>>(),
+        order: idx,
+      });
+    });
+
+    for (const item of allItems) {
+      for (const tagId of item.mealTagIds) {
+        const s = stats.get(tagId);
+        if (!s) continue;
+        s.totalCount++;
+        s.uniqueElderIds.add(item.elder.id);
+        if (item.isPaused) {
+          s.pausedCount++;
+        } else {
+          s.activeCount++;
+          switch (item.status) {
+            case '已完成': s.completedCount++; break;
+            case '备餐中': s.inProgressCount++; break;
+            case '缺餐异常': s.missingCount++; break;
+          }
+        }
+        if (item.specialMealNote && item.specialMealNote.trim()) {
+          s.withSpecialNoteCount++;
+        }
+        const otherTags = item.mealTagIds.filter(t => t !== tagId);
+        if (otherTags.length > 0) {
+          const existing = s.elderIdToOtherTags.get(item.elder.id) || new Set<string>();
+          otherTags.forEach(t => existing.add(t));
+          s.elderIdToOtherTags.set(item.elder.id, existing);
+        }
+      }
+    }
+
+    const result: TagBreakdownStat[] = [];
+    for (const [tagId, s] of stats.entries()) {
+      const tag = tagMap.get(tagId);
+      if (!tag || s.totalCount === 0) continue;
+
+      const overlapCountMap = new Map<string, number>();
+      for (const otherTagIds of s.elderIdToOtherTags.values()) {
+        for (const ot of otherTagIds) {
+          overlapCountMap.set(ot, (overlapCountMap.get(ot) || 0) + 1);
+        }
+      }
+      const overlapTags: TagBreakdownStat['overlapTags'] = [];
+      for (const [otId, cnt] of overlapCountMap.entries()) {
+        const ot = tagMap.get(otId);
+        if (ot) {
+          overlapTags.push({ tagId: otId, tagName: ot.name, count: cnt });
+        }
+      }
+      overlapTags.sort((a, b) => b.count - a.count);
+
+      result.push({
+        tagId,
+        tagName: tag.name,
+        tagColor: tag.color,
+        order: s.order,
+        totalCount: s.totalCount,
+        uniqueElderCount: s.uniqueElderIds.size,
+        pausedCount: s.pausedCount,
+        activeCount: s.activeCount,
+        completedCount: s.completedCount,
+        inProgressCount: s.inProgressCount,
+        missingCount: s.missingCount,
+        withSpecialNoteCount: s.withSpecialNoteCount,
+        overlapTags,
+      });
+    }
+
+    result.sort((a, b) => {
+      if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+      return a.order - b.order;
+    });
+    return result;
+  }
+
+  private computePausedSummary(
+    pausedItems: PrepItem[],
+    activeItems: PrepItem[],
+    mealTags: MealTag[],
+  ): PausedSummary {
+    const tagMap = new Map(mealTags.map(t => [t.id, t]));
+    const totalPaused = pausedItems.length;
+    const activeTotal = activeItems.length;
+    const pauseRate = totalPaused + activeTotal === 0 ? 0 :
+      Math.round((totalPaused / (totalPaused + activeTotal)) * 1000) / 10;
+
+    const tagCounts = new Map<string, number>();
+    for (const item of pausedItems) {
+      for (const tid of item.mealTagIds) {
+        tagCounts.set(tid, (tagCounts.get(tid) || 0) + 1);
+      }
+    }
+    const byTags: PausedTagStat[] = [];
+    for (const [tid, cnt] of tagCounts.entries()) {
+      const tag = tagMap.get(tid);
+      if (tag) {
+        byTags.push({ tagId: tid, tagName: tag.name, tagColor: tag.color, count: cnt });
+      }
+    }
+    byTags.sort((a, b) => b.count - a.count);
+
+    const pausedWithSpecialNote = pausedItems.filter(
+      i => i.specialMealNote && i.specialMealNote.trim()
+    );
+
+    const pausedElderList = pausedItems.map(item => {
+      const tagNames = item.mealTagIds
+        .map(tid => tagMap.get(tid)?.name)
+        .filter((n): n is string => !!n);
+      return {
+        elderName: item.elder.name,
+        address: item.elder.address,
+        contact: item.elder.contact,
+        tagNames,
+        specialNote: item.specialMealNote,
+      };
+    });
+
+    return {
+      totalPaused,
+      activeTotal,
+      pauseRate,
+      byTags,
+      pausedWithSpecialNote,
+      pausedElderList,
     };
   }
 
