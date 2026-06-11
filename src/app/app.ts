@@ -55,6 +55,7 @@ type WeeklyScheduleResult = {
   weekStart: string;
   weekEnd: string;
   generatedTasks: MealTask[];
+  takenOverTasks: MealTask[];
   assignedTasks: AutoAssignEntry[];
   failures: ScheduleFailure[];
   skippedManualTasks: string[];
@@ -1048,6 +1049,10 @@ type ImportError = {
                 <span>已生成任务</span>
               </div>
               <div class="summary-item ok">
+                <strong>{{ weeklyScheduleResult.takenOverTasks.length }}</strong>
+                <span>已接管任务</span>
+              </div>
+              <div class="summary-item ok">
                 <strong>{{ weeklyScheduleResult.assignedTasks.length }}</strong>
                 <span>已自动分配</span>
               </div>
@@ -1103,7 +1108,6 @@ type ImportError = {
                         <ng-container *ngSwitchCase="'paused'">⏸️</ng-container>
                         <ng-container *ngSwitchCase="'no_volunteer'">👤❌</ng-container>
                         <ng-container *ngSwitchCase="'capacity_full'">📦</ng-container>
-                        <ng-container *ngSwitchCase="'not_scheduled_day'">📅</ng-container>
                         <ng-container *ngSwitchDefault>⚠️</ng-container>
                       </ng-container>
                     </span>
@@ -1122,7 +1126,6 @@ type ImportError = {
               <h4>未排上原因说明</h4>
               <div class="legend-grid">
                 <div class="legend-item"><span class="fail-icon">⏸️</span><span>老人暂停送餐</span></div>
-                <div class="legend-item"><span class="fail-icon">📅</span><span>非固定送餐日</span></div>
                 <div class="legend-item"><span class="fail-icon">👤❌</span><span>无可用志愿者</span></div>
                 <div class="legend-item"><span class="fail-icon">📦</span><span>志愿者容量已满</span></div>
               </div>
@@ -1725,6 +1728,7 @@ export class App {
     const assignedTasks: AutoAssignEntry[] = [];
     const failures: ScheduleFailure[] = [];
     const skippedManualTasks: string[] = [];
+    const takenOverTasks: MealTask[] = [];
 
     const dailyLoad = new Map<string, Map<string, number>>();
     for (const date of weekDates) {
@@ -1737,9 +1741,8 @@ export class App {
     for (const date of weekDates) {
       const dayOfWeek = this.getDayOfWeek(date);
       const existingTasksForDate = this.tasks.filter((t) => t.date === date);
-      const existingElderIds = new Set(existingTasksForDate.map((t) => t.elderId));
-      const manuallyModifiedTasks = existingTasksForDate.filter((t) => t.isManuallyModified);
-      const manuallyModifiedElderIds = new Set(manuallyModifiedTasks.map((t) => t.elderId));
+      const existingTaskMap = new Map(existingTasksForDate.map((t) => [t.elderId, t]));
+      const manuallyModifiedElderIds = new Set(existingTasksForDate.filter((t) => t.isManuallyModified).map((t) => t.elderId));
 
       for (const elder of this.elders) {
         if (manuallyModifiedElderIds.has(elder.id)) {
@@ -1759,19 +1762,10 @@ export class App {
         }
 
         if (!elder.deliveryDays.includes(dayOfWeek)) {
-          failures.push({
-            elderId: elder.id,
-            elderName: elder.name,
-            date,
-            reason: 'not_scheduled_day',
-            reasonText: `非固定送餐日（${WEEK_DAYS[dayOfWeek]}）`
-          });
           continue;
         }
 
-        if (existingElderIds.has(elder.id)) {
-          continue;
-        }
+        const existingTask = existingTaskMap.get(elder.id);
 
         const availableVolunteers = this.volunteers
           .filter((v) => v.availableDays.includes(dayOfWeek))
@@ -1789,24 +1783,51 @@ export class App {
             return loadA - loadB;
           });
 
-        if (availableVolunteers.length === 0) {
-          const matchingAreaVolunteers = this.volunteers.filter((v) =>
-            v.availableDays.includes(dayOfWeek) && v.area.trim() && elder.address.trim() && elder.address.includes(v.area)
-          );
+        if (existingTask) {
+          if (existingTask.volunteerId) {
+            takenOverTasks.push(existingTask);
+            const existingVolunteer = this.volunteers.find((v) => v.id === existingTask.volunteerId);
+            if (existingVolunteer) {
+              assignedTasks.push({
+                taskId: existingTask.id,
+                elderId: elder.id,
+                elderName: elder.name,
+                elderAddress: elder.address,
+                volunteerId: existingVolunteer.id,
+                volunteerName: existingVolunteer.name
+              });
+            }
+            continue;
+          }
 
-          let reason = '';
-          if (matchingAreaVolunteers.length > 0) {
-            const allFull = matchingAreaVolunteers.every((v) => {
-              const load = dailyLoad.get(date)!.get(v.id) || 0;
-              return load >= v.capacity;
-            });
-            if (allFull) {
-              reason = `片区匹配的志愿者（${matchingAreaVolunteers.map(v => v.name).join('、')}）当日均已满载`;
+          if (availableVolunteers.length === 0) {
+            const matchingAreaVolunteers = this.volunteers.filter((v) =>
+              v.availableDays.includes(dayOfWeek) && v.area.trim() && elder.address.trim() && elder.address.includes(v.area)
+            );
+
+            let reason = '';
+            if (matchingAreaVolunteers.length > 0) {
+              const allFull = matchingAreaVolunteers.every((v) => {
+                const load = dailyLoad.get(date)!.get(v.id) || 0;
+                return load >= v.capacity;
+              });
+              reason = allFull
+                ? `片区匹配的志愿者（${matchingAreaVolunteers.map(v => v.name).join('、')}）当日均已满载`
+                : `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
               failures.push({
                 elderId: elder.id,
                 elderName: elder.name,
                 date,
-                reason: 'capacity_full',
+                reason: allFull ? 'capacity_full' : 'no_volunteer',
+                reasonText: reason
+              });
+            } else if (!this.volunteers.some((v) => v.availableDays.includes(dayOfWeek))) {
+              reason = `${WEEK_DAYS[dayOfWeek]}无可用志愿者`;
+              failures.push({
+                elderId: elder.id,
+                elderName: elder.name,
+                date,
+                reason: 'no_volunteer',
                 reasonText: reason
               });
             } else {
@@ -1819,6 +1840,49 @@ export class App {
                 reasonText: reason
               });
             }
+            continue;
+          }
+
+          const chosen = availableVolunteers[0];
+          existingTask.volunteerId = chosen.id;
+          existingTask.status = '配送中';
+          existingTask.specialMealNote = elder.specialMealNote;
+          takenOverTasks.push(existingTask);
+          assignedTasks.push({
+            taskId: existingTask.id,
+            elderId: elder.id,
+            elderName: elder.name,
+            elderAddress: elder.address,
+            volunteerId: chosen.id,
+            volunteerName: chosen.name
+          });
+
+          const currentLoad = dailyLoad.get(date)!.get(chosen.id) || 0;
+          dailyLoad.get(date)!.set(chosen.id, currentLoad + 1);
+          continue;
+        }
+
+        if (availableVolunteers.length === 0) {
+          const matchingAreaVolunteers = this.volunteers.filter((v) =>
+            v.availableDays.includes(dayOfWeek) && v.area.trim() && elder.address.trim() && elder.address.includes(v.area)
+          );
+
+          let reason = '';
+          if (matchingAreaVolunteers.length > 0) {
+            const allFull = matchingAreaVolunteers.every((v) => {
+              const load = dailyLoad.get(date)!.get(v.id) || 0;
+              return load >= v.capacity;
+            });
+            reason = allFull
+              ? `片区匹配的志愿者（${matchingAreaVolunteers.map(v => v.name).join('、')}）当日均已满载`
+              : `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
+            failures.push({
+              elderId: elder.id,
+              elderName: elder.name,
+              date,
+              reason: allFull ? 'capacity_full' : 'no_volunteer',
+              reasonText: reason
+            });
           } else if (!this.volunteers.some((v) => v.availableDays.includes(dayOfWeek))) {
             reason = `${WEEK_DAYS[dayOfWeek]}无可用志愿者`;
             failures.push({
@@ -1876,10 +1940,11 @@ export class App {
       if (!dateSort) {
         this.kanbanSort[date] = {};
       }
-      for (const entry of assignedTasks.filter((a) => {
-        const t = generatedTasks.find((gt) => gt.id === a.taskId);
+      const allAssignedForDate = assignedTasks.filter((a) => {
+        const t = generatedTasks.find((gt) => gt.id === a.taskId) || takenOverTasks.find((tt) => tt.id === a.taskId);
         return t?.date === date;
-      })) {
+      });
+      for (const entry of allAssignedForDate) {
         if (!this.kanbanSort[date][entry.volunteerId]) {
           this.kanbanSort[date][entry.volunteerId] = this.tasks
             .filter((t) => t.date === date && t.volunteerId === entry.volunteerId)
@@ -1895,6 +1960,7 @@ export class App {
       weekStart: weekDates[0],
       weekEnd: weekDates[6],
       generatedTasks,
+      takenOverTasks,
       assignedTasks,
       failures,
       skippedManualTasks
