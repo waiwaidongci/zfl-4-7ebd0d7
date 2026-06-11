@@ -4308,11 +4308,12 @@ export class App {
   }
 
   onDeliveryStatusUpdated(update: {
-    taskUpdated?: { taskId: string; status: MealTask['status']; exception: string };
+    taskUpdated?: { taskId: string; status: MealTask['status']; exception: string; deliveryStatus?: '待配送' | '配送中' | '已送达' | '异常' | '未接通' };
     exceptionCreated?: ExceptionRecord;
     notificationCreated?: PhoneNotification;
   }) {
-    const isUnreachable = !!update.taskUpdated?.exception?.includes('未接通');
+    const isUnreachable = update.taskUpdated?.deliveryStatus === '未接通'
+      || !!update.taskUpdated?.exception?.includes('未接通');
 
     if (update.taskUpdated) {
       this.tasks = this.tasks.map((t) =>
@@ -4353,13 +4354,19 @@ export class App {
       }
     }
     if (update.notificationCreated) {
-      const existingIdx = this.phoneNotifications.findIndex((n) => n.taskId === update.notificationCreated!.taskId && n.date === update.notificationCreated!.date);
+      const existingIdx = this.phoneNotifications.findIndex((n) =>
+        n.taskId === update.notificationCreated!.taskId
+        && n.date === update.notificationCreated!.date
+        && n.targetType === update.notificationCreated!.targetType
+      );
       if (existingIdx === -1) {
         this.phoneNotifications = [update.notificationCreated, ...this.phoneNotifications];
         this.savePhoneNotifications();
       } else if (isUnreachable) {
         this.phoneNotifications = this.phoneNotifications.map((n) =>
-          n.taskId === update.notificationCreated!.taskId && n.date === update.notificationCreated!.date
+          n.taskId === update.notificationCreated!.taskId
+            && n.date === update.notificationCreated!.date
+            && n.targetType === update.notificationCreated!.targetType
             ? { ...n, notificationStatus: '未接通' as NotificationStatus, remark: update.notificationCreated!.remark, updatedAt: update.notificationCreated!.updatedAt }
             : n
         );
@@ -4369,13 +4376,18 @@ export class App {
       const taskId = update.taskUpdated.taskId;
       const taskDate = this.tasks.find(t => t.id === taskId)?.date;
       if (taskDate) {
-        const existingIdx = this.phoneNotifications.findIndex((n) => n.taskId === taskId && n.date === taskDate);
+        const existingIdx = this.phoneNotifications.findIndex((n) => n.taskId === taskId && n.date === taskDate && n.targetType === 'elder');
         if (existingIdx !== -1) {
           const now = new Date();
           const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
           this.phoneNotifications = this.phoneNotifications.map((n) =>
-            n.taskId === taskId && n.date === taskDate
-              ? { ...n, notificationStatus: '未接通' as NotificationStatus, updatedAt: timeStr }
+            n.taskId === taskId && n.date === taskDate && n.targetType === 'elder'
+              ? {
+                  ...n,
+                  notificationStatus: '未接通' as NotificationStatus,
+                  remark: `配送未接通通知：${update.taskUpdated!.exception || '电话无人接听，需再次联系'}`,
+                  updatedAt: timeStr
+                }
               : n
           );
           this.savePhoneNotifications();

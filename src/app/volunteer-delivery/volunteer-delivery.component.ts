@@ -23,7 +23,7 @@ import { VolunteerSelectorComponent } from './volunteer-selector.component';
 import { DeliveryDetailComponent } from './delivery-detail.component';
 
 type DeliveryWritebackResult = {
-  taskUpdated?: { taskId: string; status: MealTask['status']; exception: string };
+  taskUpdated?: { taskId: string; status: MealTask['status']; exception: string; deliveryStatus: DeliveryStatus };
   exceptionCreated?: ExceptionRecord;
   notificationCreated?: PhoneNotification;
 };
@@ -162,6 +162,7 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
         taskId: result.taskUpdated.id,
         status: result.taskUpdated.status,
         exception: result.taskUpdated.exception,
+        deliveryStatus: data.status,
       };
     }
 
