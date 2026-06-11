@@ -778,13 +778,19 @@ export class App {
         });
 
       if (candidates.length === 0) {
-        const hasAreaVolunteers = this.volunteers.some((v) => v.area.trim());
-        const hasCapacity = this.volunteers.some((v) => (currentLoad.get(v.id) || 0) < v.capacity);
+        const matchingVolunteers = this.volunteers.filter((v) => v.area.trim() && elder.address.trim() && elder.address.includes(v.area));
         let reason = '';
-        if (!hasAreaVolunteers) {
+        if (matchingVolunteers.length > 0) {
+          const fullNames = matchingVolunteers
+            .filter((v) => (currentLoad.get(v.id) || 0) >= v.capacity)
+            .map((v) => v.name);
+          if (fullNames.length === matchingVolunteers.length) {
+            reason = `片区匹配的志愿者（${fullNames.join('、')}）均已满载`;
+          } else {
+            reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
+          }
+        } else if (!this.volunteers.some((v) => v.area.trim())) {
           reason = '无志愿者配置片区信息';
-        } else if (!hasCapacity) {
-          reason = '所有志愿者均已满载';
         } else {
           reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
         }
