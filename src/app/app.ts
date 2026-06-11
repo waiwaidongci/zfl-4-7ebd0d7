@@ -296,7 +296,25 @@ export class App {
   }
 
   assignTask(id: string, volunteerId: string) {
-    this.tasks = this.tasks.map((task) => task.id === id ? { ...task, volunteerId, status: volunteerId ? '配送中' : '待分配' } : task);
+    const task = this.tasks.find((t) => t.id === id);
+    const oldVolunteerId = task?.volunteerId;
+    this.tasks = this.tasks.map((t) => t.id === id ? { ...t, volunteerId, status: volunteerId ? '配送中' : '待分配' } : t);
+    const dateSort = this.kanbanSort[this.taskDate];
+    if (dateSort) {
+      if (oldVolunteerId && dateSort[oldVolunteerId]) {
+        dateSort[oldVolunteerId] = dateSort[oldVolunteerId].filter((tid) => tid !== id);
+      }
+      if (volunteerId) {
+        if (!dateSort[volunteerId]) {
+          dateSort[volunteerId] = this.filteredTasks()
+            .filter((t) => t.volunteerId === volunteerId)
+            .map((t) => t.id);
+        } else if (!dateSort[volunteerId].includes(id)) {
+          dateSort[volunteerId].push(id);
+        }
+        this.saveKanbanSort();
+      }
+    }
     this.save();
   }
 
@@ -362,8 +380,11 @@ export class App {
         .map((t) => t.id);
     }
     const list = dateSort[volunteerId];
-    const idx = list.indexOf(taskId);
-    if (idx === -1) return;
+    let idx = list.indexOf(taskId);
+    if (idx === -1) {
+      list.push(taskId);
+      idx = list.length - 1;
+    }
     const target = idx + direction;
     if (target < 0 || target >= list.length) return;
     [list[idx], list[target]] = [list[target], list[idx]];
