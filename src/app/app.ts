@@ -2,10 +2,17 @@ import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
+type MealTag = {
+  id: string;
+  name: string;
+  color: string;
+};
+
 type Elder = {
   id: string;
   name: string;
   preference: string;
+  mealTags: string[];
   address: string;
   contact: string;
   note: string;
@@ -41,6 +48,19 @@ type VisitRecord = {
 
 const today = new Date().toISOString().slice(0, 10);
 
+const PRESET_TAGS: MealTag[] = [
+  { id: 'low-salt', name: '少盐', color: '#4a9f6d' },
+  { id: 'diabetic', name: '糖尿病餐', color: '#d78b63' },
+  { id: 'vegetarian', name: '素食', color: '#6ba36a' },
+  { id: 'soft-food', name: '软饭', color: '#8b7cc4' },
+  { id: 'no-spicy', name: '忌辣', color: '#c75454' },
+];
+
+const TAG_COLORS = [
+  '#4a9f6d', '#d78b63', '#6ba36a', '#8b7cc4', '#c75454',
+  '#5a8fd9', '#d9a84a', '#9a6bd9', '#4aa6a6', '#d97aa6'
+];
+
 type KanbanSortMap = Record<string, Record<string, string[]>>;
 
 type KanbanGroup = {
@@ -71,7 +91,16 @@ type KanbanGroup = {
           <form class="panel" (ngSubmit)="addElder()">
             <h2>维护老人档案</h2>
             <input name="elderName" [(ngModel)]="elderForm.name" placeholder="姓名" />
-            <input name="elderPreference" [(ngModel)]="elderForm.preference" placeholder="餐食偏好" />
+            <input name="elderPreference" [(ngModel)]="elderForm.preference" placeholder="餐食偏好（文字备注）" />
+            <div class="tag-select">
+              <label class="tag-select-label">餐食标签</label>
+              <div class="tag-select-grid">
+                <label class="tag-check" *ngFor="let tag of mealTags">
+                  <input type="checkbox" [checked]="elderForm.mealTags.includes(tag.id)" (change)="toggleElderTag(tag.id)" />
+                  <span>{{ tag.name }}</span>
+                </label>
+              </div>
+            </div>
             <input name="elderAddress" [(ngModel)]="elderForm.address" placeholder="送餐地址" />
             <input name="elderContact" [(ngModel)]="elderForm.contact" placeholder="紧急联系" />
             <input name="elderNote" [(ngModel)]="elderForm.note" placeholder="备注" />
@@ -81,23 +110,77 @@ type KanbanGroup = {
           <section class="panel elder-list-panel">
             <h2>老人列表 <span class="muted sm-label">({{ elders.length }}位)</span></h2>
             <div class="elder-list">
-              <div class="elder-card" *ngFor="let elder of elders" (click)="selectElder(elder.id)" [class.active]="selectedElderId === elder.id">
-                <div class="elder-card-header">
-                  <strong>{{ elder.name }}</strong>
-                  <button type="button" class="ghost sm visit-btn" (click)="$event.stopPropagation(); openVisitPanel(elder.id)">回访</button>
+              <ng-container *ngFor="let elder of elders">
+                <div class="elder-card" *ngIf="editingElderId !== elder.id" (click)="selectElder(elder.id)" [class.active]="selectedElderId === elder.id">
+                  <div class="elder-card-header">
+                    <strong>{{ elder.name }}</strong>
+                    <div class="elder-card-btns">
+                      <button type="button" class="ghost sm visit-btn" (click)="$event.stopPropagation(); startEditElder(elder)">编辑</button>
+                      <button type="button" class="ghost sm visit-btn" (click)="$event.stopPropagation(); openVisitPanel(elder.id)">回访</button>
+                    </div>
+                  </div>
+                  <small>{{ elder.address }}</small>
+                  <div class="tag-row" *ngIf="elderMealTags(elder.id).length > 0">
+                    <span class="tag-chip sm" *ngFor="let tag of elderMealTags(elder.id)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                  </div>
+                  <div class="last-visit" *ngIf="getLastVisit(elder.id)">
+                    <span class="visit-dot"></span>
+                    <span>上次回访：{{ getLastVisit(elder.id)!.visitDate }} · {{ getLastVisit(elder.id)!.visitMethod }}</span>
+                    <p class="visit-summary">{{ summarizeVisit(getLastVisit(elder.id)!) }}</p>
+                  </div>
+                  <div class="last-visit no-visit" *ngIf="!getLastVisit(elder.id)">
+                    <span class="visit-dot no"></span>
+                    <span>暂无回访记录</span>
+                  </div>
                 </div>
-                <small>{{ elder.address }}</small>
-                <div class="last-visit" *ngIf="getLastVisit(elder.id)">
-                  <span class="visit-dot"></span>
-                  <span>上次回访：{{ getLastVisit(elder.id)!.visitDate }} · {{ getLastVisit(elder.id)!.visitMethod }}</span>
-                  <p class="visit-summary">{{ summarizeVisit(getLastVisit(elder.id)!) }}</p>
-                </div>
-                <div class="last-visit no-visit" *ngIf="!getLastVisit(elder.id)">
-                  <span class="visit-dot no"></span>
-                  <span>暂无回访记录</span>
-                </div>
+
+                <form class="elder-card elder-edit-card" *ngIf="editingElderId === elder.id" (ngSubmit)="saveEditElder()" (click)="$event.stopPropagation()">
+                  <div class="elder-card-header">
+                    <strong>编辑：{{ elder.name }}</strong>
+                  </div>
+                  <input [(ngModel)]="elderEditForm.name" name="editElderName" placeholder="姓名" required />
+                  <input [(ngModel)]="elderEditForm.preference" name="editElderPreference" placeholder="餐食偏好（文字备注）" />
+                  <div class="tag-select">
+                    <label class="tag-select-label">餐食标签</label>
+                    <div class="tag-select-grid">
+                      <label class="tag-check" *ngFor="let tag of mealTags">
+                        <input type="checkbox" [checked]="elderEditForm.mealTags.includes(tag.id)" (change)="toggleElderEditTag(tag.id)" />
+                        <span>{{ tag.name }}</span>
+                      </label>
+                    </div>
+                  </div>
+                  <input [(ngModel)]="elderEditForm.address" name="editElderAddress" placeholder="送餐地址" />
+                  <input [(ngModel)]="elderEditForm.contact" name="editElderContact" placeholder="紧急联系" />
+                  <input [(ngModel)]="elderEditForm.note" name="editElderNote" placeholder="备注" />
+                  <div class="elder-edit-actions">
+                    <button type="button" class="ghost" (click)="cancelEditElder()">取消</button>
+                    <button type="submit">保存修改</button>
+                  </div>
+                </form>
+              </ng-container>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>餐食偏好标签</h2>
+            <div class="tag-list">
+              <div class="tag-item" *ngFor="let tag of mealTags">
+                <ng-container *ngIf="editingTagId !== tag.id">
+                  <span class="tag-chip sm" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                  <button type="button" class="ghost sm tag-edit" (click)="startEditTag(tag)">编辑</button>
+                  <button type="button" class="ghost sm tag-del" (click)="removeMealTag(tag.id)" *ngIf="tag.id.startsWith('custom-')">×</button>
+                </ng-container>
+                <ng-container *ngIf="editingTagId === tag.id">
+                  <input class="tag-edit-input" [(ngModel)]="editingTagName" (keyup.enter)="saveEditTag()" (keyup.escape)="cancelEditTag()" />
+                  <button type="button" class="sm tag-save" (click)="saveEditTag()">保存</button>
+                  <button type="button" class="ghost sm" (click)="cancelEditTag()">取消</button>
+                </ng-container>
               </div>
             </div>
+            <form class="tag-add-form" (ngSubmit)="addMealTag()">
+              <input name="newTagName" [(ngModel)]="newTagName" placeholder="新增自定义标签" />
+              <button type="submit">添加</button>
+            </form>
           </section>
 
           <form class="panel" (ngSubmit)="addVolunteer()">
@@ -125,6 +208,9 @@ type KanbanGroup = {
                 <strong>{{ elderName(task.elderId) }}</strong>
                 <span>{{ elderAddress(task.elderId) }}</span>
                 <small>{{ elderPreference(task.elderId) }}</small>
+                <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
+                  <span class="tag-chip" *ngFor="let tag of elderMealTags(task.elderId)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                </div>
               </div>
               <select [ngModel]="task.volunteerId" (ngModelChange)="assignTask(task.id, $event)">
                 <option value="">未分配</option>
@@ -148,6 +234,17 @@ type KanbanGroup = {
               <p><strong>{{ countByStatus('配送中') }}</strong><span>配送中</span></p>
               <p><strong>{{ countByStatus('已送达') }}</strong><span>已送达</span></p>
               <p><strong>{{ countByStatus('异常') }}</strong><span>异常</span></p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>当日餐食标签统计</h2>
+            <div class="tag-stats">
+              <div class="tag-stat-row" *ngFor="let stat of todayTagStats()">
+                <span class="tag-chip" [style.background]="stat.tag.color + '20'" [style.color]="stat.tag.color" [style.borderColor]="stat.tag.color + '50'">{{ stat.tag.name }}</span>
+                <strong>{{ stat.count }}份</strong>
+              </div>
+              <p class="muted" *ngIf="todayTagStats().length === 0">暂无当日任务</p>
             </div>
           </section>
 
@@ -188,6 +285,9 @@ type KanbanGroup = {
                   <strong>{{ elderName(task.elderId) }}</strong>
                   <span>{{ elderAddress(task.elderId) }}</span>
                   <small>{{ elderPreference(task.elderId) }}</small>
+                  <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
+                    <span class="tag-chip sm" *ngFor="let tag of elderMealTags(task.elderId)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                  </div>
                   <p class="kanban-status" [class.warn]="task.status === '异常'">{{ task.status }}</p>
                 </div>
                 <div class="kanban-order-btns">
@@ -210,6 +310,9 @@ type KanbanGroup = {
                   <strong>{{ elderName(task.elderId) }}</strong>
                   <span>{{ elderAddress(task.elderId) }}</span>
                   <small>{{ elderPreference(task.elderId) }}</small>
+                  <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
+                    <span class="tag-chip sm" *ngFor="let tag of elderMealTags(task.elderId)">{{ tag.name }}</span>
+                  </div>
                   <p class="kanban-status">{{ task.status }}</p>
                 </div>
               </div>
@@ -413,13 +516,38 @@ type KanbanGroup = {
     .visit-block p.attention-p { background: #fff7ef; border-color: #f5dfcb; }
     .created-at { display: block; margin-top: 10px; color: #99a593; font-size: 11px; text-align: right; }
     .center { text-align: center; padding: 20px; }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .tag-item { display: flex; align-items: center; gap: 4px; }
+    .tag-del { padding: 2px 6px !important; font-size: 12px !important; line-height: 1; border-radius: 50% !important; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
+    .tag-add-form { display: flex; gap: 8px; }
+    .tag-add-form input { flex: 1; }
+    .tag-chip { display: inline-block; padding: 4px 10px; background: #eef3ea; color: #315448; border-radius: 12px; font-size: 12px; font-weight: 500; white-space: nowrap; border: 1px solid transparent; }
+    .tag-chip.sm { padding: 3px 8px; font-size: 11px; }
+    .tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .tag-select { display: flex; flex-direction: column; gap: 6px; }
+    .tag-select-label { font-size: 13px; font-weight: 500; color: #3d4a38; }
+    .tag-select-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag-check { display: flex; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid #cfd8ca; border-radius: 8px; cursor: pointer; font-size: 13px; background: #fff; transition: all .15s; }
+    .tag-check:has(input:checked) { border-color: #315448; background: #eef3ea; color: #315448; font-weight: 500; }
+    .tag-check input { width: auto; margin: 0; accent-color: #315448; }
+    .tag-stats { display: flex; flex-direction: column; gap: 8px; }
+    .tag-stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #edf0e8; }
+    .tag-stat-row:last-child { border-bottom: 0; }
+    .tag-stat-row strong { font-size: 16px; color: #315448; }
+    .tag-edit { padding: 2px 8px !important; font-size: 11px !important; }
+    .tag-save { padding: 6px 10px !important; font-size: 12px !important; background: #315448 !important; }
+    .tag-edit-input { padding: 6px 8px !important; font-size: 12px !important; min-width: 100px; }
+    .elder-card-btns { display: flex; gap: 6px; }
+    .elder-edit-card { display: flex !important; flex-direction: column; gap: 8px; cursor: default !important; border-color: #315448 !important; background: #f4f7ee !important; }
+    .elder-edit-card input { width: 100%; }
+    .elder-edit-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
   `],
 })
 export class App {
   elders: Elder[] = [
-    { id: crypto.randomUUID(), name: '苏阿姨', preference: '少盐软饭', address: '松桂里3栋201', contact: '女儿13800001111', note: '午餐需敲门等候' },
-    { id: crypto.randomUUID(), name: '何叔叔', preference: '糖尿病餐', address: '松桂里5栋104', contact: '邻居王姐', note: '行动慢，放门口需电话确认' },
-    { id: crypto.randomUUID(), name: '林奶奶', preference: '素食', address: '梧桐巷12号', contact: '儿子13900002222', note: '周三加汤' }
+    { id: crypto.randomUUID(), name: '苏阿姨', preference: '少盐软饭', mealTags: ['low-salt', 'soft-food'], address: '松桂里3栋201', contact: '女儿13800001111', note: '午餐需敲门等候' },
+    { id: crypto.randomUUID(), name: '何叔叔', preference: '糖尿病餐', mealTags: ['diabetic'], address: '松桂里5栋104', contact: '邻居王姐', note: '行动慢，放门口需电话确认' },
+    { id: crypto.randomUUID(), name: '林奶奶', preference: '素食', mealTags: ['vegetarian'], address: '梧桐巷12号', contact: '儿子13900002222', note: '周三加汤' }
   ];
 
   volunteers: Volunteer[] = [
@@ -430,8 +558,16 @@ export class App {
   tasks: MealTask[] = [];
   taskDate = today;
   kanbanSort: KanbanSortMap = {};
-  elderForm: Omit<Elder, 'id'> = { name: '', preference: '', address: '', contact: '', note: '' };
+  elderForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
   volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '' };
+
+  mealTags: MealTag[] = [...PRESET_TAGS];
+  newTagName = '';
+  editingTagId: string | null = null;
+  editingTagName = '';
+
+  editingElderId: string | null = null;
+  elderEditForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
 
   visitRecords: VisitRecord[] = [];
   visitPanelVisible = false;
@@ -454,13 +590,14 @@ export class App {
     this.load();
     this.loadKanbanSort();
     this.loadVisits();
+    this.loadMealTags();
     if (this.tasks.length === 0) this.generateTasks();
   }
 
   addElder() {
     if (!this.elderForm.name.trim()) return;
     this.elders = [{ id: crypto.randomUUID(), ...this.elderForm }, ...this.elders];
-    this.elderForm = { name: '', preference: '', address: '', contact: '', note: '' };
+    this.elderForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
     this.save();
   }
 
@@ -601,7 +738,7 @@ export class App {
     const elders = localStorage.getItem('zfl-4-elders');
     const volunteers = localStorage.getItem('zfl-4-volunteers');
     const tasks = localStorage.getItem('zfl-4-tasks');
-    if (elders) this.elders = JSON.parse(elders);
+    if (elders) this.elders = JSON.parse(elders).map((e: Elder) => ({ ...e, mealTags: e.mealTags || [] }));
     if (volunteers) this.volunteers = JSON.parse(volunteers);
     if (tasks) this.tasks = JSON.parse(tasks);
   }
@@ -677,6 +814,125 @@ export class App {
     if (record.mealFeedback) parts.push('用餐：' + this.truncate(record.mealFeedback, 30));
     if (record.nextAttention) parts.push('关注：' + this.truncate(record.nextAttention, 30));
     return parts.length > 0 ? parts.join(' | ') : '已回访，无特殊记录';
+  }
+
+  addMealTag() {
+    if (!this.newTagName.trim()) return;
+    const id = 'custom-' + crypto.randomUUID().slice(0, 8);
+    const colorIndex = this.mealTags.length % TAG_COLORS.length;
+    this.mealTags = [...this.mealTags, { id, name: this.newTagName.trim(), color: TAG_COLORS[colorIndex] }];
+    this.newTagName = '';
+    this.saveMealTags();
+  }
+
+  startEditTag(tag: MealTag) {
+    this.editingTagId = tag.id;
+    this.editingTagName = tag.name;
+  }
+
+  saveEditTag() {
+    if (!this.editingTagId || !this.editingTagName.trim()) return;
+    this.mealTags = this.mealTags.map((t) =>
+      t.id === this.editingTagId ? { ...t, name: this.editingTagName.trim() } : t
+    );
+    this.editingTagId = null;
+    this.editingTagName = '';
+    this.saveMealTags();
+  }
+
+  cancelEditTag() {
+    this.editingTagId = null;
+    this.editingTagName = '';
+  }
+
+  removeMealTag(id: string) {
+    this.mealTags = this.mealTags.filter((t) => t.id !== id);
+    this.elders = this.elders.map((e) => ({
+      ...e,
+      mealTags: e.mealTags.filter((tid) => tid !== id),
+    }));
+    this.saveMealTags();
+    this.save();
+  }
+
+  toggleElderTag(tagId: string) {
+    const tags = this.elderForm.mealTags;
+    if (tags.includes(tagId)) {
+      this.elderForm = { ...this.elderForm, mealTags: tags.filter((t) => t !== tagId) };
+    } else {
+      this.elderForm = { ...this.elderForm, mealTags: [...tags, tagId] };
+    }
+  }
+
+  startEditElder(elder: Elder) {
+    this.editingElderId = elder.id;
+    this.elderEditForm = {
+      name: elder.name,
+      preference: elder.preference,
+      mealTags: [...(elder.mealTags || [])],
+      address: elder.address,
+      contact: elder.contact,
+      note: elder.note,
+    };
+  }
+
+  toggleElderEditTag(tagId: string) {
+    const tags = this.elderEditForm.mealTags;
+    if (tags.includes(tagId)) {
+      this.elderEditForm = { ...this.elderEditForm, mealTags: tags.filter((t) => t !== tagId) };
+    } else {
+      this.elderEditForm = { ...this.elderEditForm, mealTags: [...tags, tagId] };
+    }
+  }
+
+  saveEditElder() {
+    if (!this.editingElderId || !this.elderEditForm.name.trim()) return;
+    this.elders = this.elders.map((e) =>
+      e.id === this.editingElderId ? { ...e, ...this.elderEditForm } : e
+    );
+    this.cancelEditElder();
+    this.save();
+  }
+
+  cancelEditElder() {
+    this.editingElderId = null;
+    this.elderEditForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
+  }
+
+  elderMealTags(elderId: string): MealTag[] {
+    const elder = this.elders.find((e) => e.id === elderId);
+    if (!elder) return [];
+    return this.mealTags.filter((t) => (elder.mealTags || []).includes(t.id));
+  }
+
+  todayTagStats(): { tag: MealTag; count: number }[] {
+    const todayTasks = this.filteredTasks();
+    const tagCount = new Map<string, number>();
+    for (const task of todayTasks) {
+      const elder = this.elders.find((e) => e.id === task.elderId);
+      if (!elder) continue;
+      for (const tagId of (elder.mealTags || [])) {
+        tagCount.set(tagId, (tagCount.get(tagId) || 0) + 1);
+      }
+    }
+    return this.mealTags
+      .map((tag) => ({ tag, count: tagCount.get(tag.id) || 0 }))
+      .filter((s) => s.count > 0);
+  }
+
+  private saveMealTags() {
+    localStorage.setItem('zfl-4-meal-tags', JSON.stringify(this.mealTags));
+  }
+
+  private loadMealTags() {
+    const raw = localStorage.getItem('zfl-4-meal-tags');
+    if (raw) {
+      const loaded = JSON.parse(raw);
+      this.mealTags = loaded.map((t: MealTag, i: number) => ({
+        ...t,
+        color: t.color || TAG_COLORS[i % TAG_COLORS.length]
+      }));
+    }
   }
 
   private truncate(str: string, max: number): string {
