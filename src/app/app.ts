@@ -109,6 +109,38 @@ type AutoAssignResult = {
   failed: AutoAssignFailure[];
 };
 
+type BackupData = {
+  version: string;
+  exportedAt: string;
+  elders: Elder[];
+  volunteers: Volunteer[];
+  tasks: MealTask[];
+  mealTags: MealTag[];
+  exceptionRecords: ExceptionRecord[];
+  visitRecords: VisitRecord[];
+  kanbanSort: KanbanSortMap;
+};
+
+type ImportPreviewItem<T> = {
+  item: T;
+  status: 'new' | 'duplicate' | 'overwrite';
+};
+
+type ImportPreview = {
+  elders: ImportPreviewItem<Elder>[];
+  volunteers: ImportPreviewItem<Volunteer>[];
+  tasks: ImportPreviewItem<MealTask>[];
+  mealTags: ImportPreviewItem<MealTag>[];
+  exceptionRecords: ImportPreviewItem<ExceptionRecord>[];
+  visitRecords: ImportPreviewItem<VisitRecord>[];
+};
+
+type ImportError = {
+  type: 'parse' | 'validation' | 'empty' | 'unknown';
+  message: string;
+  details?: string[];
+};
+
 @Component({
   selector: 'app-root',
   imports: [CommonModule, FormsModule],
@@ -125,6 +157,7 @@ type AutoAssignResult = {
           <span>{{ todayTasks().length }}个今日任务</span>
           <span>{{ todayUnresolvedExceptions().length }}条异常</span>
         </div>
+        <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
       </header>
 
       <section class="layout">
@@ -669,6 +702,151 @@ type AutoAssignResult = {
           </div>
         </div>
       </div>
+
+      <div class="modal-overlay" *ngIf="importExportPanelVisible" (click)="closeImportExportPanel()">
+        <div class="modal-panel import-export-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>数据导入导出</h2>
+              <p class="muted">备份或恢复老人档案、志愿者、任务等数据</p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeImportExportPanel()">关闭</button>
+          </div>
+
+          <div class="modal-tabs">
+            <button type="button" [class.active-tab]="importTab === 'export'" (click)="importTab = 'export'">📤 导出数据</button>
+            <button type="button" [class.active-tab]="importTab === 'import'" (click)="importTab = 'import'; resetImport()">📥 导入数据</button>
+          </div>
+
+          <div class="modal-body">
+            <div *ngIf="importTab === 'export'" class="export-section">
+              <div class="export-info">
+                <h3>导出当前数据为备份文件</h3>
+                <p class="muted">将以下数据导出为 JSON 格式备份文件：</p>
+                <ul class="export-list">
+                  <li><strong>{{ elders.length }}</strong> 位老人档案</li>
+                  <li><strong>{{ volunteers.length }}</strong> 名志愿者</li>
+                  <li><strong>{{ tasks.length }}</strong> 条送餐任务</li>
+                  <li><strong>{{ mealTags.length }}</strong> 个餐食标签</li>
+                  <li><strong>{{ exceptionRecords.length }}</strong> 条异常记录</li>
+                  <li><strong>{{ visitRecords.length }}</strong> 条回访记录</li>
+                </ul>
+              </div>
+              <button type="button" class="export-btn" (click)="exportData()">📥 导出备份文件</button>
+            </div>
+
+            <div *ngIf="importTab === 'import'" class="import-section">
+              <div *ngIf="!importPreview && !importError && !importSuccess" class="import-upload-area">
+                <div class="upload-icon">📁</div>
+                <h3>选择备份文件</h3>
+                <p class="muted">选择一个 JSON 格式的备份文件进行导入</p>
+                <label class="file-input-label">
+                  <input type="file" accept=".json,application/json" (change)="onFileSelected($event)" hidden />
+                  <span>选择文件</span>
+                </label>
+                <p class="import-tip">💡 导入前会预览数据，不会立即覆盖现有数据</p>
+              </div>
+
+              <div *ngIf="importError" class="import-error">
+                <div class="error-header">
+                  <span class="error-icon">⚠️</span>
+                  <strong>{{ importError.message }}</strong>
+                </div>
+                <ul *ngIf="importError.details" class="error-details">
+                  <li *ngFor="let detail of importError.details">{{ detail }}</li>
+                </ul>
+                <button type="button" class="ghost" (click)="resetImport()">重新选择文件</button>
+              </div>
+
+              <div *ngIf="importSuccess" class="import-success">
+                <div class="success-icon">✅</div>
+                <h3>导入成功！</h3>
+                <p class="muted">数据已成功写入本地存储</p>
+                <button type="button" class="ghost" (click)="resetImport()">继续导入</button>
+              </div>
+
+              <div *ngIf="importPreview && importPreviewSummary" class="import-preview">
+                <div class="preview-header">
+                  <h3>导入预览</h3>
+                  <p class="muted" *ngIf="importedData">导出时间：{{ importedData.exportedAt | date:'yyyy-MM-dd HH:mm' }}</p>
+                </div>
+
+                <div class="preview-legend">
+                  <span class="legend-item"><span class="legend-dot new"></span> 新增</span>
+                  <span class="legend-item"><span class="legend-dot overwrite"></span> 覆盖</span>
+                  <span class="legend-item"><span class="legend-dot duplicate"></span> 重复（无变化）</span>
+                </div>
+
+                <div class="preview-cards">
+                  <div class="preview-card" *ngIf="importPreviewSummary.elders.total > 0">
+                    <h4>👴 老人档案</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.elders.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.elders.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.elders.duplicate }}</span>
+                    </div>
+                  </div>
+
+                  <div class="preview-card" *ngIf="importPreviewSummary.volunteers.total > 0">
+                    <h4>👥 志愿者</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.volunteers.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.volunteers.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.volunteers.duplicate }}</span>
+                    </div>
+                  </div>
+
+                  <div class="preview-card" *ngIf="importPreviewSummary.tasks.total > 0">
+                    <h4>📋 送餐任务</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.tasks.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.tasks.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.tasks.duplicate }}</span>
+                    </div>
+                  </div>
+
+                  <div class="preview-card" *ngIf="importPreviewSummary.mealTags.total > 0">
+                    <h4>🏷️ 餐食标签</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.mealTags.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.mealTags.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.mealTags.duplicate }}</span>
+                    </div>
+                  </div>
+
+                  <div class="preview-card" *ngIf="importPreviewSummary.exceptionRecords.total > 0">
+                    <h4>⚠️ 异常记录</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.exceptionRecords.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.exceptionRecords.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.exceptionRecords.duplicate }}</span>
+                    </div>
+                  </div>
+
+                  <div class="preview-card" *ngIf="importPreviewSummary.visitRecords.total > 0">
+                    <h4>📝 回访记录</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.visitRecords.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.visitRecords.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.visitRecords.duplicate }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="import-warning">
+                  <strong>⚠️ 注意：</strong>
+                  <span>相同 ID 的数据将被覆盖，请确认后再执行导入操作。</span>
+                </div>
+
+                <div class="import-actions">
+                  <button type="button" class="ghost" (click)="resetImport()">取消</button>
+                  <button type="button" class="confirm-btn" (click)="confirmImport()">确认导入</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   `,
   styles: [`
@@ -851,6 +1029,66 @@ type AutoAssignResult = {
     .exc-result-row { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; padding: 8px 10px; background: #f4f7ee; border-radius: 6px; margin-bottom: 6px; }
     .exc-result-row label { font-weight: 600; color: #3d4a38; white-space: nowrap; }
     .exc-result-row span { color: #4a5a45; line-height: 1.5; }
+
+    .import-export-btn { align-self: flex-end; white-space: nowrap; }
+    .import-export-modal { max-width: 720px; }
+    .export-section { display: flex; flex-direction: column; gap: 20px; }
+    .export-info h3 { margin: 0 0 8px; font-size: 16px; color: #315448; }
+    .export-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .export-list li { padding: 10px 14px; background: #f7f8f4; border-radius: 8px; border: 1px solid #e2e7da; }
+    .export-list li strong { font-size: 20px; color: #315448; margin-right: 6px; }
+    .export-btn { padding: 14px 20px; font-size: 16px; background: #315448; }
+    .export-btn:hover { background: #2c4a3f; }
+
+    .import-section { display: flex; flex-direction: column; gap: 16px; }
+    .import-upload-area { text-align: center; padding: 40px 20px; border: 2px dashed #cfd8ca; border-radius: 12px; background: #fbfcf9; }
+    .upload-icon { font-size: 48px; margin-bottom: 12px; }
+    .import-upload-area h3 { margin: 0 0 8px; color: #315448; }
+    .file-input-label { display: inline-block; margin: 16px 0 8px; }
+    .file-input-label span { display: inline-block; padding: 10px 24px; background: #315448; color: #fff; border-radius: 8px; cursor: pointer; }
+    .file-input-label span:hover { background: #2c4a3f; }
+    .import-tip { font-size: 12px; color: #99a593; margin-top: 8px; }
+
+    .import-error { padding: 20px; background: #fff7ef; border: 1px solid #f0d9c4; border-radius: 10px; }
+    .error-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .error-icon { font-size: 20px; }
+    .error-header strong { color: #c75454; font-size: 15px; }
+    .error-details { margin: 0 0 16px; padding-left: 20px; color: #b36a2e; font-size: 13px; }
+    .error-details li { margin-bottom: 4px; }
+
+    .import-success { text-align: center; padding: 40px 20px; }
+    .success-icon { font-size: 56px; margin-bottom: 12px; }
+    .import-success h3 { margin: 0 0 8px; color: #4a9f6d; font-size: 20px; }
+
+    .import-preview { display: flex; flex-direction: column; gap: 16px; }
+    .preview-header { display: flex; justify-content: space-between; align-items: center; }
+    .preview-header h3 { margin: 0; font-size: 16px; color: #315448; }
+    .preview-legend { display: flex; gap: 16px; padding: 10px 14px; background: #f7f8f4; border-radius: 8px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #5a6b53; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .legend-dot.new { background: #4a9f6d; }
+    .legend-dot.overwrite { background: #d9a84a; }
+    .legend-dot.duplicate { background: #99a593; }
+
+    .preview-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .preview-card { padding: 14px; background: #fbfcf9; border: 1px solid #e2e7da; border-radius: 8px; }
+    .preview-card h4 { margin: 0 0 10px; font-size: 14px; color: #315448; }
+    .preview-stats { display: flex; gap: 8px; }
+    .preview-stats .stat { padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; }
+    .preview-stats .stat.new { background: #e8f3ec; color: #4a9f6d; }
+    .preview-stats .stat.overwrite { background: #fdf3e0; color: #b3832a; }
+    .preview-stats .stat.duplicate { background: #eff1ec; color: #8a9783; }
+
+    .import-warning { padding: 12px 16px; background: #fff7ef; border-left: 4px solid #d9a84a; border-radius: 6px; font-size: 13px; color: #8a6a2a; }
+    .import-warning strong { margin-right: 6px; }
+    .import-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 8px; }
+    .confirm-btn { background: #4a9f6d; }
+    .confirm-btn:hover { background: #3e8a5c; }
+
+    @media (max-width: 600px) {
+      .export-list { grid-template-columns: 1fr; }
+      .preview-cards { grid-template-columns: 1fr 1fr; }
+    }
   `],
 })
 export class App {
@@ -912,6 +1150,15 @@ export class App {
   exceptionHistoryVisible = false;
   exceptionHistoryElderId = '';
   exceptionHistoryDate = '';
+
+  importExportPanelVisible = false;
+  importTab: 'export' | 'import' = 'export';
+  importPreview: ImportPreview | null = null;
+  importError: ImportError | null = null;
+  importedData: BackupData | null = null;
+  importSuccess = false;
+
+  private readonly BACKUP_VERSION = '1.0.0';
 
   EXCEPTION_CATEGORIES: ExceptionCategory[] = ['无人应答', '地址错误', '老人拒收', '餐食问题', '配送延误', '老人身体不适', '其他'];
   EXCEPTION_SEVERITIES: ExceptionSeverity[] = ['一般', '较重', '紧急'];
@@ -1519,5 +1766,285 @@ export class App {
   private loadVisits() {
     const raw = localStorage.getItem('zfl-4-visits');
     if (raw) this.visitRecords = JSON.parse(raw);
+  }
+
+  openImportExportPanel() {
+    this.importExportPanelVisible = true;
+    this.importTab = 'export';
+    this.importPreview = null;
+    this.importError = null;
+    this.importedData = null;
+    this.importSuccess = false;
+  }
+
+  closeImportExportPanel() {
+    this.importExportPanelVisible = false;
+  }
+
+  exportData() {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const timestamp = `${dateStr}_${timeStr}`;
+
+    const backup: BackupData = {
+      version: this.BACKUP_VERSION,
+      exportedAt: now.toISOString(),
+      elders: [...this.elders],
+      volunteers: [...this.volunteers],
+      tasks: [...this.tasks],
+      mealTags: [...this.mealTags],
+      exceptionRecords: [...this.exceptionRecords],
+      visitRecords: [...this.visitRecords],
+      kanbanSort: { ...this.kanbanSort }
+    };
+
+    const jsonStr = JSON.stringify(backup, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `zfl-backup-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  onFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    this.importPreview = null;
+    this.importError = null;
+    this.importedData = null;
+    this.importSuccess = false;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const data = JSON.parse(content);
+        this.validateAndPreviewBackup(data);
+      } catch (err) {
+        this.importError = {
+          type: 'parse',
+          message: 'JSON 格式错误',
+          details: ['文件无法解析为有效的 JSON 格式', '请确保选择的是正确的备份文件']
+        };
+      }
+    };
+    reader.onerror = () => {
+      this.importError = {
+        type: 'unknown',
+        message: '文件读取失败',
+        details: ['无法读取选择的文件', '请检查文件是否损坏或权限是否正确']
+      };
+    };
+    reader.readAsText(file);
+    input.value = '';
+  }
+
+  private validateAndPreviewBackup(data: any) {
+    const errors: string[] = [];
+
+    if (!data || typeof data !== 'object') {
+      this.importError = {
+        type: 'validation',
+        message: '备份文件格式无效',
+        details: ['文件内容不是有效的对象']
+      };
+      return;
+    }
+
+    if (!data.version) {
+      errors.push('缺少 version 字段（版本信息）');
+    }
+
+    if (!data.exportedAt) {
+      errors.push('缺少 exportedAt 字段（导出时间）');
+    }
+
+    if (!Array.isArray(data.elders)) {
+      errors.push('缺少 elders 字段或格式不正确');
+    } else {
+      for (let i = 0; i < data.elders.length; i++) {
+        const elder = data.elders[i];
+        if (!elder.id) errors.push(`老人[${i}]: 缺少 id 字段`);
+        if (!elder.name) errors.push(`老人[${i}]: 缺少 name 字段`);
+        if (elder.mealTags && !Array.isArray(elder.mealTags)) {
+          errors.push(`老人[${i}]: mealTags 必须是数组`);
+        }
+      }
+    }
+
+    if (!Array.isArray(data.volunteers)) {
+      errors.push('缺少 volunteers 字段或格式不正确');
+    } else {
+      for (let i = 0; i < data.volunteers.length; i++) {
+        const vol = data.volunteers[i];
+        if (!vol.id) errors.push(`志愿者[${i}]: 缺少 id 字段`);
+        if (!vol.name) errors.push(`志愿者[${i}]: 缺少 name 字段`);
+      }
+    }
+
+    if (!Array.isArray(data.tasks)) {
+      errors.push('缺少 tasks 字段或格式不正确');
+    } else {
+      for (let i = 0; i < data.tasks.length; i++) {
+        const task = data.tasks[i];
+        if (!task.id) errors.push(`任务[${i}]: 缺少 id 字段`);
+        if (!task.elderId) errors.push(`任务[${i}]: 缺少 elderId 字段`);
+        if (!task.date) errors.push(`任务[${i}]: 缺少 date 字段`);
+      }
+    }
+
+    if (data.mealTags && !Array.isArray(data.mealTags)) {
+      errors.push('mealTags 字段格式不正确');
+    }
+
+    if (data.exceptionRecords && !Array.isArray(data.exceptionRecords)) {
+      errors.push('exceptionRecords 字段格式不正确');
+    }
+
+    if (data.visitRecords && !Array.isArray(data.visitRecords)) {
+      errors.push('visitRecords 字段格式不正确');
+    }
+
+    if (errors.length > 0) {
+      this.importError = {
+        type: 'validation',
+        message: '备份文件字段验证失败',
+        details: errors
+      };
+      return;
+    }
+
+    const backup: BackupData = {
+      version: data.version || this.BACKUP_VERSION,
+      exportedAt: data.exportedAt || new Date().toISOString(),
+      elders: data.elders || [],
+      volunteers: data.volunteers || [],
+      tasks: data.tasks || [],
+      mealTags: data.mealTags || [],
+      exceptionRecords: data.exceptionRecords || [],
+      visitRecords: data.visitRecords || [],
+      kanbanSort: data.kanbanSort || {}
+    };
+
+    const totalCount = backup.elders.length + backup.volunteers.length + backup.tasks.length
+      + backup.mealTags.length + backup.exceptionRecords.length + backup.visitRecords.length;
+
+    if (totalCount === 0) {
+      this.importError = {
+        type: 'empty',
+        message: '备份文件为空',
+        details: ['备份文件中没有任何数据', '请选择包含有效数据的备份文件']
+      };
+      return;
+    }
+
+    this.importedData = backup;
+    this.importPreview = this.generateImportPreview(backup);
+  }
+
+  private generateImportPreview(backup: BackupData): ImportPreview {
+    const elderIdMap = new Map(this.elders.map(e => [e.id, e]));
+    const volunteerIdMap = new Map(this.volunteers.map(v => [v.id, v]));
+    const taskIdMap = new Map(this.tasks.map(t => [t.id, t]));
+    const tagIdMap = new Map(this.mealTags.map(t => [t.id, t]));
+    const exceptionIdMap = new Map(this.exceptionRecords.map(r => [r.id, r]));
+    const visitIdMap = new Map(this.visitRecords.map(r => [r.id, r]));
+
+    const classify = <T extends { id: string }>(items: T[], existingMap: Map<string, T>): ImportPreviewItem<T>[] => {
+      return items.map(item => {
+        const existing = existingMap.get(item.id);
+        let status: 'new' | 'duplicate' | 'overwrite' = 'new';
+        if (existing) {
+          status = JSON.stringify(item) === JSON.stringify(existing) ? 'duplicate' : 'overwrite';
+        }
+        return { item, status };
+      });
+    };
+
+    return {
+      elders: classify(backup.elders, elderIdMap),
+      volunteers: classify(backup.volunteers, volunteerIdMap),
+      tasks: classify(backup.tasks, taskIdMap),
+      mealTags: classify(backup.mealTags, tagIdMap),
+      exceptionRecords: classify(backup.exceptionRecords, exceptionIdMap),
+      visitRecords: classify(backup.visitRecords, visitIdMap)
+    };
+  }
+
+  private countImportItemsByStatus<T>(items: ImportPreviewItem<T>[], status: 'new' | 'duplicate' | 'overwrite'): number {
+    return items.filter(i => i.status === status).length;
+  }
+
+  get importPreviewSummary() {
+    if (!this.importPreview) return null;
+    const p = this.importPreview;
+    return {
+      elders: { total: p.elders.length, new: this.countImportItemsByStatus(p.elders, 'new'), duplicate: this.countImportItemsByStatus(p.elders, 'duplicate'), overwrite: this.countImportItemsByStatus(p.elders, 'overwrite') },
+      volunteers: { total: p.volunteers.length, new: this.countImportItemsByStatus(p.volunteers, 'new'), duplicate: this.countImportItemsByStatus(p.volunteers, 'duplicate'), overwrite: this.countImportItemsByStatus(p.volunteers, 'overwrite') },
+      tasks: { total: p.tasks.length, new: this.countImportItemsByStatus(p.tasks, 'new'), duplicate: this.countImportItemsByStatus(p.tasks, 'duplicate'), overwrite: this.countImportItemsByStatus(p.tasks, 'overwrite') },
+      mealTags: { total: p.mealTags.length, new: this.countImportItemsByStatus(p.mealTags, 'new'), duplicate: this.countImportItemsByStatus(p.mealTags, 'duplicate'), overwrite: this.countImportItemsByStatus(p.mealTags, 'overwrite') },
+      exceptionRecords: { total: p.exceptionRecords.length, new: this.countImportItemsByStatus(p.exceptionRecords, 'new'), duplicate: this.countImportItemsByStatus(p.exceptionRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.exceptionRecords, 'overwrite') },
+      visitRecords: { total: p.visitRecords.length, new: this.countImportItemsByStatus(p.visitRecords, 'new'), duplicate: this.countImportItemsByStatus(p.visitRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.visitRecords, 'overwrite') },
+    };
+  }
+
+  confirmImport() {
+    if (!this.importedData || !this.importPreview) return;
+
+    const backup = this.importedData;
+
+    const mergeById = <T extends { id: string }>(existing: T[], incoming: T[]): T[] => {
+      const map = new Map(existing.map(e => [e.id, e]));
+      for (const item of incoming) {
+        map.set(item.id, item);
+      }
+      return Array.from(map.values());
+    };
+
+    this.elders = mergeById(this.elders, backup.elders);
+    this.volunteers = mergeById(this.volunteers, backup.volunteers);
+    this.tasks = mergeById(this.tasks, backup.tasks);
+    this.mealTags = mergeById(this.mealTags, backup.mealTags);
+    this.exceptionRecords = mergeById(this.exceptionRecords, backup.exceptionRecords);
+    this.visitRecords = mergeById(this.visitRecords, backup.visitRecords);
+
+    if (backup.kanbanSort && typeof backup.kanbanSort === 'object') {
+      for (const date of Object.keys(backup.kanbanSort)) {
+        if (!this.kanbanSort[date]) {
+          this.kanbanSort[date] = backup.kanbanSort[date];
+        } else {
+          const existing = this.kanbanSort[date];
+          const incoming = backup.kanbanSort[date];
+          for (const volId of Object.keys(incoming)) {
+            existing[volId] = incoming[volId];
+          }
+        }
+      }
+    }
+
+    this.save();
+    this.saveKanbanSort();
+    this.saveMealTags();
+    this.saveExceptions();
+    this.saveVisits();
+
+    this.importSuccess = true;
+    this.importPreview = null;
+    this.importedData = null;
+  }
+
+  resetImport() {
+    this.importPreview = null;
+    this.importError = null;
+    this.importedData = null;
+    this.importSuccess = false;
   }
 }
