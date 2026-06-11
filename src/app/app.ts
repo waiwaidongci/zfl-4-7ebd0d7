@@ -2174,10 +2174,14 @@ export class App {
   }
 
   private hasUnsavedLocalChanges(): boolean {
-    return this.SYNC_DATA_TYPES.some(t => !this.deepEqual(
+    return this.hasSyncEditingItems() || this.SYNC_DATA_TYPES.some(t => !this.deepEqual(
       this[t as keyof DataSnapshot] as any[],
       this.lastSyncSnapshot[t] as any[]
     ));
+  }
+
+  private hasSyncEditingItems(): boolean {
+    return !!this.editingElderId;
   }
 
   private deepEqual(a: any[], b: any[]): boolean {
@@ -2201,12 +2205,27 @@ export class App {
   }
 
   private buildConflictSummary(remote: DataSnapshot): ConflictSummary {
+    const local = this.getLocalConflictSnapshot();
     return {
-      elders: this.compareArrays(this.elders, remote.elders, this.lastSyncSnapshot.elders, 'elders', (e) => e.name),
-      volunteers: this.compareArrays(this.volunteers, remote.volunteers, this.lastSyncSnapshot.volunteers, 'volunteers', (v) => v.name),
-      tasks: this.compareArrays(this.tasks, remote.tasks, this.lastSyncSnapshot.tasks, 'tasks', (t) => `${this.elderName(t.elderId)}(${t.date})`),
-      exceptionRecords: this.compareArrays(this.exceptionRecords, remote.exceptionRecords, this.lastSyncSnapshot.exceptionRecords, 'exceptionRecords', (e) => `${this.elderName(e.elderId)}·${e.category}`)
+      elders: this.compareArrays(local.elders, remote.elders, this.lastSyncSnapshot.elders, 'elders', (e) => e.name),
+      volunteers: this.compareArrays(local.volunteers, remote.volunteers, this.lastSyncSnapshot.volunteers, 'volunteers', (v) => v.name),
+      tasks: this.compareArrays(local.tasks, remote.tasks, this.lastSyncSnapshot.tasks, 'tasks', (t) => `${this.elderName(t.elderId)}(${t.date})`),
+      exceptionRecords: this.compareArrays(local.exceptionRecords, remote.exceptionRecords, this.lastSyncSnapshot.exceptionRecords, 'exceptionRecords', (e) => `${this.elderName(e.elderId)}·${e.category}`)
     };
+  }
+
+  private getLocalConflictSnapshot(): DataSnapshot {
+    return {
+      elders: this.getEldersWithEditDraft(),
+      volunteers: this.volunteers,
+      tasks: this.tasks,
+      exceptionRecords: this.exceptionRecords
+    };
+  }
+
+  private getEldersWithEditDraft(): Elder[] {
+    if (!this.editingElderId) return this.elders;
+    return this.elders.map(e => e.id === this.editingElderId ? { id: e.id, ...this.elderEditForm } : e);
   }
 
   private compareArrays<T extends { id: string }>(
@@ -2238,7 +2257,8 @@ export class App {
       if (l && r) {
         const localChanged = !b || JSON.stringify(l) !== JSON.stringify(b);
         const remoteChanged = !b || JSON.stringify(r) !== JSON.stringify(b);
-        if (localChanged && remoteChanged && JSON.stringify(l) !== JSON.stringify(r)) {
+        const editingConflict = editing && remoteChanged;
+        if ((localChanged && remoteChanged && JSON.stringify(l) !== JSON.stringify(r)) || editingConflict) {
           const fields = this.findDiffFields(l, r);
           if (fields.length > 0) {
             conflicts.push({ id, label: labelFn(l), type, fields, localOnly: false, remoteOnly: false, isEditing: editing, editingType });
