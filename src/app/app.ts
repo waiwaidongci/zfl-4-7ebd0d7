@@ -1933,20 +1933,19 @@ export class App {
 
   generatePhoneNotificationsForDate(date: string) {
     const dateTasks = this.tasks.filter((t) => t.date === date);
-    const existingNotifications = new Set(
-      this.phoneNotifications
-        .filter((n) => n.date === date)
-        .map((n) => `${n.taskId}-${n.targetType}`)
-    );
+    const dateNotifications = this.phoneNotifications.filter((n) => n.date === date);
     const now = new Date();
     const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const newNotifications: PhoneNotification[] = [];
+    const notificationsToKeep: string[] = [];
 
     for (const task of dateTasks) {
       const elder = this.elders.find((e) => e.id === task.elderId);
       if (elder) {
-        const elderKey = `${task.id}-elder`;
-        if (!existingNotifications.has(elderKey)) {
+        const elderNotif = dateNotifications.find((n) => n.taskId === task.id && n.targetType === 'elder');
+        if (elderNotif) {
+          notificationsToKeep.push(elderNotif.id);
+        } else {
           newNotifications.push({
             id: crypto.randomUUID(),
             date,
@@ -1960,11 +1959,14 @@ export class App {
           });
         }
       }
+
+      const volNotif = dateNotifications.find((n) => n.taskId === task.id && n.targetType === 'volunteer');
       if (task.volunteerId) {
         const volunteer = this.volunteers.find((v) => v.id === task.volunteerId);
         if (volunteer) {
-          const volKey = `${task.id}-volunteer`;
-          if (!existingNotifications.has(volKey)) {
+          if (volNotif && volNotif.targetId === task.volunteerId) {
+            notificationsToKeep.push(volNotif.id);
+          } else {
             newNotifications.push({
               id: crypto.randomUUID(),
               date,
@@ -1980,8 +1982,11 @@ export class App {
         }
       }
     }
-    if (newNotifications.length > 0) {
-      this.phoneNotifications = [...newNotifications, ...this.phoneNotifications];
+
+    const otherDateNotifications = this.phoneNotifications.filter((n) => n.date !== date);
+    const keptDateNotifications = dateNotifications.filter((n) => notificationsToKeep.includes(n.id));
+    this.phoneNotifications = [...newNotifications, ...keptDateNotifications, ...otherDateNotifications];
+    if (newNotifications.length > 0 || keptDateNotifications.length !== dateNotifications.length) {
       this.savePhoneNotifications();
     }
   }
