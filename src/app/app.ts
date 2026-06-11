@@ -65,6 +65,21 @@ type VisitRecord = {
   createdAt: string;
 };
 
+type NotificationStatus = '未通知' | '已通知' | '未接通' | '稍后再拨';
+type NotificationTargetType = 'elder' | 'volunteer';
+
+type PhoneNotification = {
+  id: string;
+  date: string;
+  targetType: NotificationTargetType;
+  targetId: string;
+  phone: string;
+  taskId: string;
+  notificationStatus: NotificationStatus;
+  remark: string;
+  updatedAt: string;
+};
+
 const today = new Date().toISOString().slice(0, 10);
 
 const PRESET_TAGS: MealTag[] = [
@@ -118,6 +133,7 @@ type BackupData = {
   mealTags: MealTag[];
   exceptionRecords: ExceptionRecord[];
   visitRecords: VisitRecord[];
+  phoneNotifications: PhoneNotification[];
   kanbanSort: KanbanSortMap;
 };
 
@@ -133,6 +149,7 @@ type ImportPreview = {
   mealTags: ImportPreviewItem<MealTag>[];
   exceptionRecords: ImportPreviewItem<ExceptionRecord>[];
   visitRecords: ImportPreviewItem<VisitRecord>[];
+  phoneNotifications: ImportPreviewItem<PhoneNotification>[];
 };
 
 type ImportError = {
@@ -452,6 +469,69 @@ type ImportError = {
         </div>
       </section>
 
+      <section class="panel phone-notification-section">
+        <div class="toolbar">
+          <h2>📞 电话通知清单</h2>
+          <div>
+            <input type="date" [(ngModel)]="taskDate" (ngModelChange)="generatePhoneNotificationsForDate(taskDate)" />
+            <button type="button" (click)="generatePhoneNotificationsForDate(taskDate)">刷新清单</button>
+          </div>
+        </div>
+
+        <div class="pn-status-row">
+          <div class="pn-status-item"><strong>{{ notificationCountByStatus('未通知') }}</strong><span>未通知</span></div>
+          <div class="pn-status-item"><strong style="color:#4a9f6d">{{ notificationCountByStatus('已通知') }}</strong><span>已通知</span></div>
+          <div class="pn-status-item"><strong style="color:#c75454">{{ notificationCountByStatus('未接通') }}</strong><span>未接通</span></div>
+          <div class="pn-status-item"><strong style="color:#d9a84a">{{ notificationCountByStatus('稍后再拨') }}</strong><span>稍后再拨</span></div>
+        </div>
+
+        <div class="pn-tabs">
+          <button type="button" [class.active-tab]="phoneNotificationTab === 'all'" (click)="phoneNotificationTab = 'all'">全部 ({{ phoneNotificationsForCurrentDateCount }})</button>
+          <button type="button" [class.active-tab]="phoneNotificationTab === 'elder'" (click)="phoneNotificationTab = 'elder'">👴 老人</button>
+          <button type="button" [class.active-tab]="phoneNotificationTab === 'volunteer'" (click)="phoneNotificationTab = 'volunteer'">👥 志愿者</button>
+        </div>
+
+        <div class="pn-list">
+          <ng-container *ngFor="let n of phoneNotificationsForDate()">
+            <div class="pn-item" [class.pn-pending]="n.notificationStatus === '未通知'" [class.pn-warning]="n.notificationStatus === '未接通' || n.notificationStatus === '稍后再拨'">
+              <div class="pn-item-header">
+                <div class="pn-item-title">
+                  <span class="pn-type-tag" [class.elder-tag]="n.targetType === 'elder'" [class.volunteer-tag]="n.targetType === 'volunteer'">{{ phoneNotificationTargetLabel(n) }}</span>
+                  <strong>{{ phoneNotificationTargetName(n) }}</strong>
+                </div>
+                <span class="pn-status-tag" [style.color]="notificationStatusColor(n.notificationStatus)" [style.borderColor]="notificationStatusColor(n.notificationStatus)">
+                  {{ n.notificationStatus }}
+                </span>
+              </div>
+              <div class="pn-item-meta">
+                <span class="pn-phone">📱 {{ n.phone || '暂无电话' }}</span>
+                <span class="pn-task-status">任务状态：{{ phoneNotificationTaskStatus(n) }}</span>
+              </div>
+              <div class="pn-item-remark" *ngIf="n.remark && editingNotificationId !== n.id">
+                <label>备注：</label>
+                <span>{{ n.remark }}</span>
+              </div>
+              <div class="pn-item-remark-edit" *ngIf="editingNotificationId === n.id">
+                <textarea [(ngModel)]="editingNotificationRemark" rows="2" placeholder="输入简短备注..."></textarea>
+                <div class="pn-remark-actions">
+                  <button type="button" class="ghost sm" (click)="cancelEditNotificationRemark()">取消</button>
+                  <button type="button" class="sm" (click)="saveNotificationRemark(n.id)">保存</button>
+                </div>
+              </div>
+              <div class="pn-item-actions">
+                <button type="button" class="sm" (click)="setNotificationStatus(n.id, '已通知')" [disabled]="n.notificationStatus === '已通知'">✓ 已通知</button>
+                <button type="button" class="sm" style="background:#c75454" (click)="setNotificationStatus(n.id, '未接通')" [disabled]="n.notificationStatus === '未接通'">✗ 未接通</button>
+                <button type="button" class="sm" style="background:#d9a84a" (click)="setNotificationStatus(n.id, '稍后再拨')" [disabled]="n.notificationStatus === '稍后再拨'">⏱ 稍后再拨</button>
+                <button type="button" class="ghost sm" (click)="startEditNotificationRemark(n.id)" *ngIf="editingNotificationId !== n.id">📝 备注</button>
+                <button type="button" class="ghost sm" (click)="setNotificationStatus(n.id, '未通知')" *ngIf="n.notificationStatus !== '未通知'">重置</button>
+              </div>
+              <small class="pn-updated-at">更新于 {{ n.updatedAt }}</small>
+            </div>
+          </ng-container>
+          <p class="muted center" *ngIf="phoneNotificationsForDate().length === 0">暂无电话通知记录，请先生成当日任务</p>
+        </div>
+      </section>
+
       <div class="modal-overlay" *ngIf="visitPanelVisible" (click)="closeVisitPanel()">
         <div class="modal-panel" (click)="$event.stopPropagation()">
           <div class="modal-header">
@@ -730,6 +810,7 @@ type ImportError = {
                   <li><strong>{{ mealTags.length }}</strong> 个餐食标签</li>
                   <li><strong>{{ exceptionRecords.length }}</strong> 条异常记录</li>
                   <li><strong>{{ visitRecords.length }}</strong> 条回访记录</li>
+                  <li><strong>{{ phoneNotifications.length }}</strong> 条电话通知记录</li>
                 </ul>
               </div>
               <button type="button" class="export-btn" (click)="exportData()">📥 导出备份文件</button>
@@ -829,6 +910,15 @@ type ImportError = {
                       <span class="stat new">+{{ importPreviewSummary.visitRecords.new }}</span>
                       <span class="stat overwrite">~{{ importPreviewSummary.visitRecords.overwrite }}</span>
                       <span class="stat duplicate">={{ importPreviewSummary.visitRecords.duplicate }}</span>
+                    </div>
+                  </div>
+
+                  <div class="preview-card" *ngIf="importPreviewSummary.phoneNotifications.total > 0">
+                    <h4>📞 电话通知</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.phoneNotifications.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.phoneNotifications.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.phoneNotifications.duplicate }}</span>
                     </div>
                   </div>
                 </div>
@@ -1089,6 +1179,52 @@ type ImportError = {
       .export-list { grid-template-columns: 1fr; }
       .preview-cards { grid-template-columns: 1fr 1fr; }
     }
+
+    .phone-notification-section { margin-top: 16px; }
+    .pn-status-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+    .pn-status-item { text-align: center; border: 1px solid #e2e7da; border-radius: 8px; padding: 10px 6px; background: #fbfcf9; }
+    .pn-status-item strong { display: block; font-size: 22px; margin-bottom: 2px; color: #315448; }
+    .pn-status-item span { font-size: 12px; color: #65715f; }
+
+    .pn-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid #e8ede1; }
+    .pn-tabs button { background: transparent; color: #65715f; border: 0; padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 14px; }
+    .pn-tabs button.active-tab { color: #315448; border-bottom-color: #315448; font-weight: 600; }
+
+    .pn-list { display: flex; flex-direction: column; gap: 10px; max-height: 600px; overflow-y: auto; }
+    .pn-item { border: 1px solid #e0e6d8; border-radius: 10px; padding: 14px 16px; background: #fbfcf9; position: relative; }
+    .pn-item.pn-pending { border-left: 4px solid #8a9783; }
+    .pn-item.pn-warning { border-left: 4px solid #d9a84a; background: #fffbf3; }
+    .pn-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .pn-item-title { display: flex; align-items: center; gap: 8px; }
+    .pn-item-title strong { font-size: 15px; }
+
+    .pn-type-tag { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .pn-type-tag.elder-tag { background: #eef3ea; color: #315448; border: 1px solid #c4d6ba; }
+    .pn-type-tag.volunteer-tag { background: #f0f5fc; color: #5a8fd9; border: 1px solid #c4d9f0; }
+
+    .pn-status-tag { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; border: 1px solid; background: transparent; }
+
+    .pn-item-meta { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; font-size: 13px; color: #5a6b53; }
+    .pn-phone { font-weight: 600; color: #315448; }
+
+    .pn-item-remark { display: flex; gap: 6px; padding: 8px 10px; background: #fff; border-radius: 6px; border: 1px solid #edf0e8; margin-bottom: 10px; font-size: 13px; }
+    .pn-item-remark label { font-weight: 600; color: #5a6b53; white-space: nowrap; }
+    .pn-item-remark span { color: #3d4a38; line-height: 1.5; flex: 1; }
+
+    .pn-item-remark-edit { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+    .pn-item-remark-edit textarea { width: 100%; border: 1px solid #cfd8ca; border-radius: 8px; padding: 10px; background: #fff; color: #242923; resize: vertical; font-family: inherit; font-size: 13px; }
+    .pn-remark-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+    .pn-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pn-item-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .pn-updated-at { display: block; margin-top: 10px; color: #99a593; font-size: 11px; text-align: right; }
+
+    @media (max-width: 600px) {
+      .pn-status-row { grid-template-columns: repeat(2, 1fr); }
+      .pn-tabs { overflow-x: auto; }
+      .pn-tabs button { white-space: nowrap; }
+    }
   `],
 })
 export class App {
@@ -1151,6 +1287,11 @@ export class App {
   exceptionHistoryElderId = '';
   exceptionHistoryDate = '';
 
+  phoneNotifications: PhoneNotification[] = [];
+  phoneNotificationTab: 'all' | 'elder' | 'volunteer' = 'all';
+  editingNotificationId: string | null = null;
+  editingNotificationRemark: string = '';
+
   importExportPanelVisible = false;
   importTab: 'export' | 'import' = 'export';
   importPreview: ImportPreview | null = null;
@@ -1164,6 +1305,8 @@ export class App {
   EXCEPTION_SEVERITIES: ExceptionSeverity[] = ['一般', '较重', '紧急'];
   EXCEPTION_STATUSES: ExceptionStatus[] = ['待处理', '处理中', '已解决'];
 
+  NOTIFICATION_STATUSES: NotificationStatus[] = ['未通知', '已通知', '未接通', '稍后再拨'];
+
   get selectedElderForVisit(): Elder | undefined {
     return this.elders.find((e) => e.id === this.selectedElderIdForVisit);
   }
@@ -1174,6 +1317,7 @@ export class App {
     this.loadVisits();
     this.loadMealTags();
     this.loadExceptions();
+    this.loadPhoneNotifications();
     if (this.tasks.length === 0) this.generateTasks();
   }
 
@@ -1198,6 +1342,7 @@ export class App {
       .map((elder) => ({ id: crypto.randomUUID(), elderId: elder.id, date: this.taskDate, volunteerId: '', status: '待分配' as const, exception: '' }));
     this.tasks = [...created, ...this.tasks];
     this.save();
+    this.generatePhoneNotificationsForDate(this.taskDate);
   }
 
   filteredTasks() {
@@ -1234,6 +1379,9 @@ export class App {
       }
     }
     this.save();
+    if (volunteerId) {
+      this.generatePhoneNotificationsForDate(this.taskDate);
+    }
   }
 
   autoAssignTasks() {
@@ -1327,6 +1475,7 @@ export class App {
 
     this.autoAssignResult = { assigned, failed };
     this.save();
+    this.generatePhoneNotificationsForDate(this.taskDate);
   }
 
   setStatus(id: string, status: MealTask['status']) {
@@ -1768,6 +1917,152 @@ export class App {
     if (raw) this.visitRecords = JSON.parse(raw);
   }
 
+  private savePhoneNotifications() {
+    localStorage.setItem('zfl-4-phone-notifications', JSON.stringify(this.phoneNotifications));
+  }
+
+  private loadPhoneNotifications() {
+    const raw = localStorage.getItem('zfl-4-phone-notifications');
+    if (raw) this.phoneNotifications = JSON.parse(raw);
+  }
+
+  private extractPhoneNumber(contact: string): string {
+    const match = contact.match(/1[3-9]\d{9}/);
+    return match ? match[0] : contact;
+  }
+
+  generatePhoneNotificationsForDate(date: string) {
+    const dateTasks = this.tasks.filter((t) => t.date === date);
+    const existingNotifications = new Set(
+      this.phoneNotifications
+        .filter((n) => n.date === date)
+        .map((n) => `${n.taskId}-${n.targetType}`)
+    );
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const newNotifications: PhoneNotification[] = [];
+
+    for (const task of dateTasks) {
+      const elder = this.elders.find((e) => e.id === task.elderId);
+      if (elder) {
+        const elderKey = `${task.id}-elder`;
+        if (!existingNotifications.has(elderKey)) {
+          newNotifications.push({
+            id: crypto.randomUUID(),
+            date,
+            targetType: 'elder',
+            targetId: elder.id,
+            phone: this.extractPhoneNumber(elder.contact),
+            taskId: task.id,
+            notificationStatus: '未通知',
+            remark: '',
+            updatedAt: timeStr
+          });
+        }
+      }
+      if (task.volunteerId) {
+        const volunteer = this.volunteers.find((v) => v.id === task.volunteerId);
+        if (volunteer) {
+          const volKey = `${task.id}-volunteer`;
+          if (!existingNotifications.has(volKey)) {
+            newNotifications.push({
+              id: crypto.randomUUID(),
+              date,
+              targetType: 'volunteer',
+              targetId: volunteer.id,
+              phone: volunteer.phone,
+              taskId: task.id,
+              notificationStatus: '未通知',
+              remark: '',
+              updatedAt: timeStr
+            });
+          }
+        }
+      }
+    }
+    if (newNotifications.length > 0) {
+      this.phoneNotifications = [...newNotifications, ...this.phoneNotifications];
+      this.savePhoneNotifications();
+    }
+  }
+
+  phoneNotificationsForDate(): PhoneNotification[] {
+    return this.phoneNotifications
+      .filter((n) => n.date === this.taskDate)
+      .filter((n) => {
+        if (this.phoneNotificationTab === 'all') return true;
+        return n.targetType === this.phoneNotificationTab;
+      })
+      .sort((a, b) => {
+        const statusOrder = { '未通知': 0, '稍后再拨': 1, '未接通': 2, '已通知': 3 };
+        if (statusOrder[a.notificationStatus] !== statusOrder[b.notificationStatus]) {
+          return statusOrder[a.notificationStatus] - statusOrder[b.notificationStatus];
+        }
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+  }
+
+  phoneNotificationTargetName(n: PhoneNotification): string {
+    if (n.targetType === 'elder') {
+      return this.elders.find((e) => e.id === n.targetId)?.name || '未知老人';
+    }
+    return this.volunteers.find((v) => v.id === n.targetId)?.name || '未知志愿者';
+  }
+
+  phoneNotificationTaskStatus(n: PhoneNotification): string {
+    return this.tasks.find((t) => t.id === n.taskId)?.status || '';
+  }
+
+  phoneNotificationTargetLabel(n: PhoneNotification): string {
+    return n.targetType === 'elder' ? '老人' : '志愿者';
+  }
+
+  setNotificationStatus(id: string, status: NotificationStatus) {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.phoneNotifications = this.phoneNotifications.map((n) =>
+      n.id === id ? { ...n, notificationStatus: status, updatedAt: timeStr } : n
+    );
+    this.savePhoneNotifications();
+  }
+
+  startEditNotificationRemark(id: string) {
+    const n = this.phoneNotifications.find((x) => x.id === id);
+    this.editingNotificationId = id;
+    this.editingNotificationRemark = n?.remark || '';
+  }
+
+  saveNotificationRemark(id: string) {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.phoneNotifications = this.phoneNotifications.map((n) =>
+      n.id === id ? { ...n, remark: this.editingNotificationRemark, updatedAt: timeStr } : n
+    );
+    this.editingNotificationId = null;
+    this.editingNotificationRemark = '';
+    this.savePhoneNotifications();
+  }
+
+  cancelEditNotificationRemark() {
+    this.editingNotificationId = null;
+    this.editingNotificationRemark = '';
+  }
+
+  notificationCountByStatus(status: NotificationStatus): number {
+    return this.phoneNotifications.filter((n) => n.date === this.taskDate && n.notificationStatus === status).length;
+  }
+
+  notificationStatusColor(status: NotificationStatus): string {
+    if (status === '已通知') return '#4a9f6d';
+    if (status === '未接通') return '#c75454';
+    if (status === '稍后再拨') return '#d9a84a';
+    return '#8a9783';
+  }
+
+  get phoneNotificationsForCurrentDateCount(): number {
+    return this.phoneNotifications.filter((n) => n.date === this.taskDate).length;
+  }
+
   openImportExportPanel() {
     this.importExportPanelVisible = true;
     this.importTab = 'export';
@@ -1796,6 +2091,7 @@ export class App {
       mealTags: [...this.mealTags],
       exceptionRecords: [...this.exceptionRecords],
       visitRecords: [...this.visitRecords],
+      phoneNotifications: [...this.phoneNotifications],
       kanbanSort: { ...this.kanbanSort }
     };
 
@@ -2037,6 +2333,40 @@ export class App {
       }
     }
 
+    if (data.phoneNotifications !== undefined) {
+      if (!Array.isArray(data.phoneNotifications)) {
+        errors.push('phoneNotifications 字段格式不正确（必须为数组）');
+      } else {
+        const PN_FIELDS: [string, string][] = [
+          ['id', 'string'], ['date', 'string'], ['targetType', 'string'],
+          ['targetId', 'string'], ['phone', 'string'], ['taskId', 'string'],
+          ['notificationStatus', 'string'], ['remark', 'string'], ['updatedAt', 'string']
+        ];
+        const VALID_TARGET_TYPES = ['elder', 'volunteer'];
+        const VALID_STATUSES = ['未通知', '已通知', '未接通', '稍后再拨'];
+        for (let i = 0; i < data.phoneNotifications.length; i++) {
+          const pn = data.phoneNotifications[i];
+          if (!pn || typeof pn !== 'object') {
+            errors.push(`电话通知[${i}]: 不是有效的对象`);
+            continue;
+          }
+          for (const [field, type] of PN_FIELDS) {
+            if (!(field in pn)) {
+              errors.push(`电话通知[${i}]: 缺少 ${field} 字段`);
+            } else if (type === 'string' && typeof pn[field] !== 'string') {
+              errors.push(`电话通知[${i}]: ${field} 应为字符串`);
+            }
+          }
+          if ('targetType' in pn && typeof pn.targetType === 'string' && !VALID_TARGET_TYPES.includes(pn.targetType)) {
+            errors.push(`电话通知[${i}]: targetType 值"${pn.targetType}"无效`);
+          }
+          if ('notificationStatus' in pn && typeof pn.notificationStatus === 'string' && !VALID_STATUSES.includes(pn.notificationStatus)) {
+            errors.push(`电话通知[${i}]: notificationStatus 值"${pn.notificationStatus}"无效`);
+          }
+        }
+      }
+    }
+
     if (errors.length > 0) {
       this.importError = {
         type: 'validation',
@@ -2055,11 +2385,13 @@ export class App {
       mealTags: data.mealTags || [],
       exceptionRecords: data.exceptionRecords || [],
       visitRecords: data.visitRecords || [],
+      phoneNotifications: data.phoneNotifications || [],
       kanbanSort: data.kanbanSort || {}
     };
 
     const totalCount = backup.elders.length + backup.volunteers.length + backup.tasks.length
-      + backup.mealTags.length + backup.exceptionRecords.length + backup.visitRecords.length;
+      + backup.mealTags.length + backup.exceptionRecords.length + backup.visitRecords.length
+      + backup.phoneNotifications.length;
 
     if (totalCount === 0) {
       this.importError = {
@@ -2081,6 +2413,7 @@ export class App {
     const tagIdMap = new Map(this.mealTags.map(t => [t.id, t]));
     const exceptionIdMap = new Map(this.exceptionRecords.map(r => [r.id, r]));
     const visitIdMap = new Map(this.visitRecords.map(r => [r.id, r]));
+    const phoneNotificationIdMap = new Map(this.phoneNotifications.map(r => [r.id, r]));
 
     const classify = <T extends { id: string }>(items: T[], existingMap: Map<string, T>): ImportPreviewItem<T>[] => {
       return items.map(item => {
@@ -2099,7 +2432,8 @@ export class App {
       tasks: classify(backup.tasks, taskIdMap),
       mealTags: classify(backup.mealTags, tagIdMap),
       exceptionRecords: classify(backup.exceptionRecords, exceptionIdMap),
-      visitRecords: classify(backup.visitRecords, visitIdMap)
+      visitRecords: classify(backup.visitRecords, visitIdMap),
+      phoneNotifications: classify(backup.phoneNotifications, phoneNotificationIdMap)
     };
   }
 
@@ -2117,6 +2451,7 @@ export class App {
       mealTags: { total: p.mealTags.length, new: this.countImportItemsByStatus(p.mealTags, 'new'), duplicate: this.countImportItemsByStatus(p.mealTags, 'duplicate'), overwrite: this.countImportItemsByStatus(p.mealTags, 'overwrite') },
       exceptionRecords: { total: p.exceptionRecords.length, new: this.countImportItemsByStatus(p.exceptionRecords, 'new'), duplicate: this.countImportItemsByStatus(p.exceptionRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.exceptionRecords, 'overwrite') },
       visitRecords: { total: p.visitRecords.length, new: this.countImportItemsByStatus(p.visitRecords, 'new'), duplicate: this.countImportItemsByStatus(p.visitRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.visitRecords, 'overwrite') },
+      phoneNotifications: { total: p.phoneNotifications.length, new: this.countImportItemsByStatus(p.phoneNotifications, 'new'), duplicate: this.countImportItemsByStatus(p.phoneNotifications, 'duplicate'), overwrite: this.countImportItemsByStatus(p.phoneNotifications, 'overwrite') },
     };
   }
 
@@ -2167,6 +2502,15 @@ export class App {
       && typeof r.nextAttention === 'string' && typeof r.createdAt === 'string';
   }
 
+  private isValidPhoneNotification(r: any): boolean {
+    return r && typeof r === 'object'
+      && typeof r.id === 'string' && typeof r.date === 'string'
+      && typeof r.targetType === 'string' && typeof r.targetId === 'string'
+      && typeof r.phone === 'string' && typeof r.taskId === 'string'
+      && typeof r.notificationStatus === 'string' && typeof r.remark === 'string'
+      && typeof r.updatedAt === 'string';
+  }
+
   confirmImport() {
     if (!this.importedData || !this.importPreview) return;
 
@@ -2190,6 +2534,9 @@ export class App {
     }
     if (backup.visitRecords.length > 0 && (!Array.isArray(backup.visitRecords) || backup.visitRecords.some((r: any) => !this.isValidVisitRecord(r)))) {
       integrityErrors.push('回访记录数据不完整，存在缺失字段的记录');
+    }
+    if (backup.phoneNotifications.length > 0 && (!Array.isArray(backup.phoneNotifications) || backup.phoneNotifications.some((r: any) => !this.isValidPhoneNotification(r)))) {
+      integrityErrors.push('电话通知记录数据不完整，存在缺失字段的记录');
     }
 
     if (integrityErrors.length > 0) {
@@ -2217,6 +2564,7 @@ export class App {
     this.mealTags = mergeById(this.mealTags, backup.mealTags);
     this.exceptionRecords = mergeById(this.exceptionRecords, backup.exceptionRecords);
     this.visitRecords = mergeById(this.visitRecords, backup.visitRecords);
+    this.phoneNotifications = mergeById(this.phoneNotifications, backup.phoneNotifications);
 
     if (backup.kanbanSort && typeof backup.kanbanSort === 'object') {
       for (const date of Object.keys(backup.kanbanSort)) {
@@ -2237,6 +2585,7 @@ export class App {
     this.saveMealTags();
     this.saveExceptions();
     this.saveVisits();
+    this.savePhoneNotifications();
 
     this.importSuccess = true;
     this.importPreview = null;
