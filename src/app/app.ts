@@ -35,6 +35,25 @@ type MealTask = {
   exception: string;
 };
 
+type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收' | '餐食问题' | '配送延误' | '老人身体不适' | '其他';
+type ExceptionSeverity = '一般' | '较重' | '紧急';
+type ExceptionStatus = '待处理' | '处理中' | '已解决';
+
+type ExceptionRecord = {
+  id: string;
+  taskId: string;
+  elderId: string;
+  date: string;
+  category: ExceptionCategory;
+  severity: ExceptionSeverity;
+  description: string;
+  handler: string;
+  status: ExceptionStatus;
+  result: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type VisitRecord = {
   id: string;
   elderId: string;
@@ -104,7 +123,7 @@ type AutoAssignResult = {
           <span>{{ elders.length }}位老人</span>
           <span>{{ volunteers.length }}名志愿者</span>
           <span>{{ todayTasks().length }}个今日任务</span>
-          <span>{{ exceptionTasks().length }}条异常</span>
+          <span>{{ todayUnresolvedExceptions().length }}条异常</span>
         </div>
       </header>
 
@@ -298,12 +317,35 @@ type AutoAssignResult = {
           </section>
 
           <section class="panel">
-            <h2>异常情况</h2>
-            <article class="exception" *ngFor="let task of exceptionTasks()">
-              <strong>{{ elderName(task.elderId) }}</strong>
-              <span>{{ task.date }} · {{ task.exception }}</span>
-            </article>
-            <p class="muted" *ngIf="exceptionTasks().length === 0">暂无异常</p>
+            <div class="toolbar" style="margin-bottom:12px">
+              <h2>异常处置闭环</h2>
+              <button type="button" class="ghost sm" (click)="openExceptionHistory()">历史查询</button>
+            </div>
+            <div class="exc-status-row">
+              <div class="exc-status-item"><strong>{{ exceptionCountByStatus('待处理') }}</strong><span>待处理</span></div>
+              <div class="exc-status-item"><strong>{{ exceptionCountByStatus('处理中') }}</strong><span>处理中</span></div>
+              <div class="exc-status-item"><strong>{{ exceptionCountByStatus('已解决') }}</strong><span>已解决</span></div>
+            </div>
+            <div class="exc-list">
+              <div class="exc-item" *ngFor="let exc of todayUnresolvedExceptions()">
+                <div class="exc-item-header">
+                  <strong>{{ elderName(exc.elderId) }}</strong>
+                  <span class="exc-severity" [style.color]="severityColor(exc.severity)" [style.borderColor]="severityColor(exc.severity)">{{ exc.severity }}</span>
+                </div>
+                <div class="exc-item-meta">
+                  <span class="exc-category">{{ exc.category }}</span>
+                  <span class="exc-status-tag" [style.color]="statusColor(exc.status)" [style.borderColor]="statusColor(exc.status)">{{ exc.status }}</span>
+                </div>
+                <p class="exc-item-desc">{{ exc.description }}</p>
+                <div class="exc-item-handler" *ngIf="exc.handler"><span>负责人：{{ exc.handler }}</span></div>
+                <div class="exc-item-actions">
+                  <button type="button" class="ghost sm" *ngIf="exc.status === '待处理'" (click)="updateExceptionStatus(exc.id, '处理中')">开始处理</button>
+                  <button type="button" class="sm" *ngIf="exc.status === '处理中'" (click)="updateExceptionStatus(exc.id, '已解决')">标记已解决</button>
+                  <button type="button" class="ghost sm" *ngIf="exc.status === '处理中'" (click)="updateExceptionStatus(exc.id, '待处理')">退回待处理</button>
+                </div>
+              </div>
+              <p class="muted" *ngIf="todayUnresolvedExceptions().length === 0">当日暂无待处理异常</p>
+            </div>
           </section>
 
           <section class="panel">
@@ -476,6 +518,157 @@ type AutoAssignResult = {
           </div>
         </div>
       </div>
+
+      <div class="modal-overlay" *ngIf="exceptionPanelVisible" (click)="closeExceptionPanel()">
+        <div class="modal-panel exc-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>异常处置闭环</h2>
+              <p class="muted" *ngIf="exceptionFormTaskId">
+                {{ exceptionFormElderName() }} · {{ exceptionFormDate() }}
+              </p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeExceptionPanel()">关闭</button>
+          </div>
+
+          <div class="modal-tabs">
+            <button type="button" [class.active-tab]="exceptionPanelTab === 'form'" (click)="exceptionPanelTab = 'form'">登记异常</button>
+            <button type="button" [class.active-tab]="exceptionPanelTab === 'list'" (click)="exceptionPanelTab = 'list'">
+              异常列表
+              <span class="badge" *ngIf="exceptionRecords.length > 0">{{ exceptionRecords.length }}</span>
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <form *ngIf="exceptionPanelTab === 'form'" class="exc-form" (ngSubmit)="submitException()">
+              <div class="form-row">
+                <label>异常分类</label>
+                <div class="method-group">
+                  <label class="method-item" *ngFor="let cat of EXCEPTION_CATEGORIES">
+                    <input type="radio" name="excCategory" [(ngModel)]="exceptionForm.category" [value]="cat" />
+                    <span>{{ cat }}</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-row">
+                <label>严重程度</label>
+                <div class="method-group">
+                  <label class="method-item" *ngFor="let sev of EXCEPTION_SEVERITIES">
+                    <input type="radio" name="excSeverity" [(ngModel)]="exceptionForm.severity" [value]="sev" />
+                    <span>{{ sev }}</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-row">
+                <label>异常描述</label>
+                <textarea name="excDesc" [(ngModel)]="exceptionForm.description" rows="3" placeholder="请详细描述异常情况..."></textarea>
+              </div>
+              <div class="form-row">
+                <label>处理负责人</label>
+                <input name="excHandler" [(ngModel)]="exceptionForm.handler" placeholder="请输入负责人姓名" />
+              </div>
+              <div class="form-actions">
+                <button type="submit">提交异常</button>
+              </div>
+            </form>
+
+            <div *ngIf="exceptionPanelTab === 'list'" class="exc-modal-list">
+              <div class="exc-filter-bar">
+                <select [(ngModel)]="exceptionListFilter">
+                  <option value="全部">全部状态</option>
+                  <option *ngFor="let s of EXCEPTION_STATUSES" [value]="s">{{ s }}</option>
+                </select>
+                <input type="date" [(ngModel)]="exceptionListDate" placeholder="日期筛选" />
+                <select [(ngModel)]="exceptionListElderId">
+                  <option value="">全部老人</option>
+                  <option *ngFor="let e of elders" [value]="e.id">{{ e.name }}</option>
+                </select>
+              </div>
+              <div class="exc-modal-items">
+                <div class="exc-modal-item" *ngFor="let exc of filteredExceptionRecords()">
+                  <div class="exc-modal-item-header">
+                    <div>
+                      <strong>{{ elderName(exc.elderId) }}</strong>
+                      <span class="exc-date">{{ exc.date }}</span>
+                    </div>
+                    <div class="exc-modal-item-tags">
+                      <span class="exc-severity" [style.color]="severityColor(exc.severity)" [style.borderColor]="severityColor(exc.severity)">{{ exc.severity }}</span>
+                      <span class="exc-status-tag" [style.color]="statusColor(exc.status)" [style.borderColor]="statusColor(exc.status)">{{ exc.status }}</span>
+                    </div>
+                  </div>
+                  <div class="exc-modal-item-meta">
+                    <span class="exc-category">{{ exc.category }}</span>
+                    <span *ngIf="exc.handler">负责人：{{ exc.handler }}</span>
+                  </div>
+                  <p class="exc-modal-item-desc">{{ exc.description }}</p>
+                  <div class="exc-result-row" *ngIf="exc.result">
+                    <label>处理结果：</label>
+                    <span>{{ exc.result }}</span>
+                  </div>
+                  <div class="exc-modal-item-actions">
+                    <button type="button" class="ghost sm" *ngIf="exc.status === '待处理'" (click)="updateExceptionStatus(exc.id, '处理中')">开始处理</button>
+                    <button type="button" class="sm" *ngIf="exc.status === '处理中'" (click)="updateExceptionStatus(exc.id, '已解决')">标记已解决</button>
+                    <button type="button" class="ghost sm" *ngIf="exc.status === '处理中'" (click)="updateExceptionStatus(exc.id, '待处理')">退回待处理</button>
+                    <ng-container *ngIf="exc.status === '处理中' || exc.status === '已解决'">
+                      <input class="exc-result-input" #resultInput placeholder="填写处理结果" [value]="exc.result" />
+                      <button type="button" class="ghost sm" (click)="updateExceptionResult(exc.id, resultInput.value); resultInput.value = ''">保存结果</button>
+                    </ng-container>
+                    <button type="button" class="ghost sm tag-del" (click)="deleteException(exc.id)">删除</button>
+                  </div>
+                  <small class="created-at">更新于 {{ exc.updatedAt }}</small>
+                </div>
+                <p class="muted center" *ngIf="filteredExceptionRecords().length === 0">暂无匹配的异常记录</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" *ngIf="exceptionHistoryVisible" (click)="closeExceptionHistory()">
+        <div class="modal-panel exc-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>历史异常查询</h2>
+              <p class="muted">按老人和日期筛选历史异常记录（含已解决）</p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeExceptionHistory()">关闭</button>
+          </div>
+          <div class="modal-body">
+            <div class="exc-filter-bar">
+              <input type="date" [(ngModel)]="exceptionHistoryDate" placeholder="日期筛选" />
+              <select [(ngModel)]="exceptionHistoryElderId">
+                <option value="">全部老人</option>
+                <option *ngFor="let e of elders" [value]="e.id">{{ e.name }}</option>
+              </select>
+            </div>
+            <div class="exc-modal-items">
+              <div class="exc-modal-item" *ngFor="let exc of historyExceptionRecords()">
+                <div class="exc-modal-item-header">
+                  <div>
+                    <strong>{{ elderName(exc.elderId) }}</strong>
+                    <span class="exc-date">{{ exc.date }}</span>
+                  </div>
+                  <div class="exc-modal-item-tags">
+                    <span class="exc-severity" [style.color]="severityColor(exc.severity)" [style.borderColor]="severityColor(exc.severity)">{{ exc.severity }}</span>
+                    <span class="exc-status-tag" [style.color]="statusColor(exc.status)" [style.borderColor]="statusColor(exc.status)">{{ exc.status }}</span>
+                  </div>
+                </div>
+                <div class="exc-modal-item-meta">
+                  <span class="exc-category">{{ exc.category }}</span>
+                  <span *ngIf="exc.handler">负责人：{{ exc.handler }}</span>
+                </div>
+                <p class="exc-modal-item-desc">{{ exc.description }}</p>
+                <div class="exc-result-row" *ngIf="exc.result">
+                  <label>处理结果：</label>
+                  <span>{{ exc.result }}</span>
+                </div>
+                <small class="created-at">更新于 {{ exc.updatedAt }}</small>
+              </div>
+              <p class="muted center" *ngIf="historyExceptionRecords().length === 0">暂无匹配的历史异常记录</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   `,
   styles: [`
@@ -625,6 +818,39 @@ type AutoAssignResult = {
     .elder-edit-card { display: flex !important; flex-direction: column; gap: 8px; cursor: default !important; border-color: #315448 !important; background: #f4f7ee !important; }
     .elder-edit-card input { width: 100%; }
     .elder-edit-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+    .exc-status-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .exc-status-item { text-align: center; border: 1px solid #e2e7da; border-radius: 8px; padding: 10px 6px; background: #fbfcf9; }
+    .exc-status-item strong { display: block; font-size: 22px; margin-bottom: 2px; }
+    .exc-status-item span { font-size: 12px; color: #65715f; }
+    .exc-list { display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto; }
+    .exc-item { border: 1px solid #e0e6d8; border-radius: 8px; padding: 12px; background: #fbfcf9; }
+    .exc-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .exc-item-header strong { font-size: 14px; }
+    .exc-item-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: #65715f; }
+    .exc-item-desc { margin: 0 0 6px; font-size: 13px; color: #3d4a38; line-height: 1.5; }
+    .exc-item-handler { font-size: 12px; color: #5a8fd9; margin-bottom: 6px; }
+    .exc-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .exc-severity, .exc-status-tag, .exc-category { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; border: 1px solid; }
+    .exc-severity { background: transparent; }
+    .exc-status-tag { background: transparent; }
+    .exc-category { background: #f0f5fc; color: #5a8fd9; border-color: #c4d9f0; }
+    .exc-modal { max-width: 700px; }
+    .exc-form { display: flex; flex-direction: column; gap: 16px; }
+    .exc-filter-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .exc-filter-bar select, .exc-filter-bar input { flex: 1; min-width: 120px; padding: 8px 10px; font-size: 13px; }
+    .exc-modal-items { display: flex; flex-direction: column; gap: 12px; }
+    .exc-modal-item { border: 1px solid #e0e6d8; border-radius: 10px; padding: 14px 16px; background: #fbfcf9; }
+    .exc-modal-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #e0e6d8; }
+    .exc-modal-item-header strong { font-size: 15px; margin-right: 8px; }
+    .exc-date { font-size: 12px; color: #65715f; margin-left: 6px; }
+    .exc-modal-item-tags { display: flex; gap: 6px; align-items: center; }
+    .exc-modal-item-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; color: #65715f; }
+    .exc-modal-item-desc { margin: 0 0 8px; font-size: 14px; line-height: 1.6; color: #3d4a38; padding: 8px 10px; background: #fff; border-radius: 6px; border: 1px solid #edf0e8; }
+    .exc-modal-item-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+    .exc-result-input { flex: 1; min-width: 140px; padding: 6px 8px !important; font-size: 12px !important; }
+    .exc-result-row { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; padding: 8px 10px; background: #f4f7ee; border-radius: 6px; margin-bottom: 6px; }
+    .exc-result-row label { font-weight: 600; color: #3d4a38; white-space: nowrap; }
+    .exc-result-row span { color: #4a5a45; line-height: 1.5; }
   `],
 })
 export class App {
@@ -668,6 +894,29 @@ export class App {
 
   autoAssignResult: AutoAssignResult | null = null;
 
+  exceptionRecords: ExceptionRecord[] = [];
+  exceptionPanelVisible = false;
+  exceptionPanelTab: 'form' | 'list' = 'form';
+  exceptionFormTaskId: string = '';
+  exceptionForm: Omit<ExceptionRecord, 'id' | 'taskId' | 'elderId' | 'date' | 'createdAt' | 'updatedAt'> = {
+    category: '无人应答',
+    severity: '一般',
+    description: '',
+    handler: '',
+    status: '待处理',
+    result: ''
+  };
+  exceptionListFilter: ExceptionStatus | '全部' = '全部';
+  exceptionListDate = '';
+  exceptionListElderId = '';
+  exceptionHistoryVisible = false;
+  exceptionHistoryElderId = '';
+  exceptionHistoryDate = '';
+
+  EXCEPTION_CATEGORIES: ExceptionCategory[] = ['无人应答', '地址错误', '老人拒收', '餐食问题', '配送延误', '老人身体不适', '其他'];
+  EXCEPTION_SEVERITIES: ExceptionSeverity[] = ['一般', '较重', '紧急'];
+  EXCEPTION_STATUSES: ExceptionStatus[] = ['待处理', '处理中', '已解决'];
+
   get selectedElderForVisit(): Elder | undefined {
     return this.elders.find((e) => e.id === this.selectedElderIdForVisit);
   }
@@ -677,6 +926,7 @@ export class App {
     this.loadKanbanSort();
     this.loadVisits();
     this.loadMealTags();
+    this.loadExceptions();
     if (this.tasks.length === 0) this.generateTasks();
   }
 
@@ -712,7 +962,8 @@ export class App {
   }
 
   exceptionTasks() {
-    return this.tasks.filter((task) => task.status === '异常');
+    const resolvedTaskIds = new Set(this.exceptionRecords.filter((r) => r.status === '已解决').map((r) => r.taskId));
+    return this.tasks.filter((task) => task.status === '异常' && !resolvedTaskIds.has(task.id));
   }
 
   assignTask(id: string, volunteerId: string) {
@@ -836,10 +1087,144 @@ export class App {
     this.save();
   }
 
-  recordException(id: string) {
-    const exception = prompt('记录异常情况', '地址无人应答') || '未填写异常';
-    this.tasks = this.tasks.map((task) => task.id === id ? { ...task, status: '异常', exception } : task);
+  recordException(taskId: string) {
+    const task = this.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    this.exceptionFormTaskId = taskId;
+    this.exceptionForm = {
+      category: '无人应答',
+      severity: '一般',
+      description: task.exception || '',
+      handler: '',
+      status: '待处理',
+      result: ''
+    };
+    this.exceptionPanelTab = 'form';
+    this.exceptionPanelVisible = true;
+  }
+
+  closeExceptionPanel() {
+    this.exceptionPanelVisible = false;
+  }
+
+  submitException() {
+    const task = this.tasks.find((t) => t.id === this.exceptionFormTaskId);
+    if (!task) return;
+    if (!this.exceptionForm.description.trim()) return;
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const record: ExceptionRecord = {
+      id: crypto.randomUUID(),
+      taskId: this.exceptionFormTaskId,
+      elderId: task.elderId,
+      date: task.date,
+      ...this.exceptionForm,
+      createdAt: timeStr,
+      updatedAt: timeStr
+    };
+    this.exceptionRecords = [record, ...this.exceptionRecords];
+    this.tasks = this.tasks.map((t) =>
+      t.id === this.exceptionFormTaskId ? { ...t, status: '异常' as const, exception: this.exceptionForm.description } : t
+    );
+    this.saveExceptions();
     this.save();
+    this.exceptionPanelTab = 'list';
+  }
+
+  updateExceptionStatus(recordId: string, newStatus: ExceptionStatus) {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.exceptionRecords = this.exceptionRecords.map((r) =>
+      r.id === recordId ? { ...r, status: newStatus, updatedAt: timeStr } : r
+    );
+    if (newStatus === '已解决') {
+      const record = this.exceptionRecords.find((r) => r.id === recordId);
+      if (record) {
+        this.tasks = this.tasks.map((t) =>
+          t.id === record.taskId && t.status === '异常' ? { ...t, status: '已送达' as const, exception: '' } : t
+        );
+        this.save();
+      }
+    }
+    this.saveExceptions();
+  }
+
+  updateExceptionResult(recordId: string, result: string) {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.exceptionRecords = this.exceptionRecords.map((r) =>
+      r.id === recordId ? { ...r, result, updatedAt: timeStr } : r
+    );
+    this.saveExceptions();
+  }
+
+  deleteException(recordId: string) {
+    if (!confirm('确认删除此异常记录？')) return;
+    this.exceptionRecords = this.exceptionRecords.filter((r) => r.id !== recordId);
+    this.saveExceptions();
+  }
+
+  openExceptionHistory() {
+    this.exceptionHistoryVisible = true;
+  }
+
+  closeExceptionHistory() {
+    this.exceptionHistoryVisible = false;
+  }
+
+  filteredExceptionRecords(): ExceptionRecord[] {
+    let records = [...this.exceptionRecords];
+    if (this.exceptionListFilter !== '全部') {
+      records = records.filter((r) => r.status === this.exceptionListFilter);
+    }
+    if (this.exceptionListDate) {
+      records = records.filter((r) => r.date === this.exceptionListDate);
+    }
+    if (this.exceptionListElderId) {
+      records = records.filter((r) => r.elderId === this.exceptionListElderId);
+    }
+    return records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  historyExceptionRecords(): ExceptionRecord[] {
+    let records = [...this.exceptionRecords];
+    if (this.exceptionHistoryDate) {
+      records = records.filter((r) => r.date === this.exceptionHistoryDate);
+    }
+    if (this.exceptionHistoryElderId) {
+      records = records.filter((r) => r.elderId === this.exceptionHistoryElderId);
+    }
+    return records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  exceptionCountByStatus(status: ExceptionStatus): number {
+    return this.exceptionRecords.filter((r) => r.date === this.taskDate && r.status === status).length;
+  }
+
+  todayUnresolvedExceptions(): ExceptionRecord[] {
+    return this.exceptionRecords.filter((r) => r.date === today && r.status !== '已解决');
+  }
+
+  severityColor(severity: ExceptionSeverity): string {
+    if (severity === '紧急') return '#c75454';
+    if (severity === '较重') return '#d9a84a';
+    return '#4a9f6d';
+  }
+
+  statusColor(status: ExceptionStatus): string {
+    if (status === '已解决') return '#4a9f6d';
+    if (status === '处理中') return '#5a8fd9';
+    return '#c75454';
+  }
+
+  exceptionFormElderName(): string {
+    const task = this.tasks.find((t) => t.id === this.exceptionFormTaskId);
+    return task ? this.elderName(task.elderId) : '';
+  }
+
+  exceptionFormDate(): string {
+    const task = this.tasks.find((t) => t.id === this.exceptionFormTaskId);
+    return task ? task.date : '';
   }
 
   countByStatus(status: MealTask['status']) {
@@ -1116,6 +1501,15 @@ export class App {
 
   private truncate(str: string, max: number): string {
     return str.length > max ? str.slice(0, max) + '…' : str;
+  }
+
+  private saveExceptions() {
+    localStorage.setItem('zfl-4-exceptions', JSON.stringify(this.exceptionRecords));
+  }
+
+  private loadExceptions() {
+    const raw = localStorage.getItem('zfl-4-exceptions');
+    if (raw) this.exceptionRecords = JSON.parse(raw);
   }
 
   private saveVisits() {
