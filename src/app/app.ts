@@ -28,6 +28,17 @@ type MealTask = {
   exception: string;
 };
 
+type VisitRecord = {
+  id: string;
+  elderId: string;
+  visitDate: string;
+  visitMethod: '电话' | '上门' | '视频' | '其他';
+  healthFeedback: string;
+  mealFeedback: string;
+  nextAttention: string;
+  createdAt: string;
+};
+
 const today = new Date().toISOString().slice(0, 10);
 
 type KanbanSortMap = Record<string, Record<string, string[]>>;
@@ -66,6 +77,28 @@ type KanbanGroup = {
             <input name="elderNote" [(ngModel)]="elderForm.note" placeholder="备注" />
             <button>保存老人</button>
           </form>
+
+          <section class="panel elder-list-panel">
+            <h2>老人列表 <span class="muted sm-label">({{ elders.length }}位)</span></h2>
+            <div class="elder-list">
+              <div class="elder-card" *ngFor="let elder of elders" (click)="selectElder(elder.id)" [class.active]="selectedElderId === elder.id">
+                <div class="elder-card-header">
+                  <strong>{{ elder.name }}</strong>
+                  <button type="button" class="ghost sm visit-btn" (click)="$event.stopPropagation(); openVisitPanel(elder.id)">回访</button>
+                </div>
+                <small>{{ elder.address }}</small>
+                <div class="last-visit" *ngIf="getLastVisit(elder.id)">
+                  <span class="visit-dot"></span>
+                  <span>上次回访：{{ getLastVisit(elder.id)!.visitDate }} · {{ getLastVisit(elder.id)!.visitMethod }}</span>
+                  <p class="visit-summary">{{ summarizeVisit(getLastVisit(elder.id)!) }}</p>
+                </div>
+                <div class="last-visit no-visit" *ngIf="!getLastVisit(elder.id)">
+                  <span class="visit-dot no"></span>
+                  <span>暂无回访记录</span>
+                </div>
+              </div>
+            </div>
+          </section>
 
           <form class="panel" (ngSubmit)="addVolunteer()">
             <h2>维护志愿者</h2>
@@ -185,6 +218,106 @@ type KanbanGroup = {
           </div>
         </div>
       </section>
+
+      <div class="modal-overlay" *ngIf="visitPanelVisible" (click)="closeVisitPanel()">
+        <div class="modal-panel" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>老人回访记录</h2>
+              <p class="muted" *ngIf="selectedElderForVisit">
+                {{ selectedElderForVisit.name }} · {{ selectedElderForVisit.address }}
+              </p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeVisitPanel()">关闭</button>
+          </div>
+
+          <div class="modal-tabs">
+            <button type="button" [class.active-tab]="visitTab === 'form'" (click)="visitTab = 'form'">新增回访</button>
+            <button type="button" [class.active-tab]="visitTab === 'history'" (click)="visitTab = 'history'">
+              历史记录
+              <span class="badge" *ngIf="getElderVisits(selectedElderIdForVisit).length > 0">
+                {{ getElderVisits(selectedElderIdForVisit).length }}
+              </span>
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <form *ngIf="visitTab === 'form'" class="visit-form" (ngSubmit)="submitVisit()">
+              <div class="form-row">
+                <label>回访日期</label>
+                <input type="date" name="visitDate" [(ngModel)]="visitForm.visitDate" required />
+              </div>
+              <div class="form-row">
+                <label>回访方式</label>
+                <div class="method-group">
+                  <label class="method-item">
+                    <input type="radio" name="visitMethod" [(ngModel)]="visitForm.visitMethod" value="电话" />
+                    <span>电话</span>
+                  </label>
+                  <label class="method-item">
+                    <input type="radio" name="visitMethod" [(ngModel)]="visitForm.visitMethod" value="上门" />
+                    <span>上门</span>
+                  </label>
+                  <label class="method-item">
+                    <input type="radio" name="visitMethod" [(ngModel)]="visitForm.visitMethod" value="视频" />
+                    <span>视频</span>
+                  </label>
+                  <label class="method-item">
+                    <input type="radio" name="visitMethod" [(ngModel)]="visitForm.visitMethod" value="其他" />
+                    <span>其他</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-row">
+                <label>健康状况反馈</label>
+                <textarea name="healthFeedback" [(ngModel)]="visitForm.healthFeedback" rows="3" placeholder="如：精神状态良好，血压稳定，近期无不适..."></textarea>
+              </div>
+              <div class="form-row">
+                <label>用餐情况反馈</label>
+                <textarea name="mealFeedback" [(ngModel)]="visitForm.mealFeedback" rows="3" placeholder="如：饭菜合口味，饭量正常，建议增加汤品..."></textarea>
+              </div>
+              <div class="form-row">
+                <label>下次关注事项</label>
+                <textarea name="nextAttention" [(ngModel)]="visitForm.nextAttention" rows="3" placeholder="如：下周提醒复诊，关注血糖变化..."></textarea>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="ghost" (click)="resetVisitForm()">重置</button>
+                <button type="submit">保存回访记录</button>
+              </div>
+            </form>
+
+            <div *ngIf="visitTab === 'history'" class="visit-history">
+              <div class="visit-history-item" *ngFor="let record of getElderVisits(selectedElderIdForVisit)">
+                <div class="visit-history-header">
+                  <div>
+                    <strong>{{ record.visitDate }}</strong>
+                    <span class="method-tag">{{ record.visitMethod }}</span>
+                  </div>
+                  <button type="button" class="ghost sm" (click)="deleteVisit(record.id)">删除</button>
+                </div>
+                <div class="visit-history-content">
+                  <div class="visit-block" *ngIf="record.healthFeedback">
+                    <label>健康反馈</label>
+                    <p>{{ record.healthFeedback }}</p>
+                  </div>
+                  <div class="visit-block" *ngIf="record.mealFeedback">
+                    <label>用餐反馈</label>
+                    <p>{{ record.mealFeedback }}</p>
+                  </div>
+                  <div class="visit-block" *ngIf="record.nextAttention">
+                    <label class="attention">下次关注</label>
+                    <p class="attention-p">{{ record.nextAttention }}</p>
+                  </div>
+                </div>
+                <small class="created-at">记录于 {{ record.createdAt }}</small>
+              </div>
+              <p class="muted center" *ngIf="getElderVisits(selectedElderIdForVisit).length === 0">
+                暂无回访记录，点击上方"新增回访"开始记录
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   `,
   styles: [`
@@ -234,6 +367,52 @@ type KanbanGroup = {
     .kanban-order-btns { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
     .sm { padding: 4px 8px; font-size: 13px; }
     .sm:disabled { opacity: .3; cursor: default; }
+    .sm-label { font-size: 13px; font-weight: normal; }
+    .elder-list-panel h2 { display: flex; align-items: center; gap: 6px; }
+    .elder-list { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; }
+    .elder-card { border: 1px solid #e0e6d8; border-radius: 8px; padding: 12px; background: #fbfcf9; cursor: pointer; transition: all .15s; }
+    .elder-card:hover { border-color: #b8c7a8; background: #f4f7ee; }
+    .elder-card.active { border-color: #315448; background: #eef3ea; }
+    .elder-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .elder-card small { display: block; color: #65715f; margin-bottom: 8px; }
+    .visit-btn { white-space: nowrap; }
+    .last-visit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: #65715f; border-top: 1px solid #e8ede1; padding-top: 8px; }
+    .last-visit.no-visit { color: #99a593; }
+    .visit-dot { width: 8px; height: 8px; border-radius: 50%; background: #4a9f6d; flex-shrink: 0; }
+    .visit-dot.no { background: #c4cdbd; }
+    .visit-summary { flex-basis: 100%; margin: 4px 0 0; padding: 6px 8px; background: #f4f7ee; border-radius: 6px; font-size: 12px; color: #4a5a45; line-height: 1.5; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(36, 41, 35, .45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+    .modal-panel { background: #fff; border-radius: 12px; width: 100%; max-width: 620px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 30px 80px rgba(36, 41, 35, .25); }
+    .modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 20px 22px 16px; border-bottom: 1px solid #e8ede1; }
+    .modal-header h2 { margin: 0 0 4px; }
+    .modal-header p { margin: 0; }
+    .modal-tabs { display: flex; gap: 4px; padding: 0 22px; border-bottom: 1px solid #e8ede1; }
+    .modal-tabs button { background: transparent; color: #65715f; border: 0; padding: 12px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .modal-tabs button.active-tab { color: #315448; border-bottom-color: #315448; font-weight: 600; }
+    .badge { background: #315448; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 11px; }
+    .modal-body { padding: 20px 22px; overflow-y: auto; flex: 1; }
+    .visit-form { display: flex; flex-direction: column; gap: 16px; }
+    .form-row { display: flex; flex-direction: column; gap: 6px; }
+    .form-row label { font-size: 13px; font-weight: 500; color: #3d4a38; }
+    .form-row textarea { width: 100%; border: 1px solid #cfd8ca; border-radius: 8px; padding: 11px 12px; background: #fff; color: #242923; resize: vertical; font-family: inherit; }
+    .method-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    .method-item { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border: 1px solid #cfd8ca; border-radius: 8px; cursor: pointer; font-size: 14px; background: #fff; transition: all .15s; }
+    .method-item:has(input:checked) { border-color: #315448; background: #eef3ea; color: #315448; font-weight: 500; }
+    .method-item input { width: auto; margin: 0; accent-color: #315448; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 6px; }
+    .visit-history { display: flex; flex-direction: column; gap: 14px; }
+    .visit-history-item { border: 1px solid #e0e6d8; border-radius: 10px; padding: 14px 16px; background: #fbfcf9; }
+    .visit-history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed #e0e6d8; }
+    .visit-history-header strong { font-size: 15px; margin-right: 8px; }
+    .method-tag { display: inline-block; padding: 3px 10px; background: #eef3ea; color: #315448; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .visit-history-content { display: flex; flex-direction: column; gap: 10px; }
+    .visit-block { display: flex; flex-direction: column; gap: 4px; }
+    .visit-block label { font-size: 12px; font-weight: 600; color: #5a6b53; }
+    .visit-block label.attention { color: #b36a2e; }
+    .visit-block p { margin: 0; padding: 8px 10px; background: #fff; border-radius: 6px; border: 1px solid #edf0e8; font-size: 14px; line-height: 1.6; color: #3d4a38; }
+    .visit-block p.attention-p { background: #fff7ef; border-color: #f5dfcb; }
+    .created-at { display: block; margin-top: 10px; color: #99a593; font-size: 11px; text-align: right; }
+    .center { text-align: center; padding: 20px; }
   `],
 })
 export class App {
@@ -254,9 +433,27 @@ export class App {
   elderForm: Omit<Elder, 'id'> = { name: '', preference: '', address: '', contact: '', note: '' };
   volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '' };
 
+  visitRecords: VisitRecord[] = [];
+  visitPanelVisible = false;
+  visitTab: 'form' | 'history' = 'form';
+  selectedElderId: string | null = null;
+  selectedElderIdForVisit: string = '';
+  visitForm: Omit<VisitRecord, 'id' | 'elderId' | 'createdAt'> = {
+    visitDate: today,
+    visitMethod: '电话',
+    healthFeedback: '',
+    mealFeedback: '',
+    nextAttention: ''
+  };
+
+  get selectedElderForVisit(): Elder | undefined {
+    return this.elders.find((e) => e.id === this.selectedElderIdForVisit);
+  }
+
   constructor() {
     this.load();
     this.loadKanbanSort();
+    this.loadVisits();
     if (this.tasks.length === 0) this.generateTasks();
   }
 
@@ -413,5 +610,85 @@ export class App {
     localStorage.setItem('zfl-4-elders', JSON.stringify(this.elders));
     localStorage.setItem('zfl-4-volunteers', JSON.stringify(this.volunteers));
     localStorage.setItem('zfl-4-tasks', JSON.stringify(this.tasks));
+  }
+
+  selectElder(id: string) {
+    this.selectedElderId = this.selectedElderId === id ? null : id;
+  }
+
+  openVisitPanel(elderId: string) {
+    this.selectedElderIdForVisit = elderId;
+    this.selectedElderId = elderId;
+    this.visitTab = 'form';
+    this.resetVisitForm();
+    this.visitPanelVisible = true;
+  }
+
+  closeVisitPanel() {
+    this.visitPanelVisible = false;
+  }
+
+  resetVisitForm() {
+    this.visitForm = {
+      visitDate: today,
+      visitMethod: '电话',
+      healthFeedback: '',
+      mealFeedback: '',
+      nextAttention: ''
+    };
+  }
+
+  submitVisit() {
+    if (!this.selectedElderIdForVisit || !this.visitForm.visitDate) return;
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const record: VisitRecord = {
+      id: crypto.randomUUID(),
+      elderId: this.selectedElderIdForVisit,
+      ...this.visitForm,
+      createdAt: timeStr
+    };
+    this.visitRecords = [record, ...this.visitRecords];
+    this.saveVisits();
+    this.resetVisitForm();
+    this.visitTab = 'history';
+  }
+
+  deleteVisit(id: string) {
+    if (!confirm('确认删除这条回访记录？')) return;
+    this.visitRecords = this.visitRecords.filter((r) => r.id !== id);
+    this.saveVisits();
+  }
+
+  getElderVisits(elderId: string): VisitRecord[] {
+    return this.visitRecords
+      .filter((r) => r.elderId === elderId)
+      .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime());
+  }
+
+  getLastVisit(elderId: string): VisitRecord | null {
+    const visits = this.getElderVisits(elderId);
+    return visits.length > 0 ? visits[0] : null;
+  }
+
+  summarizeVisit(record: VisitRecord): string {
+    const parts: string[] = [];
+    if (record.healthFeedback) parts.push('健康：' + this.truncate(record.healthFeedback, 30));
+    if (record.mealFeedback) parts.push('用餐：' + this.truncate(record.mealFeedback, 30));
+    if (record.nextAttention) parts.push('关注：' + this.truncate(record.nextAttention, 30));
+    return parts.length > 0 ? parts.join(' | ') : '已回访，无特殊记录';
+  }
+
+  private truncate(str: string, max: number): string {
+    return str.length > max ? str.slice(0, max) + '…' : str;
+  }
+
+  private saveVisits() {
+    localStorage.setItem('zfl-4-visits', JSON.stringify(this.visitRecords));
+  }
+
+  private loadVisits() {
+    const raw = localStorage.getItem('zfl-4-visits');
+    if (raw) this.visitRecords = JSON.parse(raw);
   }
 }
