@@ -177,6 +177,7 @@ type BackupData = {
   visitRecords: VisitRecord[];
   phoneNotifications: PhoneNotification[];
   kanbanSort: KanbanSortMap;
+  manuallySortedRoutes?: Record<string, Record<string, boolean>>;
   weeklyScheduleStart?: string;
   mealPrepData?: PrepStorageData;
 };
@@ -1946,6 +1947,7 @@ export class App {
   tasks: MealTask[] = [];
   taskDate = today;
   kanbanSort: KanbanSortMap = {};
+  manuallySortedRoutes: Record<string, Record<string, boolean>> = {};
   appViewMode: 'schedule' | 'delivery' = 'schedule';
   selectedDeliveryVolunteerId: string = '';
   private deliveryService: VolunteerDeliveryService | null = null;
@@ -2870,8 +2872,7 @@ export class App {
 
     for (const date of weekDates) {
       this.generatePhoneNotificationsForDate(date);
-      const dateSort = this.kanbanSort[date];
-      if (!dateSort) {
+      if (!this.kanbanSort[date]) {
         this.kanbanSort[date] = {};
       }
       const allAssignedForDate = assignedTasks.filter((a) => {
@@ -2885,6 +2886,12 @@ export class App {
             .map((t) => t.id);
         } else if (!this.kanbanSort[date][entry.volunteerId].includes(entry.taskId)) {
           this.kanbanSort[date][entry.volunteerId].push(entry.taskId);
+        }
+      }
+      const volunteerIdsForDate = new Set(allAssignedForDate.map(a => a.volunteerId));
+      for (const volunteerId of volunteerIdsForDate) {
+        if (!this.isRouteManuallySorted(date, volunteerId)) {
+          this.sortAndSetKanbanForVolunteer(date, volunteerId, this.tasks, this.elders);
         }
       }
     }
@@ -2969,21 +2976,21 @@ export class App {
     const task = this.tasks.find((t) => t.id === id);
     const oldVolunteerId = task?.volunteerId;
     this.tasks = this.tasks.map((t) => t.id === id ? { ...t, volunteerId, status: volunteerId ? '配送中' : '待分配', isManuallyModified: true } : t);
+    if (!this.kanbanSort[this.taskDate]) this.kanbanSort[this.taskDate] = {};
     const dateSort = this.kanbanSort[this.taskDate];
-    if (dateSort) {
-      if (oldVolunteerId && dateSort[oldVolunteerId]) {
-        dateSort[oldVolunteerId] = dateSort[oldVolunteerId].filter((tid) => tid !== id);
+    if (oldVolunteerId && dateSort[oldVolunteerId]) {
+      dateSort[oldVolunteerId] = dateSort[oldVolunteerId].filter((tid) => tid !== id);
+    }
+    if (volunteerId) {
+      if (!dateSort[volunteerId]) {
+        dateSort[volunteerId] = this.filteredTasks()
+          .filter((t) => t.volunteerId === volunteerId)
+          .map((t) => t.id);
+      } else if (!dateSort[volunteerId].includes(id)) {
+        dateSort[volunteerId].push(id);
       }
-      if (volunteerId) {
-        if (!dateSort[volunteerId]) {
-          dateSort[volunteerId] = this.filteredTasks()
-            .filter((t) => t.volunteerId === volunteerId)
-            .map((t) => t.id);
-        } else if (!dateSort[volunteerId].includes(id)) {
-          dateSort[volunteerId].push(id);
-        }
-        this.saveKanbanSort();
-      }
+      this.markRouteManuallySorted(this.taskDate, volunteerId);
+      this.saveKanbanSort();
     }
     this.save();
     this.generatePhoneNotificationsForDate(this.taskDate);
@@ -3075,19 +3082,24 @@ export class App {
       });
     }
 
+    const affectedVolunteerIds = new Set(assigned.map(a => a.volunteerId));
+    if (!this.kanbanSort[this.taskDate]) this.kanbanSort[this.taskDate] = {};
     const dateSort = this.kanbanSort[this.taskDate];
-    if (dateSort) {
-      for (const entry of assigned) {
-        if (!dateSort[entry.volunteerId]) {
-          dateSort[entry.volunteerId] = this.filteredTasks()
-            .filter((t) => t.volunteerId === entry.volunteerId)
-            .map((t) => t.id);
-        } else if (!dateSort[entry.volunteerId].includes(entry.taskId)) {
-          dateSort[entry.volunteerId].push(entry.taskId);
-        }
+    for (const entry of assigned) {
+      if (!dateSort[entry.volunteerId]) {
+        dateSort[entry.volunteerId] = this.filteredTasks()
+          .filter((t) => t.volunteerId === entry.volunteerId)
+          .map((t) => t.id);
+      } else if (!dateSort[entry.volunteerId].includes(entry.taskId)) {
+        dateSort[entry.volunteerId].push(entry.taskId);
       }
-      this.saveKanbanSort();
     }
+    for (const volunteerId of affectedVolunteerIds) {
+      if (!this.isRouteManuallySorted(this.taskDate, volunteerId)) {
+        this.sortAndSetKanbanForVolunteer(this.taskDate, volunteerId, this.tasks, this.elders);
+      }
+    }
+    this.saveKanbanSort();
 
     this.autoAssignResult = { assigned, failed };
     this.save();
@@ -3298,16 +3310,141 @@ export class App {
     const target = idx + direction;
     if (target < 0 || target >= list.length) return;
     [list[idx], list[target]] = [list[target], list[idx]];
+    this.markRouteManuallySorted(this.taskDate, volunteerId);
     this.saveKanbanSort();
   }
 
   private saveKanbanSort() {
     localStorage.setItem('zfl-4-kanban-sort', JSON.stringify(this.kanbanSort));
+    localStorage.setItem('zfl-4-manually-sorted-routes', JSON.stringify(this.manuallySortedRoutes));
   }
 
   private loadKanbanSort() {
     const raw = localStorage.getItem('zfl-4-kanban-sort');
     if (raw) this.kanbanSort = JSON.parse(raw);
+    const rawManual = localStorage.getItem('zfl-4-manually-sorted-routes');
+    if (rawManual) {
+      try {
+        this.manuallySortedRoutes = JSON.parse(rawManual);
+      } catch {
+        this.manuallySortedRoutes = {};
+      }
+    }
+  }
+
+  private isRouteManuallySorted(date: string, volunteerId: string): boolean {
+    return !!this.manuallySortedRoutes[date]?.[volunteerId];
+  }
+
+  private markRouteManuallySorted(date: string, volunteerId: string) {
+    if (!this.manuallySortedRoutes[date]) this.manuallySortedRoutes[date] = {};
+    this.manuallySortedRoutes[date][volunteerId] = true;
+  }
+
+  private unmarkRouteManuallySorted(date: string, volunteerId: string) {
+    if (this.manuallySortedRoutes[date]) {
+      delete this.manuallySortedRoutes[date][volunteerId];
+    }
+  }
+
+  private calcAddressSimilarity(addr1: string, addr2: string): number {
+    if (!addr1 || !addr2) return 0;
+    const a = addr1.trim();
+    const b = addr2.trim();
+    if (a === b) return 1.0;
+    if (a.includes(b) || b.includes(a)) return 0.85;
+    const setA = new Set<string>();
+    const setB = new Set<string>();
+    const minLen = 2;
+    for (let i = 0; i <= a.length - minLen; i++) {
+      setA.add(a.slice(i, i + minLen));
+    }
+    for (let i = 0; i <= b.length - minLen; i++) {
+      setB.add(b.slice(i, i + minLen));
+    }
+    let intersection = 0;
+    for (const gram of setA) {
+      if (setB.has(gram)) intersection++;
+    }
+    const union = setA.size + setB.size - intersection;
+    const bigramScore = union === 0 ? 0 : intersection / union;
+    const digitRegex = /\d+[号院小区楼栋单元楼层室]?/g;
+    const digitsA = a.match(digitRegex) || [];
+    const digitsB = b.match(digitRegex) || [];
+    let digitScore = 0;
+    if (digitsA.length > 0 && digitsB.length > 0) {
+      const minDigitLen = Math.min(digitsA.length, digitsB.length);
+      let matchedPrefix = 0;
+      for (let i = 0; i < minDigitLen; i++) {
+        if (digitsA[i] === digitsB[i]) matchedPrefix++;
+        else break;
+      }
+      digitScore = matchedPrefix / Math.max(digitsA.length, digitsB.length);
+    }
+    return bigramScore * 0.6 + digitScore * 0.4;
+  }
+
+  private sortTaskIdsByRouteProximity(taskIds: string[], tasks: MealTask[], elders: Elder[]): string[] {
+    if (taskIds.length <= 2) return [...taskIds];
+    const elderById = new Map(elders.map(e => [e.id, e]));
+    const taskElderMap = new Map<string, string>();
+    for (const t of tasks) {
+      taskElderMap.set(t.id, t.elderId);
+    }
+    const taskIdArr = [...taskIds];
+    const remaining = new Set(taskIdArr);
+    const result: string[] = [];
+    let startId = taskIdArr[0];
+    let minStartLen = Infinity;
+    for (const tid of taskIdArr) {
+      const eid = taskElderMap.get(tid);
+      const elder = eid ? elderById.get(eid) : undefined;
+      const addr = elder?.address || '';
+      if (addr.length < minStartLen) {
+        minStartLen = addr.length;
+        startId = tid;
+      }
+    }
+    result.push(startId);
+    remaining.delete(startId);
+    while (remaining.size > 0) {
+      const lastId = result[result.length - 1];
+      const lastElderId = taskElderMap.get(lastId);
+      const lastElder = lastElderId ? elderById.get(lastElderId) : undefined;
+      const lastAddr = lastElder?.address || '';
+      let bestId: string | null = null;
+      let bestScore = -1;
+      for (const tid of remaining) {
+        const eid = taskElderMap.get(tid);
+        const elder = eid ? elderById.get(eid) : undefined;
+        const addr = elder?.address || '';
+        const score = this.calcAddressSimilarity(lastAddr, addr);
+        if (score > bestScore) {
+          bestScore = score;
+          bestId = tid;
+        }
+      }
+      if (bestId === null) break;
+      result.push(bestId);
+      remaining.delete(bestId);
+    }
+    for (const tid of taskIdArr) {
+      if (!result.includes(tid)) result.push(tid);
+    }
+    return result;
+  }
+
+  private sortAndSetKanbanForVolunteer(date: string, volunteerId: string, allTasks: MealTask[], elders: Elder[]) {
+    const vTasks = allTasks.filter(t => t.date === date && t.volunteerId === volunteerId);
+    if (vTasks.length === 0) {
+      if (this.kanbanSort[date]?.[volunteerId]) {
+        delete this.kanbanSort[date][volunteerId];
+      }
+      return;
+    }
+    const sortedIds = this.sortTaskIdsByRouteProximity(vTasks.map(t => t.id), allTasks, elders);
+    if (!this.kanbanSort[date]) this.kanbanSort[date] = {};
+    this.kanbanSort[date][volunteerId] = sortedIds;
   }
 
   private load() {
@@ -3721,6 +3858,7 @@ export class App {
       visitRecords: [...this.visitRecords],
       phoneNotifications: [...this.phoneNotifications],
       kanbanSort: { ...this.kanbanSort },
+      manuallySortedRoutes: JSON.parse(JSON.stringify(this.manuallySortedRoutes)),
       weeklyScheduleStart: this.weeklyScheduleStart,
       mealPrepData: this.mealPrepService.exportStorageData()
     };
@@ -4029,6 +4167,7 @@ export class App {
       visitRecords: data.visitRecords || [],
       phoneNotifications: data.phoneNotifications || [],
       kanbanSort: data.kanbanSort || {},
+      manuallySortedRoutes: data.manuallySortedRoutes || {},
       mealPrepData: data.mealPrepData || undefined
     };
 
@@ -4243,6 +4382,20 @@ export class App {
           const incoming = backup.kanbanSort[date];
           for (const volId of Object.keys(incoming)) {
             existing[volId] = incoming[volId];
+          }
+        }
+      }
+    }
+
+    if (backup.manuallySortedRoutes && typeof backup.manuallySortedRoutes === 'object') {
+      for (const date of Object.keys(backup.manuallySortedRoutes)) {
+        if (!this.manuallySortedRoutes[date]) {
+          this.manuallySortedRoutes[date] = { ...backup.manuallySortedRoutes[date] };
+        } else {
+          const existing = this.manuallySortedRoutes[date];
+          const incoming = backup.manuallySortedRoutes[date];
+          for (const volId of Object.keys(incoming)) {
+            if (incoming[volId]) existing[volId] = true;
           }
         }
       }
