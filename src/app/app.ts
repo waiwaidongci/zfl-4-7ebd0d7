@@ -219,6 +219,14 @@ type ItemConflict = {
   fields: ConflictField[];
   localOnly: boolean;
   remoteOnly: boolean;
+  isEditing: boolean;
+  editingType: string | null;
+};
+
+type EditingStateItem = {
+  type: SyncDataType | 'mealTag' | 'phoneNotification';
+  id: string;
+  label: string;
 };
 
 type ConflictSummary = {
@@ -256,24 +264,32 @@ type SyncNotification = {
         <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
       </header>
 
-      <div class="sync-alert" *ngIf="syncNotification.status !== 'idle'" [class.conflict]="syncNotification.status === 'conflict'" (click)="openSyncPanel()">
+      <div class="sync-alert" *ngIf="syncNotification.status !== 'idle'" [class.conflict]="syncNotification.status === 'conflict'" [class.editing-conflict]="hasEditingConflicts()" (click)="openSyncPanel()">
         <div class="sync-alert-icon">
-          <ng-container *ngIf="syncNotification.status === 'conflict'">⚠️</ng-container>
+          <ng-container *ngIf="hasEditingConflicts()">🚨</ng-container>
+          <ng-container *ngIf="!hasEditingConflicts() && syncNotification.status === 'conflict'">⚠️</ng-container>
           <ng-container *ngIf="syncNotification.status === 'remote-changes'">🔄</ng-container>
         </div>
         <div class="sync-alert-content">
-          <ng-container *ngIf="syncNotification.status === 'conflict'">
+          <ng-container *ngIf="hasEditingConflicts()">
+            <strong>编辑中的数据发生冲突</strong>
+            <span>{{ getEditingSyncTip() }}。同时其他窗口更新了 {{ syncSummaryCounts.total }} 项数据，请立即处理。</span>
+          </ng-container>
+          <ng-container *ngIf="!hasEditingConflicts() && syncNotification.status === 'conflict'">
             <strong>检测到数据冲突</strong>
-            <span>本窗口有未保存的修改，同时其他窗口更新了 {{ syncSummaryCounts.total }} 项数据。点击查看详情并解决。</span>
+            <span>本窗口有未保存的修改，同时其他窗口更新了 {{ syncSummaryCounts.total }} 项数据。</span>
+            <span class="sync-sub-tip" *ngIf="hasEditingItems()">（{{ getEditingSyncTip() }}）</span>
           </ng-container>
           <ng-container *ngIf="syncNotification.status === 'remote-changes'">
             <strong>发现新数据可同步</strong>
             <span>其他窗口更新了 {{ syncSummaryCounts.total }} 项数据，本窗口无冲突，可一键同步。</span>
+            <span class="sync-sub-tip" *ngIf="hasEditingItems()">（{{ getEditingSyncTip() }}）</span>
           </ng-container>
         </div>
         <div class="sync-alert-actions">
           <button type="button" class="ghost sm" (click)="$event.stopPropagation(); closeSyncPanel()">忽略</button>
           <button type="button" class="sm" (click)="$event.stopPropagation(); openSyncPanel()">查看详情</button>
+          <button type="button" class="sm" *ngIf="syncNotification.status === 'remote-changes'" style="background:#4a9f6d" (click)="$event.stopPropagation(); adoptAllRemote()">一键同步</button>
         </div>
       </div>
 
@@ -1203,7 +1219,10 @@ type SyncNotification = {
             <div>
               <h2>多窗口数据同步</h2>
               <p class="muted">
-                <ng-container *ngIf="syncNotification.status === 'conflict'">
+                <ng-container *ngIf="hasEditingConflicts()">
+                  🚨 编辑中的数据同时被其他窗口修改，请立即处理！
+                </ng-container>
+                <ng-container *ngIf="!hasEditingConflicts() && syncNotification.status === 'conflict'">
                   ⚠️ 检测到数据冲突，请选择处理方式
                 </ng-container>
                 <ng-container *ngIf="syncNotification.status === 'remote-changes'">
@@ -1212,6 +1231,22 @@ type SyncNotification = {
               </p>
             </div>
             <button type="button" class="ghost sm" (click)="closeSyncPanel()">关闭</button>
+          </div>
+
+          <div class="editing-alert" *ngIf="hasEditingConflicts()">
+            <div class="editing-alert-icon">🚨</div>
+            <div class="editing-alert-content">
+              <strong>重要提醒</strong>
+              <span>您正在编辑的以下记录同时被其他窗口修改：</span>
+              <div class="editing-alert-items">
+                <span class="editing-alert-item" *ngFor="let e of getEditingConflictItems()">
+                  ✏️ {{ e.label }}
+                </span>
+              </div>
+              <div class="editing-alert-tip">
+                建议先 <button type="button" class="inline-btn" (click)="closeSyncPanel()">关闭此面板保存编辑</button> 或选择合适的合并策略。
+              </div>
+            </div>
           </div>
 
           <div class="sync-modal-actions">
@@ -1247,6 +1282,22 @@ type SyncNotification = {
 
           <div class="modal-body sync-modal-body">
             <div *ngIf="syncPanelTab === 'summary'" class="sync-summary">
+              <div class="sync-editing-summary" *ngIf="hasEditingConflicts()">
+                <div class="sync-editing-summary-icon">✏️</div>
+                <div class="sync-editing-summary-content">
+                  <h4>正在编辑中的冲突</h4>
+                  <p class="muted">以下记录您正在编辑，同时被其他窗口修改，需特别注意：</p>
+                  <div class="sync-editing-items">
+                    <span class="sync-editing-item" *ngFor="let e of getEditingConflictItems()">
+                      <span class="sync-editing-item-icon">🚨</span>
+                      <span class="sync-editing-item-type">{{ getEditingTypeLabel(e.type) }}</span>
+                      <span class="sync-editing-item-label">{{ e.label }}</span>
+                    </span>
+                  </div>
+                  <button type="button" class="sm" style="background:#e55353; margin-top:12px" (click)="closeSyncPanel()">先关闭去保存编辑</button>
+                </div>
+              </div>
+
               <div class="sync-summary-card" *ngFor="let t of SYNC_DATA_TYPES">
                 <div class="sync-summary-icon">
                   <ng-container [ngSwitch]="t">
@@ -1257,7 +1308,10 @@ type SyncNotification = {
                   </ng-container>
                 </div>
                 <div class="sync-summary-info">
-                  <h4>{{ getDataTypeLabel(t) }}</h4>
+                  <h4>
+                    {{ getDataTypeLabel(t) }}
+                    <span class="conflict-tag editing-tag" *ngIf="hasEditingConflictInType(t)">✏️ 含编辑中</span>
+                  </h4>
                   <div class="sync-summary-counts">
                     <span *ngIf="syncNotification.conflictSummary">
                       冲突 {{ getTabConflictCount(t) }} 项
@@ -1282,7 +1336,7 @@ type SyncNotification = {
             <ng-container *ngIf="syncNotification.conflictSummary">
               <ng-container *ngIf="syncPanelTab !== 'summary'">
                 <div class="conflict-list">
-                  <div class="conflict-item" *ngFor="let c of getTabConflicts(syncPanelTab)">
+                  <div class="conflict-item" *ngFor="let c of getTabConflicts(syncPanelTab)" [class.editing-item]="c.isEditing">
                     <div class="conflict-item-header">
                       <div class="conflict-item-title">
                         <span class="conflict-tag" [class.local-only]="c.localOnly" [class.remote-only]="c.remoteOnly">
@@ -1290,6 +1344,7 @@ type SyncNotification = {
                           <ng-container *ngIf="c.remoteOnly">仅其他窗口新增</ng-container>
                           <ng-container *ngIf="!c.localOnly && !c.remoteOnly">字段冲突</ng-container>
                         </span>
+                        <span class="conflict-tag editing-tag" *ngIf="c.isEditing">✏️ 正在编辑</span>
                         <strong>{{ c.label }}</strong>
                       </div>
                       <div class="conflict-choose" *ngIf="c.localOnly || c.remoteOnly">
@@ -1302,6 +1357,10 @@ type SyncNotification = {
                           <span>采用{{ c.remoteOnly ? '（添加）' : '（删除）' }}</span>
                         </label>
                       </div>
+                    </div>
+
+                    <div class="editing-warning" *ngIf="c.isEditing">
+                      <span>⚠️ 您正在编辑此记录，请确认合并策略。建议先保存当前编辑再处理同步。</span>
                     </div>
 
                     <div class="conflict-fields" *ngIf="!c.localOnly && !c.remoteOnly">
@@ -1728,10 +1787,15 @@ type SyncNotification = {
     .sync-alert { display: flex; align-items: center; gap: 16px; padding: 14px 20px; margin-top: 16px; border-radius: 10px; background: #e8f3ec; border: 1px solid #c4d6ba; cursor: pointer; transition: all .15s; }
     .sync-alert:hover { box-shadow: 0 4px 14px rgba(74,159,109,.15); }
     .sync-alert.conflict { background: #fff3e6; border-color: #f0d2b4; }
+    .sync-alert.editing-conflict { background: #fdecec; border-color: #f0c4c4; animation: pulse-warning 2s ease-in-out infinite; }
+    @keyframes pulse-warning { 0%, 100% { box-shadow: 0 0 0 0 rgba(229,83,83,.4); } 50% { box-shadow: 0 0 0 8px rgba(229,83,83,0); } }
+    .sync-alert.editing-conflict .sync-alert-content strong { color: #c64040; }
+    .sync-alert.editing-conflict .sync-alert-content span { color: #a05050; }
     .sync-alert-icon { font-size: 28px; flex-shrink: 0; }
     .sync-alert-content { flex: 1; display: flex; flex-direction: column; gap: 2px; }
     .sync-alert-content strong { font-size: 15px; color: #315448; }
     .sync-alert-content span { font-size: 13px; color: #5a6b53; }
+    .sync-alert-content .sync-sub-tip { font-size: 12px; color: #8a9b83; opacity: .8; }
     .sync-alert.conflict .sync-alert-content strong { color: #b36a2e; }
     .sync-alert-actions { display: flex; gap: 8px; }
 
@@ -1741,10 +1805,29 @@ type SyncNotification = {
     .sync-modal-body { padding-top: 0 !important; padding-bottom: 0 !important; }
     .sync-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid #e8ede1; background: #fafbf7; }
 
+    .editing-alert { display: flex; gap: 14px; padding: 16px 20px; background: #fdecec; border-bottom: 1px solid #f0c4c4; }
+    .editing-alert-icon { font-size: 28px; flex-shrink: 0; }
+    .editing-alert-content { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .editing-alert-content strong { font-size: 15px; color: #c64040; }
+    .editing-alert-content > span { font-size: 13px; color: #a05050; }
+    .editing-alert-items { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .editing-alert-item { padding: 4px 10px; background: #fff; border: 1px solid #f0c4c4; border-radius: 12px; font-size: 12px; color: #c64040; }
+    .editing-alert-tip { font-size: 12px; color: #8a5050; margin-top: 4px; }
+    .inline-btn { display: inline; padding: 2px 8px; margin: 0 4px; background: #c64040; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer; }
+
     .sync-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 20px 0; }
+    .sync-editing-summary { grid-column: 1 / -1; display: flex; gap: 14px; padding: 16px; background: #fdecec; border: 2px solid #e55353; border-radius: 10px; }
+    .sync-editing-summary-icon { font-size: 32px; flex-shrink: 0; }
+    .sync-editing-summary-content { flex: 1; }
+    .sync-editing-summary-content h4 { margin: 0 0 6px; font-size: 15px; color: #c64040; }
+    .sync-editing-items { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .sync-editing-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; border-radius: 6px; font-size: 13px; }
+    .sync-editing-item-icon { font-size: 14px; }
+    .sync-editing-item-type { font-weight: 600; color: #c64040; }
+    .sync-editing-item-label { color: #5a5050; }
     .sync-summary-card { display: flex; align-items: center; gap: 14px; padding: 16px; border: 1px solid #e2e7da; border-radius: 10px; background: #fbfcf9; }
     .sync-summary-icon { font-size: 36px; flex-shrink: 0; }
-    .sync-summary-info h4 { margin: 0 0 6px; font-size: 15px; color: #315448; }
+    .sync-summary-info h4 { margin: 0 0 6px; font-size: 15px; color: #315448; display: flex; align-items: center; gap: 8px; }
     .sync-summary-counts { font-size: 13px; color: #5a8fd9; font-weight: 500; }
 
     .sync-tips { grid-column: 1 / -1; padding: 16px; background: #fff7ef; border: 1px solid #f0d9c4; border-radius: 10px; margin-top: 8px; }
@@ -1754,12 +1837,16 @@ type SyncNotification = {
 
     .conflict-list { padding: 20px 0; display: flex; flex-direction: column; gap: 14px; }
     .conflict-item { border: 1px solid #e0e6d8; border-radius: 10px; padding: 14px 16px; background: #fbfcf9; }
+    .conflict-item.editing-item { border: 2px solid #e55353; background: #fff8f8; }
     .conflict-item-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed #e0e6d8; }
+    .conflict-item.editing-item .conflict-item-header { border-bottom-color: #f0c4c4; }
     .conflict-item-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .conflict-item-title strong { font-size: 15px; color: #315448; }
     .conflict-tag { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #fff3e6; color: #b36a2e; border: 1px solid #f0d2b4; }
     .conflict-tag.local-only { background: #eef3ea; color: #315448; border-color: #c4d6ba; }
     .conflict-tag.remote-only { background: #f0f5fc; color: #5a8fd9; border-color: #c4d9f0; }
+    .conflict-tag.editing-tag { background: #fdecec; color: #c64040; border-color: #f0c4c4; }
+    .editing-warning { padding: 10px 12px; margin-bottom: 12px; background: #fef0f0; border: 1px dashed #f0c4c4; border-radius: 6px; font-size: 12px; color: #a05050; }
     .conflict-choose { display: flex; gap: 14px; flex-shrink: 0; }
     .conflict-choose label { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #5a6b53; cursor: pointer; }
     .conflict-choose input { accent-color: #315448; margin: 0; }
@@ -1788,6 +1875,9 @@ type SyncNotification = {
       .field-compare { flex-direction: column; }
       .field-arrow { transform: rotate(90deg); margin: 4px 0; }
       .conflict-item-header { flex-direction: column; align-items: flex-start; }
+      .sync-alert { flex-direction: column; align-items: stretch; gap: 10px; }
+      .sync-alert-actions { justify-content: flex-end; }
+      .editing-alert { flex-direction: column; gap: 10px; }
     }
   `],
 })
@@ -2134,13 +2224,15 @@ export class App {
       const l = localMap.get(id);
       const r = remoteMap.get(id);
       const b = baseMap.get(id);
+      const editing = this.isItemEditing(type, id);
+      const editingType = editing ? this.getEditingTypeLabel(type) : null;
 
       if (l && !r) {
-        conflicts.push({ id, label: labelFn(l), type, fields: [], localOnly: true, remoteOnly: false });
+        conflicts.push({ id, label: labelFn(l), type, fields: [], localOnly: true, remoteOnly: false, isEditing: editing, editingType });
         continue;
       }
       if (!l && r) {
-        conflicts.push({ id, label: labelFn(r), type, fields: [], localOnly: false, remoteOnly: true });
+        conflicts.push({ id, label: labelFn(r), type, fields: [], localOnly: false, remoteOnly: true, isEditing: editing, editingType });
         continue;
       }
       if (l && r) {
@@ -2149,7 +2241,7 @@ export class App {
         if (localChanged && remoteChanged && JSON.stringify(l) !== JSON.stringify(r)) {
           const fields = this.findDiffFields(l, r);
           if (fields.length > 0) {
-            conflicts.push({ id, label: labelFn(l), type, fields, localOnly: false, remoteOnly: false });
+            conflicts.push({ id, label: labelFn(l), type, fields, localOnly: false, remoteOnly: false, isEditing: editing, editingType });
           }
         }
       }
@@ -2355,6 +2447,85 @@ export class App {
       return this.syncSummaryCounts.total;
     }
     return this.getSyncTypeCount(tab);
+  }
+
+  getEditingItems(): EditingStateItem[] {
+    const items: EditingStateItem[] = [];
+    if (this.editingElderId) {
+      const elder = this.elders.find(e => e.id === this.editingElderId);
+      if (elder) {
+        items.push({ type: 'elders', id: this.editingElderId, label: `老人档案 · ${elder.name}` });
+      }
+    }
+    if (this.editingTagId) {
+      const tag = this.mealTags.find(t => t.id === this.editingTagId);
+      if (tag) {
+        items.push({ type: 'mealTag', id: this.editingTagId, label: `餐食标签 · ${tag.name}` });
+      }
+    }
+    if (this.editingNotificationId) {
+      const notif = this.phoneNotifications.find(n => n.id === this.editingNotificationId);
+      if (notif) {
+        const targetName = notif.targetType === 'elder'
+          ? this.elders.find(e => e.id === notif.targetId)?.name
+          : this.volunteers.find(v => v.id === notif.targetId)?.name;
+        items.push({ type: 'phoneNotification', id: this.editingNotificationId, label: `通知备注 · ${targetName || '未知'}` });
+      }
+    }
+    return items;
+  }
+
+  hasEditingItems(): boolean {
+    return this.getEditingItems().length > 0;
+  }
+
+  getEditingConflictItems(): EditingStateItem[] {
+    const editing = this.getEditingItems();
+    const s = this.syncNotification;
+    if (!s.conflictSummary) return [];
+    return editing.filter(ei => {
+      if (ei.type === 'mealTag' || ei.type === 'phoneNotification') return false;
+      return s.conflictSummary![ei.type].some(c => c.id === ei.id);
+    });
+  }
+
+  hasEditingConflicts(): boolean {
+    return this.getEditingConflictItems().length > 0;
+  }
+
+  isItemEditing(type: SyncDataType, id: string): boolean {
+    if (type === 'elders' && this.editingElderId === id) return true;
+    return false;
+  }
+
+  getEditingTypeLabel(type: SyncDataType | 'mealTag' | 'phoneNotification'): string {
+    const labels: Record<string, string> = {
+      elders: '老人档案',
+      volunteers: '志愿者',
+      tasks: '送餐任务',
+      exceptionRecords: '异常记录',
+      mealTag: '餐食标签',
+      phoneNotification: '电话通知'
+    };
+    return labels[type] || type;
+  }
+
+  getEditingSyncTip(): string {
+    const editing = this.getEditingItems();
+    const conflicts = this.getEditingConflictItems();
+    if (conflicts.length > 0) {
+      const names = conflicts.map(c => c.label).join('、');
+      return `注意：正在编辑的「${names}」同时被其他窗口修改`;
+    }
+    if (editing.length > 0) {
+      const names = editing.map(e => e.label).join('、');
+      return `正在编辑：${names}`;
+    }
+    return '';
+  }
+
+  hasEditingConflictInType(type: SyncDataType): boolean {
+    return this.getEditingConflictItems().some(x => x.type === type);
   }
   // ===== 多窗口一致性结束 =====
 
