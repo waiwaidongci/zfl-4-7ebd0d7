@@ -1859,75 +1859,199 @@ export class App {
       return;
     }
 
-    if (!data.version) {
-      errors.push('缺少 version 字段（版本信息）');
+    if (!data.version || typeof data.version !== 'string') {
+      errors.push('缺少 version 字段（版本信息）或类型不为字符串');
     }
 
-    if (!data.exportedAt) {
-      errors.push('缺少 exportedAt 字段（导出时间）');
+    if (!data.exportedAt || typeof data.exportedAt !== 'string') {
+      errors.push('缺少 exportedAt 字段（导出时间）或类型不为字符串');
     }
 
     if (!Array.isArray(data.elders)) {
-      errors.push('缺少 elders 字段或格式不正确');
+      errors.push('缺少 elders 字段或格式不正确（必须为数组）');
     } else {
+      const ELDER_FIELDS: [string, string][] = [
+        ['id', 'string'], ['name', 'string'], ['preference', 'string'],
+        ['mealTags', 'array'], ['address', 'string'], ['contact', 'string'], ['note', 'string']
+      ];
       for (let i = 0; i < data.elders.length; i++) {
         const elder = data.elders[i];
-        if (!elder.id) errors.push(`老人[${i}]: 缺少 id 字段`);
-        if (!elder.name) errors.push(`老人[${i}]: 缺少 name 字段`);
-        if (elder.mealTags && !Array.isArray(elder.mealTags)) {
-          errors.push(`老人[${i}]: mealTags 必须是数组`);
+        if (!elder || typeof elder !== 'object') {
+          errors.push(`老人[${i}]: 不是有效的对象`);
+          continue;
+        }
+        for (const [field, type] of ELDER_FIELDS) {
+          if (!(field in elder)) {
+            errors.push(`老人[${i}]: 缺少 ${field} 字段`);
+          } else if (type === 'string' && typeof elder[field] !== 'string') {
+            errors.push(`老人[${i}]: ${field} 应为字符串`);
+          } else if (type === 'array' && !Array.isArray(elder[field])) {
+            errors.push(`老人[${i}]: ${field} 应为数组`);
+          }
         }
       }
     }
 
     if (!Array.isArray(data.volunteers)) {
-      errors.push('缺少 volunteers 字段或格式不正确');
+      errors.push('缺少 volunteers 字段或格式不正确（必须为数组）');
     } else {
+      const VOLUNTEER_FIELDS: [string, string][] = [
+        ['id', 'string'], ['name', 'string'], ['phone', 'string'],
+        ['capacity', 'number'], ['area', 'string']
+      ];
       for (let i = 0; i < data.volunteers.length; i++) {
         const vol = data.volunteers[i];
-        if (!vol.id) errors.push(`志愿者[${i}]: 缺少 id 字段`);
-        if (!vol.name) errors.push(`志愿者[${i}]: 缺少 name 字段`);
+        if (!vol || typeof vol !== 'object') {
+          errors.push(`志愿者[${i}]: 不是有效的对象`);
+          continue;
+        }
+        for (const [field, type] of VOLUNTEER_FIELDS) {
+          if (!(field in vol)) {
+            errors.push(`志愿者[${i}]: 缺少 ${field} 字段`);
+          } else if (type === 'string' && typeof vol[field] !== 'string') {
+            errors.push(`志愿者[${i}]: ${field} 应为字符串`);
+          } else if (type === 'number' && typeof vol[field] !== 'number') {
+            errors.push(`志愿者[${i}]: ${field} 应为数字`);
+          }
+        }
       }
     }
 
     if (!Array.isArray(data.tasks)) {
-      errors.push('缺少 tasks 字段或格式不正确');
+      errors.push('缺少 tasks 字段或格式不正确（必须为数组）');
     } else {
+      const TASK_FIELDS: [string, string][] = [
+        ['id', 'string'], ['elderId', 'string'], ['date', 'string'],
+        ['volunteerId', 'string'], ['status', 'string'], ['exception', 'string']
+      ];
+      const VALID_STATUSES = ['待分配', '配送中', '已送达', '异常'];
       for (let i = 0; i < data.tasks.length; i++) {
         const task = data.tasks[i];
-        if (!task.id) errors.push(`任务[${i}]: 缺少 id 字段`);
-        if (!task.elderId) errors.push(`任务[${i}]: 缺少 elderId 字段`);
-        if (!task.date) errors.push(`任务[${i}]: 缺少 date 字段`);
+        if (!task || typeof task !== 'object') {
+          errors.push(`任务[${i}]: 不是有效的对象`);
+          continue;
+        }
+        for (const [field, type] of TASK_FIELDS) {
+          if (!(field in task)) {
+            errors.push(`任务[${i}]: 缺少 ${field} 字段`);
+          } else if (type === 'string' && typeof task[field] !== 'string') {
+            errors.push(`任务[${i}]: ${field} 应为字符串`);
+          }
+        }
+        if ('status' in task && typeof task.status === 'string' && !VALID_STATUSES.includes(task.status)) {
+          errors.push(`任务[${i}]: status 值"${task.status}"无效，应为 ${VALID_STATUSES.join('/')}`);
+        }
       }
     }
 
-    if (data.mealTags && !Array.isArray(data.mealTags)) {
-      errors.push('mealTags 字段格式不正确');
+    if (data.mealTags !== undefined) {
+      if (!Array.isArray(data.mealTags)) {
+        errors.push('mealTags 字段格式不正确（必须为数组）');
+      } else {
+        const TAG_FIELDS: [string, string][] = [
+          ['id', 'string'], ['name', 'string'], ['color', 'string']
+        ];
+        for (let i = 0; i < data.mealTags.length; i++) {
+          const tag = data.mealTags[i];
+          if (!tag || typeof tag !== 'object') {
+            errors.push(`餐食标签[${i}]: 不是有效的对象`);
+            continue;
+          }
+          for (const [field, type] of TAG_FIELDS) {
+            if (!(field in tag)) {
+              errors.push(`餐食标签[${i}]: 缺少 ${field} 字段`);
+            } else if (type === 'string' && typeof tag[field] !== 'string') {
+              errors.push(`餐食标签[${i}]: ${field} 应为字符串`);
+            }
+          }
+        }
+      }
     }
 
-    if (data.exceptionRecords && !Array.isArray(data.exceptionRecords)) {
-      errors.push('exceptionRecords 字段格式不正确');
+    if (data.exceptionRecords !== undefined) {
+      if (!Array.isArray(data.exceptionRecords)) {
+        errors.push('exceptionRecords 字段格式不正确（必须为数组）');
+      } else {
+        const EXC_FIELDS: [string, string][] = [
+          ['id', 'string'], ['taskId', 'string'], ['elderId', 'string'],
+          ['date', 'string'], ['category', 'string'], ['severity', 'string'],
+          ['description', 'string'], ['handler', 'string'], ['status', 'string'],
+          ['result', 'string'], ['createdAt', 'string'], ['updatedAt', 'string']
+        ];
+        const VALID_CATEGORIES = ['无人应答', '地址错误', '老人拒收', '餐食问题', '配送延误', '老人身体不适', '其他'];
+        const VALID_SEVERITIES = ['一般', '较重', '紧急'];
+        const VALID_EXC_STATUSES = ['待处理', '处理中', '已解决'];
+        for (let i = 0; i < data.exceptionRecords.length; i++) {
+          const exc = data.exceptionRecords[i];
+          if (!exc || typeof exc !== 'object') {
+            errors.push(`异常记录[${i}]: 不是有效的对象`);
+            continue;
+          }
+          for (const [field, type] of EXC_FIELDS) {
+            if (!(field in exc)) {
+              errors.push(`异常记录[${i}]: 缺少 ${field} 字段`);
+            } else if (type === 'string' && typeof exc[field] !== 'string') {
+              errors.push(`异常记录[${i}]: ${field} 应为字符串`);
+            }
+          }
+          if ('category' in exc && typeof exc.category === 'string' && !VALID_CATEGORIES.includes(exc.category)) {
+            errors.push(`异常记录[${i}]: category 值"${exc.category}"无效`);
+          }
+          if ('severity' in exc && typeof exc.severity === 'string' && !VALID_SEVERITIES.includes(exc.severity)) {
+            errors.push(`异常记录[${i}]: severity 值"${exc.severity}"无效`);
+          }
+          if ('status' in exc && typeof exc.status === 'string' && !VALID_EXC_STATUSES.includes(exc.status)) {
+            errors.push(`异常记录[${i}]: status 值"${exc.status}"无效`);
+          }
+        }
+      }
     }
 
-    if (data.visitRecords && !Array.isArray(data.visitRecords)) {
-      errors.push('visitRecords 字段格式不正确');
+    if (data.visitRecords !== undefined) {
+      if (!Array.isArray(data.visitRecords)) {
+        errors.push('visitRecords 字段格式不正确（必须为数组）');
+      } else {
+        const VISIT_FIELDS: [string, string][] = [
+          ['id', 'string'], ['elderId', 'string'], ['visitDate', 'string'],
+          ['visitMethod', 'string'], ['healthFeedback', 'string'],
+          ['mealFeedback', 'string'], ['nextAttention', 'string'], ['createdAt', 'string']
+        ];
+        const VALID_METHODS = ['电话', '上门', '视频', '其他'];
+        for (let i = 0; i < data.visitRecords.length; i++) {
+          const visit = data.visitRecords[i];
+          if (!visit || typeof visit !== 'object') {
+            errors.push(`回访记录[${i}]: 不是有效的对象`);
+            continue;
+          }
+          for (const [field, type] of VISIT_FIELDS) {
+            if (!(field in visit)) {
+              errors.push(`回访记录[${i}]: 缺少 ${field} 字段`);
+            } else if (type === 'string' && typeof visit[field] !== 'string') {
+              errors.push(`回访记录[${i}]: ${field} 应为字符串`);
+            }
+          }
+          if ('visitMethod' in visit && typeof visit.visitMethod === 'string' && !VALID_METHODS.includes(visit.visitMethod)) {
+            errors.push(`回访记录[${i}]: visitMethod 值"${visit.visitMethod}"无效`);
+          }
+        }
+      }
     }
 
     if (errors.length > 0) {
       this.importError = {
         type: 'validation',
-        message: '备份文件字段验证失败',
+        message: `备份文件字段验证失败（共 ${errors.length} 项错误）`,
         details: errors
       };
       return;
     }
 
     const backup: BackupData = {
-      version: data.version || this.BACKUP_VERSION,
-      exportedAt: data.exportedAt || new Date().toISOString(),
-      elders: data.elders || [],
-      volunteers: data.volunteers || [],
-      tasks: data.tasks || [],
+      version: data.version,
+      exportedAt: data.exportedAt,
+      elders: data.elders,
+      volunteers: data.volunteers,
+      tasks: data.tasks,
       mealTags: data.mealTags || [],
       exceptionRecords: data.exceptionRecords || [],
       visitRecords: data.visitRecords || [],
@@ -1996,10 +2120,88 @@ export class App {
     };
   }
 
+  private isValidElder(e: any): boolean {
+    return e && typeof e === 'object'
+      && typeof e.id === 'string' && typeof e.name === 'string'
+      && typeof e.preference === 'string' && Array.isArray(e.mealTags)
+      && typeof e.address === 'string' && typeof e.contact === 'string'
+      && typeof e.note === 'string';
+  }
+
+  private isValidVolunteer(v: any): boolean {
+    return v && typeof v === 'object'
+      && typeof v.id === 'string' && typeof v.name === 'string'
+      && typeof v.phone === 'string' && typeof v.capacity === 'number'
+      && typeof v.area === 'string';
+  }
+
+  private isValidTask(t: any): boolean {
+    return t && typeof t === 'object'
+      && typeof t.id === 'string' && typeof t.elderId === 'string'
+      && typeof t.date === 'string' && typeof t.volunteerId === 'string'
+      && typeof t.status === 'string' && typeof t.exception === 'string'
+      && ['待分配', '配送中', '已送达', '异常'].includes(t.status);
+  }
+
+  private isValidMealTag(t: any): boolean {
+    return t && typeof t === 'object'
+      && typeof t.id === 'string' && typeof t.name === 'string'
+      && typeof t.color === 'string';
+  }
+
+  private isValidExceptionRecord(r: any): boolean {
+    return r && typeof r === 'object'
+      && typeof r.id === 'string' && typeof r.taskId === 'string'
+      && typeof r.elderId === 'string' && typeof r.date === 'string'
+      && typeof r.category === 'string' && typeof r.severity === 'string'
+      && typeof r.description === 'string' && typeof r.handler === 'string'
+      && typeof r.status === 'string' && typeof r.result === 'string'
+      && typeof r.createdAt === 'string' && typeof r.updatedAt === 'string';
+  }
+
+  private isValidVisitRecord(r: any): boolean {
+    return r && typeof r === 'object'
+      && typeof r.id === 'string' && typeof r.elderId === 'string'
+      && typeof r.visitDate === 'string' && typeof r.visitMethod === 'string'
+      && typeof r.healthFeedback === 'string' && typeof r.mealFeedback === 'string'
+      && typeof r.nextAttention === 'string' && typeof r.createdAt === 'string';
+  }
+
   confirmImport() {
     if (!this.importedData || !this.importPreview) return;
 
     const backup = this.importedData;
+    const integrityErrors: string[] = [];
+
+    if (!Array.isArray(backup.elders) || backup.elders.some((e: any) => !this.isValidElder(e))) {
+      integrityErrors.push('老人档案数据不完整，存在缺失字段的记录');
+    }
+    if (!Array.isArray(backup.volunteers) || backup.volunteers.some((v: any) => !this.isValidVolunteer(v))) {
+      integrityErrors.push('志愿者数据不完整，存在缺失字段的记录');
+    }
+    if (!Array.isArray(backup.tasks) || backup.tasks.some((t: any) => !this.isValidTask(t))) {
+      integrityErrors.push('送餐任务数据不完整，存在缺失字段的记录');
+    }
+    if (backup.mealTags.length > 0 && (!Array.isArray(backup.mealTags) || backup.mealTags.some((t: any) => !this.isValidMealTag(t)))) {
+      integrityErrors.push('餐食标签数据不完整，存在缺失字段的记录');
+    }
+    if (backup.exceptionRecords.length > 0 && (!Array.isArray(backup.exceptionRecords) || backup.exceptionRecords.some((r: any) => !this.isValidExceptionRecord(r)))) {
+      integrityErrors.push('异常记录数据不完整，存在缺失字段的记录');
+    }
+    if (backup.visitRecords.length > 0 && (!Array.isArray(backup.visitRecords) || backup.visitRecords.some((r: any) => !this.isValidVisitRecord(r)))) {
+      integrityErrors.push('回访记录数据不完整，存在缺失字段的记录');
+    }
+
+    if (integrityErrors.length > 0) {
+      this.importError = {
+        type: 'validation',
+        message: '写入前校验失败，数据可能已被篡改',
+        details: integrityErrors
+      };
+      this.importedData = null;
+      this.importPreview = null;
+      return;
+    }
 
     const mergeById = <T extends { id: string }>(existing: T[], incoming: T[]): T[] => {
       const map = new Map(existing.map(e => [e.id, e]));
