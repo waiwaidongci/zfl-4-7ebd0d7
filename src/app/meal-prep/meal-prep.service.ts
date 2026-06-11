@@ -161,8 +161,9 @@ export class MealPrepService {
     const elderMap = new Map(elders.map(e => [e.id, e]));
     const tagMap = new Map(mealTags.map(t => [t.id, t]));
     const dateTasks = tasks.filter(t => t.date === date);
+    const dateTaskElderIds = new Set(dateTasks.map(t => t.elderId));
 
-    const items: PrepItem[] = dateTasks.map(task => {
+    const taskItems: PrepItem[] = dateTasks.map(task => {
       const elder = elderMap.get(task.elderId);
       if (!elder) return null;
 
@@ -188,6 +189,28 @@ export class MealPrepService {
         notificationAdded: stored.notificationAdded,
       } as PrepItem;
     }).filter((item): item is PrepItem => item !== null);
+
+    const pausedOnlyItems: PrepItem[] = elders
+      .filter(elder => elder.pauseDates?.includes(date) && !dateTaskElderIds.has(elder.id))
+      .map(elder => ({
+        id: `paused-${date}-${elder.id}`,
+        taskId: `paused-${date}-${elder.id}`,
+        elder: {
+          id: elder.id,
+          name: elder.name,
+          address: elder.address,
+          contact: elder.contact,
+        },
+        mealTagIds: elder.mealTags || [],
+        specialMealNote: elder.specialMealNote || '',
+        isPaused: true,
+        status: '待备餐' as PrepStatus,
+        missingNote: '',
+        exceptionRecorded: false,
+        notificationAdded: false,
+      }));
+
+    const items = [...taskItems, ...pausedOnlyItems];
 
     const pausedItems = items.filter(i => i.isPaused);
     const activeItems = items.filter(i => !i.isPaused);
