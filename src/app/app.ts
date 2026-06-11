@@ -1,6 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, Inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { MealPrepComponent } from './meal-prep/meal-prep.component';
+import { MealPrepService, PrepStorageData, ExceptionRecord as PrepExceptionRecord, PhoneNotification as PrepPhoneNotification, MealTask as PrepMealTask } from './meal-prep/meal-prep.service';
 
 type MealTag = {
   id: string;
@@ -170,6 +172,7 @@ type BackupData = {
   phoneNotifications: PhoneNotification[];
   kanbanSort: KanbanSortMap;
   weeklyScheduleStart?: string;
+  mealPrepData?: PrepStorageData;
 };
 
 const WEEK_DAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -247,7 +250,7 @@ type SyncNotification = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MealPrepComponent],
   template: `
     <main>
       <header class="hero">
@@ -694,6 +697,16 @@ type SyncNotification = {
           <p class="muted center" *ngIf="phoneNotificationsForDate().length === 0">暂无电话通知记录，请先生成当日任务</p>
         </div>
       </section>
+
+      <app-meal-prep
+        [date]="taskDate"
+        [tasks]="tasks"
+        [elders]="elders"
+        [mealTags]="mealTags"
+        (exceptionCreated)="onPrepExceptionCreated($event)"
+        (notificationCreated)="onPrepNotificationCreated($event)"
+        (taskUpdated)="onPrepTaskUpdated($event)"
+      ></app-meal-prep>
 
       <div class="modal-overlay" *ngIf="visitPanelVisible" (click)="closeVisitPanel()">
         <div class="modal-panel" (click)="$event.stopPropagation()">
@@ -1882,6 +1895,7 @@ type SyncNotification = {
   `],
 })
 export class App {
+  private mealPrepService: MealPrepService;
   elders: Elder[] = [
     { id: crypto.randomUUID(), name: '苏阿姨', preference: '少盐软饭', mealTags: ['low-salt', 'soft-food'], address: '松桂里3栋201', contact: '女儿13800001111', note: '午餐需敲门等候', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' },
     { id: crypto.randomUUID(), name: '何叔叔', preference: '糖尿病餐', mealTags: ['diabetic'], address: '松桂里5栋104', contact: '邻居王姐', note: '行动慢，放门口需电话确认', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '少糖' },
@@ -2078,7 +2092,8 @@ export class App {
     }
   }
 
-  constructor() {
+  constructor(@Inject(MealPrepService) mealPrepService: MealPrepService) {
+    this.mealPrepService = mealPrepService;
     this.load();
     this.loadKanbanSort();
     this.loadVisits();
@@ -3652,7 +3667,8 @@ export class App {
       visitRecords: [...this.visitRecords],
       phoneNotifications: [...this.phoneNotifications],
       kanbanSort: { ...this.kanbanSort },
-      weeklyScheduleStart: this.weeklyScheduleStart
+      weeklyScheduleStart: this.weeklyScheduleStart,
+      mealPrepData: this.mealPrepService.exportStorageData()
     };
 
     const jsonStr = JSON.stringify(backup, null, 2);
@@ -3958,7 +3974,8 @@ export class App {
       exceptionRecords: data.exceptionRecords || [],
       visitRecords: data.visitRecords || [],
       phoneNotifications: data.phoneNotifications || [],
-      kanbanSort: data.kanbanSort || {}
+      kanbanSort: data.kanbanSort || {},
+      mealPrepData: data.mealPrepData || undefined
     };
 
     const totalCount = backup.elders.length + backup.volunteers.length + backup.tasks.length
@@ -4111,6 +4128,31 @@ export class App {
       integrityErrors.push('电话通知记录数据不完整，存在缺失字段的记录');
     }
 
+    if (backup.mealPrepData !== undefined && backup.mealPrepData !== null) {
+      if (typeof backup.mealPrepData !== 'object') {
+        integrityErrors.push('备餐数据格式不正确');
+      } else {
+        for (const dateKey of Object.keys(backup.mealPrepData)) {
+          const dayData = (backup.mealPrepData as any)[dateKey];
+          if (typeof dayData !== 'object') {
+            integrityErrors.push(`备餐数据[${dateKey}]格式不正确`);
+            break;
+          }
+          for (const taskId of Object.keys(dayData)) {
+            const item = dayData[taskId];
+            if (!item || typeof item !== 'object'
+                || typeof item.status !== 'string'
+                || typeof item.missingNote !== 'string'
+                || typeof item.exceptionRecorded !== 'boolean'
+                || typeof item.notificationAdded !== 'boolean') {
+              integrityErrors.push(`备餐数据[${dateKey}][${taskId}]字段不完整`);
+              break;
+            }
+          }
+        }
+      }
+    }
+
     if (integrityErrors.length > 0) {
       this.importError = {
         type: 'validation',
@@ -4156,6 +4198,10 @@ export class App {
       this.weeklyScheduleStart = backup.weeklyScheduleStart;
     }
 
+    if (backup.mealPrepData && typeof backup.mealPrepData === 'object') {
+      this.mealPrepService.importStorageData(backup.mealPrepData as PrepStorageData, true);
+    }
+
     this.save();
     this.saveKanbanSort();
     this.saveMealTags();
@@ -4173,5 +4219,27 @@ export class App {
     this.importError = null;
     this.importedData = null;
     this.importSuccess = false;
+  }
+
+  // ===== 备餐模块事件处理 =====
+  onPrepExceptionCreated(prepExc: PrepExceptionRecord) {
+    const record: ExceptionRecord = { ...prepExc };
+    this.exceptionRecords = [record, ...this.exceptionRecords];
+    this.saveExceptions();
+  }
+
+  onPrepNotificationCreated(prepNotif: PrepPhoneNotification) {
+    const notif: PhoneNotification = { ...prepNotif };
+    this.phoneNotifications = [notif, ...this.phoneNotifications];
+    this.savePhoneNotifications();
+  }
+
+  onPrepTaskUpdated(update: { taskId: string; status: MealTask['status']; exception: string }) {
+    this.tasks = this.tasks.map((t) =>
+      t.id === update.taskId
+        ? { ...t, status: update.status, exception: update.exception, isManuallyModified: true }
+        : t
+    );
+    this.save();
   }
 }

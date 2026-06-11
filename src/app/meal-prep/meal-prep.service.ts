@@ -1,0 +1,397 @@
+import { Injectable } from '@angular/core';
+import {
+  PrepStatus,
+  PrepItem,
+  PrepBatch,
+  DailyPrepSummary,
+  ElderRef,
+  LS_PREP_DATA_KEY,
+  PREP_STATUSES,
+} from './meal-prep.types';
+
+export type MealTag = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+export type Elder = {
+  id: string;
+  name: string;
+  preference: string;
+  mealTags: string[];
+  address: string;
+  contact: string;
+  note: string;
+  deliveryDays: number[];
+  pauseDates: string[];
+  specialMealNote: string;
+};
+
+export type MealTask = {
+  id: string;
+  elderId: string;
+  date: string;
+  volunteerId: string;
+  status: '待分配' | '配送中' | '已送达' | '异常';
+  exception: string;
+  isManuallyModified: boolean;
+  specialMealNote: string;
+};
+
+export type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收' | '餐食问题' | '配送延误' | '老人身体不适' | '其他';
+export type ExceptionSeverity = '一般' | '较重' | '紧急';
+export type ExceptionStatus = '待处理' | '处理中' | '已解决';
+
+export type ExceptionRecord = {
+  id: string;
+  taskId: string;
+  elderId: string;
+  date: string;
+  category: ExceptionCategory;
+  severity: ExceptionSeverity;
+  description: string;
+  handler: string;
+  status: ExceptionStatus;
+  result: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NotificationStatus = '未通知' | '已通知' | '未接通' | '稍后再拨';
+export type NotificationTargetType = 'elder' | 'volunteer';
+
+export type PhoneNotification = {
+  id: string;
+  date: string;
+  targetType: NotificationTargetType;
+  targetId: string;
+  phone: string;
+  taskId: string;
+  notificationStatus: NotificationStatus;
+  remark: string;
+  updatedAt: string;
+};
+
+export type PrepStorageData = Record<string, Record<string, {
+  status: PrepStatus;
+  missingNote: string;
+  exceptionRecorded: boolean;
+  notificationAdded: boolean;
+}>>;
+
+@Injectable({ providedIn: 'root' })
+export class MealPrepService {
+  private storageData: PrepStorageData = {};
+
+  constructor() {
+    this.loadStorage();
+  }
+
+  private loadStorage() {
+    const raw = localStorage.getItem(LS_PREP_DATA_KEY);
+    if (raw) {
+      try {
+        this.storageData = JSON.parse(raw);
+      } catch {
+        this.storageData = {};
+      }
+    }
+  }
+
+  private saveStorage() {
+    localStorage.setItem(LS_PREP_DATA_KEY, JSON.stringify(this.storageData));
+  }
+
+  exportStorageData(): PrepStorageData {
+    return JSON.parse(JSON.stringify(this.storageData));
+  }
+
+  importStorageData(data: PrepStorageData, merge: boolean = true) {
+    if (merge) {
+      for (const date of Object.keys(data)) {
+        if (!this.storageData[date]) {
+          this.storageData[date] = {};
+        }
+        for (const taskId of Object.keys(data[date])) {
+          this.storageData[date][taskId] = data[date][taskId];
+        }
+      }
+    } else {
+      this.storageData = JSON.parse(JSON.stringify(data));
+    }
+    this.saveStorage();
+  }
+
+  private getStoredStatus(date: string, taskId: string): {
+    status: PrepStatus;
+    missingNote: string;
+    exceptionRecorded: boolean;
+    notificationAdded: boolean;
+  } {
+    return this.storageData[date]?.[taskId] || {
+      status: '待备餐',
+      missingNote: '',
+      exceptionRecorded: false,
+      notificationAdded: false,
+    };
+  }
+
+  private setStoredStatus(
+    date: string,
+    taskId: string,
+    data: { status: PrepStatus; missingNote: string; exceptionRecorded: boolean; notificationAdded: boolean }
+  ) {
+    if (!this.storageData[date]) {
+      this.storageData[date] = {};
+    }
+    this.storageData[date][taskId] = data;
+    this.saveStorage();
+  }
+
+  generateDailySummary(
+    date: string,
+    tasks: MealTask[],
+    elders: Elder[],
+    mealTags: MealTag[]
+  ): DailyPrepSummary {
+    const elderMap = new Map(elders.map(e => [e.id, e]));
+    const tagMap = new Map(mealTags.map(t => [t.id, t]));
+    const dateTasks = tasks.filter(t => t.date === date);
+
+    const items: PrepItem[] = dateTasks.map(task => {
+      const elder = elderMap.get(task.elderId);
+      if (!elder) return null;
+
+      const stored = this.getStoredStatus(date, task.id);
+      const isPaused = elder.pauseDates?.includes(date) || false;
+      const elderRef: ElderRef = {
+        id: elder.id,
+        name: elder.name,
+        address: elder.address,
+        contact: elder.contact,
+      };
+
+      return {
+        id: crypto.randomUUID() as string,
+        taskId: task.id,
+        elder: elderRef,
+        mealTagIds: elder.mealTags || [],
+        specialMealNote: task.specialMealNote || elder.specialMealNote || '',
+        isPaused,
+        status: isPaused ? '待备餐' : stored.status,
+        missingNote: stored.missingNote,
+        exceptionRecorded: stored.exceptionRecorded,
+        notificationAdded: stored.notificationAdded,
+      } as PrepItem;
+    }).filter((item): item is PrepItem => item !== null);
+
+    const pausedItems = items.filter(i => i.isPaused);
+    const activeItems = items.filter(i => !i.isPaused);
+
+    const specialItems = activeItems.filter(i => i.specialMealNote && i.specialMealNote.trim());
+    const nonSpecialItems = activeItems.filter(i => !i.specialMealNote || !i.specialMealNote.trim());
+
+    const tagBatches = new Map<string, PrepItem[]>();
+    const standardItems: PrepItem[] = [];
+
+    for (const item of nonSpecialItems) {
+      if (item.mealTagIds.length === 0) {
+        standardItems.push(item);
+      } else {
+        const primaryTag = item.mealTagIds[0];
+        if (!tagBatches.has(primaryTag)) {
+          tagBatches.set(primaryTag, []);
+        }
+        tagBatches.get(primaryTag)!.push(item);
+      }
+    }
+
+    const batches: PrepBatch[] = [];
+
+    for (const [tagId, batchItems] of tagBatches.entries()) {
+      const tag = tagMap.get(tagId);
+      if (!tag) continue;
+      batches.push(this.createBatch(
+        `tag-${tagId}`,
+        tag.name,
+        'tag',
+        tag.color,
+        tagId,
+        batchItems,
+      ));
+    }
+
+    if (specialItems.length > 0) {
+      batches.push(this.createBatch(
+        'special-notes',
+        '特殊餐食备注',
+        'special',
+        '#b36a2e',
+        undefined,
+        specialItems,
+      ));
+    }
+
+    if (standardItems.length > 0) {
+      batches.push(this.createBatch(
+        'standard',
+        '标准餐',
+        'standard',
+        '#5a8fd9',
+        undefined,
+        standardItems,
+      ));
+    }
+
+    if (pausedItems.length > 0) {
+      batches.push(this.createBatch(
+        'paused',
+        '暂停送餐',
+        'paused',
+        '#8a9783',
+        undefined,
+        pausedItems,
+      ));
+    }
+
+    const itemsById: Record<string, PrepItem> = {};
+    for (const item of items) {
+      itemsById[item.taskId] = item;
+    }
+
+    const activeNonPaused = items.filter(i => !i.isPaused);
+
+    return {
+      date,
+      totalMeals: activeNonPaused.length,
+      completedMeals: activeNonPaused.filter(i => i.status === '已完成').length,
+      inProgressMeals: activeNonPaused.filter(i => i.status === '备餐中').length,
+      missingMeals: activeNonPaused.filter(i => i.status === '缺餐异常').length,
+      pausedMeals: pausedItems.length,
+      batches,
+      standardItems,
+      specialItems,
+      pausedItems,
+      itemsById,
+    };
+  }
+
+  private createBatch(
+    batchKey: string,
+    batchLabel: string,
+    batchType: PrepBatch['batchType'],
+    color: string,
+    tagId: string | undefined,
+    items: PrepItem[],
+  ): PrepBatch {
+    return {
+      batchKey,
+      batchLabel,
+      batchType,
+      tagId,
+      color,
+      items,
+      totalCount: items.length,
+      completedCount: items.filter(i => i.status === '已完成').length,
+      missingCount: items.filter(i => i.status === '缺餐异常').length,
+      inProgressCount: items.filter(i => i.status === '备餐中').length,
+    };
+  }
+
+  updateItemStatus(
+    date: string,
+    taskId: string,
+    status: PrepStatus,
+    missingNote: string = '',
+  ) {
+    const existing = this.getStoredStatus(date, taskId);
+    this.setStoredStatus(date, taskId, {
+      status,
+      missingNote,
+      exceptionRecorded: status === '缺餐异常' ? existing.exceptionRecorded : false,
+      notificationAdded: status === '缺餐异常' ? existing.notificationAdded : false,
+    });
+  }
+
+  markExceptionRecorded(date: string, taskId: string) {
+    const existing = this.getStoredStatus(date, taskId);
+    this.setStoredStatus(date, taskId, {
+      ...existing,
+      exceptionRecorded: true,
+    });
+  }
+
+  markNotificationAdded(date: string, taskId: string) {
+    const existing = this.getStoredStatus(date, taskId);
+    this.setStoredStatus(date, taskId, {
+      ...existing,
+      notificationAdded: true,
+    });
+  }
+
+  createExceptionRecord(
+    task: MealTask,
+    elder: Elder,
+    missingNote: string,
+  ): ExceptionRecord {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    return {
+      id: crypto.randomUUID(),
+      taskId: task.id,
+      elderId: elder.id,
+      date: task.date,
+      category: '餐食问题',
+      severity: missingNote.includes('无法') || missingNote.includes('紧急') ? '较重' : '一般',
+      description: `厨房备餐缺餐：${missingNote || '未提供备餐'}`,
+      handler: '',
+      status: '待处理',
+      result: '',
+      createdAt: timeStr,
+      updatedAt: timeStr,
+    };
+  }
+
+  createPhoneNotification(
+    task: MealTask,
+    elder: Elder,
+    missingNote: string,
+  ): PhoneNotification {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const match = elder.contact.match(/1[3-9]\d{9}/);
+    const phone = match ? match[0] : elder.contact;
+    return {
+      id: crypto.randomUUID(),
+      date: task.date,
+      targetType: 'elder',
+      targetId: elder.id,
+      phone,
+      taskId: task.id,
+      notificationStatus: '未通知',
+      remark: `备餐缺餐通知：${missingNote || '今日无法备餐'}`,
+      updatedAt: timeStr,
+    };
+  }
+
+  batchUpdateStatus(
+    date: string,
+    taskIds: string[],
+    status: PrepStatus,
+  ) {
+    for (const taskId of taskIds) {
+      this.updateItemStatus(date, taskId, status);
+    }
+  }
+
+  getPrepStatusColor(status: PrepStatus): string {
+    switch (status) {
+      case '待备餐': return '#8a9783';
+      case '备餐中': return '#5a8fd9';
+      case '已完成': return '#4a9f6d';
+      case '缺餐异常': return '#c75454';
+      default: return '#8a9783';
+    }
+  }
+}

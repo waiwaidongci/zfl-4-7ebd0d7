@@ -1,0 +1,192 @@
+<section class="panel prep-section" *ngIf="summary">
+  <div class="prep-toolbar">
+    <h2>🍳 备餐产能与出餐核对</h2>
+    <div>
+      <span class="batch-bulk-label">日期：</span>
+      <input type="date" [(ngModel)]="date" (ngModelChange)="refresh()" />
+      <button type="button" (click)="refresh()">🔄 刷新备餐清单</button>
+    </div>
+  </div>
+
+  <div class="prep-summary-row" *ngIf="summary">
+    <div class="prep-summary-item">
+      <strong>{{ summary.totalMeals }}</strong>
+      <span>总备餐数</span>
+    </div>
+    <div class="prep-summary-item completed">
+      <strong>{{ summary.completedMeals }}</strong>
+      <span>已完成</span>
+    </div>
+    <div class="prep-summary-item in-progress">
+      <strong>{{ summary.inProgressMeals }}</strong>
+      <span>备餐中</span>
+    </div>
+    <div class="prep-summary-item missing">
+      <strong>{{ summary.missingMeals }}</strong>
+      <span>缺餐异常</span>
+    </div>
+    <div class="prep-summary-item paused">
+      <strong>{{ summary.pausedMeals }}</strong>
+      <span>暂停送餐</span>
+    </div>
+  </div>
+
+  <div class="prep-batches" *ngIf="summary.batches.length > 0">
+    <div
+      class="prep-batch-card"
+      *ngFor="let batch of summary.batches"
+      [class.paused]="batch.batchType === 'paused'"
+      [style.borderLeftColor]="batch.color"
+    >
+      <div class="prep-batch-header">
+        <div class="prep-batch-header-info">
+          <span class="prep-batch-title">{{ batch.batchLabel }}</span>
+          <div class="prep-batch-counts">
+            <span class="prep-count-chip">共 {{ batch.totalCount }} 份</span>
+            <span class="prep-count-chip done" *ngIf="batch.completedCount > 0">✓ {{ batch.completedCount }}</span>
+            <span class="prep-count-chip doing" *ngIf="batch.inProgressCount > 0">⏳ {{ batch.inProgressCount }}</span>
+            <span class="prep-count-chip missing" *ngIf="batch.missingCount > 0">⚠ {{ batch.missingCount }}</span>
+          </div>
+          <small class="muted">{{ batchProgressHint(batch) }}</small>
+        </div>
+        <div class="prep-batch-actions" *ngIf="batch.batchType !== 'paused'">
+          <button
+            type="button"
+            class="ghost sm"
+            (click)="batchSetStatus(batch, '备餐中')"
+          >全部开始</button>
+          <button
+            type="button"
+            class="sm"
+            style="background:#4a9f6d"
+            (click)="batchSetStatus(batch, '已完成')"
+          >全部完成</button>
+        </div>
+      </div>
+
+      <div class="prep-batch-body">
+        <div class="prep-items-grid">
+          <div
+            class="prep-item-card"
+            *ngFor="let item of batch.items"
+            [class.paused]="item.isPaused"
+            [class.status-done]="item.status === '已完成'"
+            [class.status-doing]="item.status === '备餐中'"
+            [class.status-missing]="item.status === '缺餐异常'"
+          >
+            <div class="prep-item-header">
+              <strong>{{ item.elder.name }}</strong>
+              <span
+                class="prep-status-tag"
+                [style.color]="getStatusColor(item.status)"
+                [style.borderColor]="getStatusColor(item.status)"
+              >{{ item.status }}</span>
+            </div>
+
+            <div class="prep-item-meta">
+              <span>📍 {{ item.elder.address }}</span>
+              <span *ngIf="item.elder.contact">📞 {{ item.elder.contact }}</span>
+            </div>
+
+            <div class="prep-tags-row" *ngIf="getItemTagObjs(item).length > 0">
+              <span
+                class="prep-tag-chip"
+                *ngFor="let tag of getItemTagObjs(item)"
+                [style.background]="tag.color + '18'"
+                [style.color]="tag.color"
+                [style.borderColor]="tag.color + '50'"
+              >{{ tag.name }}</span>
+            </div>
+
+            <div class="prep-special-note" *ngIf="item.specialMealNote">
+              🍽️ {{ item.specialMealNote }}
+            </div>
+
+            <div class="prep-item-actions" *ngIf="!item.isPaused">
+              <button
+                type="button"
+                class="btn-doing"
+                *ngIf="item.status !== '备餐中'"
+                (click)="setItemStatus(item, '备餐中')"
+              >⏳ 备餐中</button>
+              <button
+                type="button"
+                class="btn-done"
+                *ngIf="item.status !== '已完成'"
+                (click)="setItemStatus(item, '已完成')"
+              >✓ 已完成</button>
+              <button
+                type="button"
+                class="ghost sm"
+                *ngIf="item.status === '缺餐异常'"
+                (click)="startEditMissing(item)"
+              >✏️ 编辑缺餐</button>
+              <button
+                type="button"
+                class="btn-missing"
+                *ngIf="item.status !== '缺餐异常'"
+                (click)="setItemStatus(item, '缺餐异常')"
+              >⚠ 缺餐</button>
+            </div>
+
+            <div class="prep-item-actions" *ngIf="item.isPaused">
+              <button type="button" class="ghost sm" disabled>⏸ 暂停中</button>
+            </div>
+
+            <div class="writeback-hint" *ngIf="item.status === '缺餐异常' && !editingMissingTaskId">
+              <span *ngIf="item.exceptionRecorded; else excNotYet" class="writeback-success">
+                ✓ 已写入异常闭环
+              </span>
+              <ng-template #excNotYet>
+                <button
+                  type="button"
+                  class="ghost sm"
+                  style="background:#fff3e6; color:#b36a2e; border:1px solid #f0d2b4; margin-right:6px"
+                  (click)="createExceptionOnly(item)"
+                >登记异常</button>
+              </ng-template>
+              <span *ngIf="item.notificationAdded; else notifNotYet" class="writeback-success">
+                ✓ 已加入电话清单
+              </span>
+              <ng-template #notifNotYet>
+                <button
+                  type="button"
+                  class="ghost sm"
+                  style="background:#eef3ea; color:#315448; border:1px solid #c4d6ba"
+                  (click)="createNotificationOnly(item)"
+                >加通知清单</button>
+              </ng-template>
+            </div>
+
+            <div
+              class="missing-note-editor"
+              *ngIf="editingMissingTaskId === item.taskId"
+            >
+              <label>请说明缺餐原因（将写入异常记录和电话通知）：</label>
+              <textarea
+                [(ngModel)]="editingMissingNote"
+                placeholder="如：食材不足无法备餐、老人电话确认今日不就餐..."
+              ></textarea>
+              <div class="missing-note-actions">
+                <button type="button" class="ghost sm" (click)="cancelEditMissing()">取消</button>
+                <button
+                  type="button"
+                  class="sm"
+                  style="background:#c75454"
+                  (click)="confirmMissing(item)"
+                >确认缺餐并闭环处理</button>
+              </div>
+              <div class="writeback-hint">
+                <strong>💡 提示：</strong>确认后将自动：① 写入异常处置闭环（分类：餐食问题）② 加入当日电话通知清单 ③ 更新任务状态为"异常"
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="prep-empty-note" *ngIf="summary.batches.length === 0">
+    该日期暂无备餐任务，请先在上方「每日送餐任务」生成当日任务。
+  </div>
+</section>
