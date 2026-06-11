@@ -204,7 +204,7 @@ type ImportError = {
   details?: string[];
 };
 
-type SyncDataType = 'elders' | 'volunteers' | 'tasks' | 'exceptionRecords';
+type SyncDataType = 'elders' | 'volunteers' | 'tasks' | 'exceptionRecords' | 'phoneNotifications';
 
 type DataVersionMap = Record<SyncDataType, number>;
 
@@ -213,6 +213,7 @@ type DataSnapshot = {
   volunteers: Volunteer[];
   tasks: MealTask[];
   exceptionRecords: ExceptionRecord[];
+  phoneNotifications: PhoneNotification[];
 };
 
 type ConflictField = {
@@ -243,6 +244,7 @@ type ConflictSummary = {
   volunteers: ItemConflict[];
   tasks: ItemConflict[];
   exceptionRecords: ItemConflict[];
+  phoneNotifications: ItemConflict[];
 };
 
 type SyncStatus = 'idle' | 'remote-changes' | 'conflict';
@@ -1301,6 +1303,10 @@ type SyncNotification = {
               ⚠️ 异常
               <span class="badge" *ngIf="getBadgeCount('exceptionRecords') > 0">{{ getBadgeCount('exceptionRecords') }}</span>
             </button>
+            <button type="button" [class.active-tab]="syncPanelTab === 'phoneNotifications'" (click)="syncPanelTab = 'phoneNotifications'">
+              📞 通知
+              <span class="badge" *ngIf="getBadgeCount('phoneNotifications') > 0">{{ getBadgeCount('phoneNotifications') }}</span>
+            </button>
           </div>
 
           <div class="modal-body sync-modal-body">
@@ -1328,6 +1334,7 @@ type SyncNotification = {
                     <ng-container *ngSwitchCase="'volunteers'">👥</ng-container>
                     <ng-container *ngSwitchCase="'tasks'">📋</ng-container>
                     <ng-container *ngSwitchCase="'exceptionRecords'">⚠️</ng-container>
+                    <ng-container *ngSwitchCase="'phoneNotifications'">📞</ng-container>
                   </ng-container>
                 </div>
                 <div class="sync-summary-info">
@@ -2012,25 +2019,25 @@ export class App {
   NOTIFICATION_STATUSES: NotificationStatus[] = ['未通知', '已通知', '未接通', '稍后再拨'];
 
   // ===== 多窗口数据一致性 =====
-  readonly SYNC_DATA_TYPES: SyncDataType[] = ['elders', 'volunteers', 'tasks', 'exceptionRecords'];
+  readonly SYNC_DATA_TYPES: SyncDataType[] = ['elders', 'volunteers', 'tasks', 'exceptionRecords', 'phoneNotifications'];
   private readonly LS_VERSIONS_KEY = 'zfl-4-sync-versions';
   private readonly WINDOW_ID = crypto.randomUUID().slice(0, 8);
   private readonly LS_WRITER_KEY = 'zfl-4-last-writer';
 
-  localVersions: DataVersionMap = { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0 };
-  lastSyncSnapshot: DataSnapshot = { elders: [], volunteers: [], tasks: [], exceptionRecords: [] };
+  localVersions: DataVersionMap = { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, phoneNotifications: 0 };
+  lastSyncSnapshot: DataSnapshot = { elders: [], volunteers: [], tasks: [], exceptionRecords: [], phoneNotifications: [] };
 
   syncNotification: SyncNotification = {
     status: 'idle',
-    remoteVersions: { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0 },
+    remoteVersions: { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, phoneNotifications: 0 },
     conflictSummary: null,
     pendingRemoteData: null
   };
 
   syncPanelVisible = false;
-  syncPanelTab: 'summary' | 'elders' | 'volunteers' | 'tasks' | 'exceptionRecords' = 'summary';
+  syncPanelTab: 'summary' | 'elders' | 'volunteers' | 'tasks' | 'exceptionRecords' | 'phoneNotifications' = 'summary';
   mergeSelections: Record<SyncDataType, Record<string, 'keep' | 'adopt'>> = {
-    elders: {}, volunteers: {}, tasks: {}, exceptionRecords: {}
+    elders: {}, volunteers: {}, tasks: {}, exceptionRecords: {}, phoneNotifications: {}
   };
   // ==============================
 
@@ -2142,12 +2149,19 @@ export class App {
     const rawVersions = localStorage.getItem(this.LS_VERSIONS_KEY);
     if (rawVersions) {
       try {
-        this.localVersions = JSON.parse(rawVersions);
+        const parsed = JSON.parse(rawVersions);
+        this.localVersions = {
+          elders: parsed.elders || 0,
+          volunteers: parsed.volunteers || 0,
+          tasks: parsed.tasks || 0,
+          exceptionRecords: parsed.exceptionRecords || 0,
+          phoneNotifications: parsed.phoneNotifications || 0,
+        };
       } catch {
-        this.localVersions = { elders: Date.now(), volunteers: Date.now(), tasks: Date.now(), exceptionRecords: Date.now() };
+        this.localVersions = { elders: Date.now(), volunteers: Date.now(), tasks: Date.now(), exceptionRecords: Date.now(), phoneNotifications: Date.now() };
       }
     } else {
-      this.localVersions = { elders: Date.now(), volunteers: Date.now(), tasks: Date.now(), exceptionRecords: Date.now() };
+      this.localVersions = { elders: Date.now(), volunteers: Date.now(), tasks: Date.now(), exceptionRecords: Date.now(), phoneNotifications: Date.now() };
     }
     this.updateSyncSnapshot();
   }
@@ -2157,7 +2171,8 @@ export class App {
       elders: JSON.parse(JSON.stringify(this.elders)),
       volunteers: JSON.parse(JSON.stringify(this.volunteers)),
       tasks: JSON.parse(JSON.stringify(this.tasks)),
-      exceptionRecords: JSON.parse(JSON.stringify(this.exceptionRecords))
+      exceptionRecords: JSON.parse(JSON.stringify(this.exceptionRecords)),
+      phoneNotifications: JSON.parse(JSON.stringify(this.phoneNotifications))
     };
   }
 
@@ -2184,7 +2199,8 @@ export class App {
       elders: changedTypes.includes('elders') ? this.loadRemoteData('elders') : [...this.lastSyncSnapshot.elders],
       volunteers: changedTypes.includes('volunteers') ? this.loadRemoteData('volunteers') : [...this.lastSyncSnapshot.volunteers],
       tasks: changedTypes.includes('tasks') ? this.loadRemoteData('tasks') : [...this.lastSyncSnapshot.tasks],
-      exceptionRecords: changedTypes.includes('exceptionRecords') ? this.loadRemoteData('exceptionRecords') : [...this.lastSyncSnapshot.exceptionRecords]
+      exceptionRecords: changedTypes.includes('exceptionRecords') ? this.loadRemoteData('exceptionRecords') : [...this.lastSyncSnapshot.exceptionRecords],
+      phoneNotifications: changedTypes.includes('phoneNotifications') ? this.loadRemoteData('phoneNotifications') : [...this.lastSyncSnapshot.phoneNotifications]
     };
 
     const hasLocalChanges = this.hasUnsavedLocalChanges();
@@ -2209,7 +2225,8 @@ export class App {
       elders: 'zfl-4-elders',
       volunteers: 'zfl-4-volunteers',
       tasks: 'zfl-4-tasks',
-      exceptionRecords: 'zfl-4-exceptions'
+      exceptionRecords: 'zfl-4-exceptions',
+      phoneNotifications: 'zfl-4-phone-notifications'
     };
     const raw = localStorage.getItem(keyMap[type]);
     if (!raw) return [];
@@ -2257,7 +2274,8 @@ export class App {
       elders: this.compareArrays(local.elders, remote.elders, this.lastSyncSnapshot.elders, 'elders', (e) => e.name),
       volunteers: this.compareArrays(local.volunteers, remote.volunteers, this.lastSyncSnapshot.volunteers, 'volunteers', (v) => v.name),
       tasks: this.compareArrays(local.tasks, remote.tasks, this.lastSyncSnapshot.tasks, 'tasks', (t) => `${this.elderName(t.elderId)}(${t.date})`),
-      exceptionRecords: this.compareArrays(local.exceptionRecords, remote.exceptionRecords, this.lastSyncSnapshot.exceptionRecords, 'exceptionRecords', (e) => `${this.elderName(e.elderId)}·${e.category}`)
+      exceptionRecords: this.compareArrays(local.exceptionRecords, remote.exceptionRecords, this.lastSyncSnapshot.exceptionRecords, 'exceptionRecords', (e) => `${this.elderName(e.elderId)}·${e.category}`),
+      phoneNotifications: this.compareArrays(local.phoneNotifications, remote.phoneNotifications, this.lastSyncSnapshot.phoneNotifications, 'phoneNotifications', (n) => `${n.phone}·${n.notificationStatus}`)
     };
   }
 
@@ -2266,7 +2284,8 @@ export class App {
       elders: this.getEldersWithEditDraft(),
       volunteers: this.volunteers,
       tasks: this.tasks,
-      exceptionRecords: this.exceptionRecords
+      exceptionRecords: this.exceptionRecords,
+      phoneNotifications: this.phoneNotifications
     };
   }
 
@@ -2362,7 +2381,7 @@ export class App {
 
   get syncSummaryCounts() {
     const s = this.syncNotification;
-    const counts = { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, total: 0 };
+    const counts = { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, phoneNotifications: 0, total: 0 };
     if (s.conflictSummary) {
       for (const t of this.SYNC_DATA_TYPES) {
         counts[t] = s.conflictSummary[t].length;
@@ -2444,7 +2463,7 @@ export class App {
   private resetSyncNotification() {
     this.syncNotification = {
       status: 'idle',
-      remoteVersions: { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0 },
+      remoteVersions: { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, phoneNotifications: 0 },
       conflictSummary: null,
       pendingRemoteData: null
     };
@@ -2463,7 +2482,8 @@ export class App {
       elders: { name: '姓名', preference: '餐食偏好', address: '地址', contact: '联系方式', note: '备注', mealTags: '餐食标签', deliveryDays: '送餐日期', pauseDates: '暂停日期', specialMealNote: '特殊备注' },
       volunteers: { name: '姓名', phone: '电话', capacity: '每日容量', area: '片区', availableDays: '可服务日期' },
       tasks: { volunteerId: '志愿者', status: '状态', exception: '异常描述', isManuallyModified: '手动标记', specialMealNote: '特殊餐食备注', elderId: '老人', date: '日期' },
-      exceptionRecords: { category: '分类', severity: '严重程度', description: '描述', handler: '负责人', status: '状态', result: '处理结果', updatedAt: '更新时间' }
+      exceptionRecords: { category: '分类', severity: '严重程度', description: '描述', handler: '负责人', status: '状态', result: '处理结果', updatedAt: '更新时间' },
+      phoneNotifications: { targetType: '通知对象类型', targetId: '通知对象', phone: '电话', notificationStatus: '通知状态', remark: '备注', updatedAt: '更新时间', taskId: '关联任务', date: '日期' }
     };
     return labels[type]?.[field] || field;
   }
@@ -2491,7 +2511,7 @@ export class App {
 
   getDataTypeLabel(tab: string): string {
     const map: Record<string, string> = {
-      elders: '老人档案', volunteers: '志愿者', tasks: '送餐任务', exceptionRecords: '异常记录'
+      elders: '老人档案', volunteers: '志愿者', tasks: '送餐任务', exceptionRecords: '异常记录', phoneNotifications: '电话通知'
     };
     return map[tab] || tab;
   }
@@ -3520,6 +3540,8 @@ export class App {
 
   private savePhoneNotifications() {
     localStorage.setItem('zfl-4-phone-notifications', JSON.stringify(this.phoneNotifications));
+    this.bumpVersion('phoneNotifications');
+    this.updateSyncSnapshot();
   }
 
   private loadPhoneNotifications() {
@@ -4290,6 +4312,8 @@ export class App {
     exceptionCreated?: ExceptionRecord;
     notificationCreated?: PhoneNotification;
   }) {
+    const isUnreachable = !!update.taskUpdated?.exception?.includes('未接通');
+
     if (update.taskUpdated) {
       this.tasks = this.tasks.map((t) =>
         t.id === update.taskUpdated!.taskId
@@ -4303,6 +4327,29 @@ export class App {
       if (existingIdx === -1) {
         this.exceptionRecords = [update.exceptionCreated, ...this.exceptionRecords];
         this.saveExceptions();
+      } else if (isUnreachable) {
+        this.exceptionRecords = this.exceptionRecords.map((e) =>
+          e.taskId === update.exceptionCreated!.taskId && e.date === update.exceptionCreated!.date
+            ? { ...e, category: '无人应答' as ExceptionCategory, description: update.exceptionCreated!.description, updatedAt: update.exceptionCreated!.updatedAt }
+            : e
+        );
+        this.saveExceptions();
+      }
+    } else if (isUnreachable && update.taskUpdated) {
+      const taskId = update.taskUpdated.taskId;
+      const taskDate = this.tasks.find(t => t.id === taskId)?.date;
+      if (taskDate) {
+        const existingIdx = this.exceptionRecords.findIndex((e) => e.taskId === taskId && e.date === taskDate);
+        if (existingIdx !== -1) {
+          const now = new Date();
+          const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          this.exceptionRecords = this.exceptionRecords.map((e) =>
+            e.taskId === taskId && e.date === taskDate
+              ? { ...e, category: '无人应答' as ExceptionCategory, description: `志愿者配送上门未接通：${update.taskUpdated!.exception}`, updatedAt: timeStr }
+              : e
+          );
+          this.saveExceptions();
+        }
       }
     }
     if (update.notificationCreated) {
@@ -4310,6 +4357,29 @@ export class App {
       if (existingIdx === -1) {
         this.phoneNotifications = [update.notificationCreated, ...this.phoneNotifications];
         this.savePhoneNotifications();
+      } else if (isUnreachable) {
+        this.phoneNotifications = this.phoneNotifications.map((n) =>
+          n.taskId === update.notificationCreated!.taskId && n.date === update.notificationCreated!.date
+            ? { ...n, notificationStatus: '未接通' as NotificationStatus, remark: update.notificationCreated!.remark, updatedAt: update.notificationCreated!.updatedAt }
+            : n
+        );
+        this.savePhoneNotifications();
+      }
+    } else if (isUnreachable && update.taskUpdated) {
+      const taskId = update.taskUpdated.taskId;
+      const taskDate = this.tasks.find(t => t.id === taskId)?.date;
+      if (taskDate) {
+        const existingIdx = this.phoneNotifications.findIndex((n) => n.taskId === taskId && n.date === taskDate);
+        if (existingIdx !== -1) {
+          const now = new Date();
+          const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          this.phoneNotifications = this.phoneNotifications.map((n) =>
+            n.taskId === taskId && n.date === taskDate
+              ? { ...n, notificationStatus: '未接通' as NotificationStatus, updatedAt: timeStr }
+              : n
+          );
+          this.savePhoneNotifications();
+        }
       }
     }
   }
