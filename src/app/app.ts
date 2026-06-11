@@ -68,6 +68,28 @@ type KanbanGroup = {
   tasks: MealTask[];
 };
 
+type AutoAssignEntry = {
+  taskId: string;
+  elderId: string;
+  elderName: string;
+  elderAddress: string;
+  volunteerId: string;
+  volunteerName: string;
+};
+
+type AutoAssignFailure = {
+  taskId: string;
+  elderId: string;
+  elderName: string;
+  elderAddress: string;
+  reason: string;
+};
+
+type AutoAssignResult = {
+  assigned: AutoAssignEntry[];
+  failed: AutoAssignFailure[];
+};
+
 @Component({
   selector: 'app-root',
   imports: [CommonModule, FormsModule],
@@ -199,6 +221,33 @@ type KanbanGroup = {
             <div>
               <input type="date" [(ngModel)]="taskDate" />
               <button type="button" (click)="generateTasks()">生成当日任务</button>
+              <button type="button" class="auto-assign-btn" (click)="autoAssignTasks()">自动分配</button>
+            </div>
+          </div>
+
+          <div class="auto-assign-result" *ngIf="autoAssignResult">
+            <div class="auto-assign-header">
+              <h3>自动分配结果</h3>
+              <button type="button" class="ghost sm" (click)="autoAssignResult = null">关闭</button>
+            </div>
+            <div class="auto-assign-summary">
+              <span class="assign-ok">✓ 已分配 {{ autoAssignResult.assigned.length }} 单</span>
+              <span class="assign-fail" *ngIf="autoAssignResult.failed.length > 0">✗ 未分配 {{ autoAssignResult.failed.length }} 单</span>
+            </div>
+            <div class="auto-assign-detail" *ngIf="autoAssignResult.assigned.length > 0">
+              <p class="detail-title">分配明细</p>
+              <div class="detail-row ok" *ngFor="let item of autoAssignResult.assigned">
+                <span class="detail-elder">{{ item.elderName }} <small>{{ item.elderAddress }}</small></span>
+                <span class="detail-arrow">→</span>
+                <span class="detail-volunteer">{{ item.volunteerName }}</span>
+              </div>
+            </div>
+            <div class="auto-assign-detail" *ngIf="autoAssignResult.failed.length > 0">
+              <p class="detail-title fail">未分配原因</p>
+              <div class="detail-row fail" *ngFor="let item of autoAssignResult.failed">
+                <span class="detail-elder">{{ item.elderName }} <small>{{ item.elderAddress }}</small></span>
+                <span class="detail-reason">{{ item.reason }}</span>
+              </div>
             </div>
           </div>
 
@@ -259,10 +308,16 @@ type KanbanGroup = {
 
           <section class="panel">
             <h2>志愿者负载</h2>
-            <p class="load" *ngFor="let volunteer of volunteers">
-              <strong>{{ volunteer.name }}</strong>
-              <span>{{ assignedCount(volunteer.id) }}/{{ volunteer.capacity }}单</span>
-            </p>
+            <div class="load-item" *ngFor="let volunteer of volunteers">
+              <div class="load-header">
+                <strong>{{ volunteer.name }}</strong>
+                <span>{{ assignedCount(volunteer.id) }}/{{ volunteer.capacity }}单</span>
+              </div>
+              <div class="load-bar-bg">
+                <div class="load-bar-fill" [style.width.%]="(assignedCount(volunteer.id) / volunteer.capacity) * 100" [class.full]="assignedCount(volunteer.id) >= volunteer.capacity" [class.near]="assignedCount(volunteer.id) >= volunteer.capacity * 0.75 && assignedCount(volunteer.id) < volunteer.capacity"></div>
+              </div>
+              <small class="load-area">{{ volunteer.area }}</small>
+            </div>
           </section>
         </aside>
       </section>
@@ -455,6 +510,35 @@ type KanbanGroup = {
     .progress strong { font-size: 24px; }
     .exception, .load { border-bottom: 1px solid #edf0e8; padding: 10px 0; margin: 0; }
     @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } .taskList article { grid-template-columns: 1fr; } .toolbar, .toolbar div, .hero { flex-direction: column; align-items: stretch; } }
+    .auto-assign-btn { background: #5a8fd9; }
+    .auto-assign-btn:hover { background: #4a7fc9; }
+    .auto-assign-result { border: 1px solid #c4d9f0; border-radius: 8px; padding: 14px; margin-bottom: 12px; background: #f0f5fc; }
+    .auto-assign-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .auto-assign-header h3 { margin: 0; font-size: 15px; color: #315448; }
+    .auto-assign-summary { display: flex; gap: 16px; margin-bottom: 10px; }
+    .assign-ok { color: #4a9f6d; font-weight: 500; font-size: 14px; }
+    .assign-fail { color: #c75454; font-weight: 500; font-size: 14px; }
+    .auto-assign-detail { margin-top: 8px; }
+    .detail-title { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #3d4a38; }
+    .detail-title.fail { color: #c75454; }
+    .detail-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 13px; }
+    .detail-row.ok { background: #fff; border: 1px solid #e2e7da; }
+    .detail-row.fail { background: #fff7ef; border: 1px solid #f0d9c4; }
+    .detail-elder { flex: 1; }
+    .detail-elder small { color: #65715f; margin-left: 4px; }
+    .detail-arrow { color: #5a8fd9; font-weight: bold; }
+    .detail-volunteer { font-weight: 600; color: #315448; }
+    .detail-reason { color: #c75454; font-size: 12px; flex: 1; text-align: right; }
+    .load-item { padding: 10px 0; border-bottom: 1px solid #edf0e8; }
+    .load-item:last-child { border-bottom: 0; }
+    .load-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .load-header strong { font-size: 14px; }
+    .load-header span { font-size: 13px; color: #65715f; }
+    .load-bar-bg { width: 100%; height: 8px; background: #edf0e8; border-radius: 4px; overflow: hidden; }
+    .load-bar-fill { height: 100%; border-radius: 4px; background: #4a9f6d; transition: width .3s ease; }
+    .load-bar-fill.near { background: #d9a84a; }
+    .load-bar-fill.full { background: #c75454; }
+    .load-area { display: block; margin-top: 4px; font-size: 11px; color: #99a593; }
     .kanban-section { margin-top: 16px; }
     .kanban-grid { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 4px; }
     .kanban-column { min-width: 240px; flex: 1; background: #f7f8f4; border: 1px solid #e2e7da; border-radius: 8px; padding: 14px; }
@@ -582,6 +666,8 @@ export class App {
     nextAttention: ''
   };
 
+  autoAssignResult: AutoAssignResult | null = null;
+
   get selectedElderForVisit(): Elder | undefined {
     return this.elders.find((e) => e.id === this.selectedElderIdForVisit);
   }
@@ -649,6 +735,93 @@ export class App {
         this.saveKanbanSort();
       }
     }
+    this.save();
+  }
+
+  autoAssignTasks() {
+    const dateTasks = this.filteredTasks();
+    const unassigned = dateTasks.filter((t) => !t.volunteerId && t.status === '待分配');
+    if (unassigned.length === 0) {
+      this.autoAssignResult = { assigned: [], failed: [] };
+      return;
+    }
+
+    const currentLoad = new Map<string, number>();
+    for (const v of this.volunteers) {
+      currentLoad.set(v.id, this.assignedCount(v.id));
+    }
+
+    const assigned: AutoAssignEntry[] = [];
+    const failed: AutoAssignFailure[] = [];
+
+    for (const task of unassigned) {
+      const elder = this.elders.find((e) => e.id === task.elderId);
+      if (!elder) {
+        failed.push({ taskId: task.id, elderId: task.elderId, elderName: '未知老人', elderAddress: '', reason: '老人档案不存在' });
+        continue;
+      }
+
+      const candidates = this.volunteers
+        .filter((v) => {
+          const load = currentLoad.get(v.id) || 0;
+          if (load >= v.capacity) return false;
+          if (!v.area.trim() || !elder.address.trim()) return false;
+          return elder.address.includes(v.area);
+        })
+        .sort((a, b) => {
+          const loadA = currentLoad.get(a.id) || 0;
+          const loadB = currentLoad.get(b.id) || 0;
+          const remainA = a.capacity - loadA;
+          const remainB = b.capacity - loadB;
+          if (remainA !== remainB) return remainB - remainA;
+          return loadA - loadB;
+        });
+
+      if (candidates.length === 0) {
+        const hasAreaVolunteers = this.volunteers.some((v) => v.area.trim());
+        const hasCapacity = this.volunteers.some((v) => (currentLoad.get(v.id) || 0) < v.capacity);
+        let reason = '';
+        if (!hasAreaVolunteers) {
+          reason = '无志愿者配置片区信息';
+        } else if (!hasCapacity) {
+          reason = '所有志愿者均已满载';
+        } else {
+          reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
+        }
+        failed.push({ taskId: task.id, elderId: elder.id, elderName: elder.name, elderAddress: elder.address, reason });
+        continue;
+      }
+
+      const chosen = candidates[0];
+      this.tasks = this.tasks.map((t) =>
+        t.id === task.id ? { ...t, volunteerId: chosen.id, status: '配送中' as const } : t
+      );
+      currentLoad.set(chosen.id, (currentLoad.get(chosen.id) || 0) + 1);
+      assigned.push({
+        taskId: task.id,
+        elderId: elder.id,
+        elderName: elder.name,
+        elderAddress: elder.address,
+        volunteerId: chosen.id,
+        volunteerName: chosen.name,
+      });
+    }
+
+    const dateSort = this.kanbanSort[this.taskDate];
+    if (dateSort) {
+      for (const entry of assigned) {
+        if (!dateSort[entry.volunteerId]) {
+          dateSort[entry.volunteerId] = this.filteredTasks()
+            .filter((t) => t.volunteerId === entry.volunteerId)
+            .map((t) => t.id);
+        } else if (!dateSort[entry.volunteerId].includes(entry.taskId)) {
+          dateSort[entry.volunteerId].push(entry.taskId);
+        }
+      }
+      this.saveKanbanSort();
+    }
+
+    this.autoAssignResult = { assigned, failed };
     this.save();
   }
 
