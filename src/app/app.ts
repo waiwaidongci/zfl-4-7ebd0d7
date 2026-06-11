@@ -30,6 +30,13 @@ type MealTask = {
 
 const today = new Date().toISOString().slice(0, 10);
 
+type KanbanSortMap = Record<string, Record<string, string[]>>;
+
+type KanbanGroup = {
+  volunteer: Volunteer;
+  tasks: MealTask[];
+};
+
 @Component({
   selector: 'app-root',
   imports: [CommonModule, FormsModule],
@@ -129,6 +136,55 @@ const today = new Date().toISOString().slice(0, 10);
           </section>
         </aside>
       </section>
+
+      <section class="panel kanban-section">
+        <div class="toolbar">
+          <h2>今日路线看板</h2>
+          <span class="muted">{{ taskDate }}</span>
+        </div>
+
+        <div class="kanban-grid">
+          <div class="kanban-column" *ngFor="let group of kanbanGroups()">
+            <div class="kanban-header">
+              <strong>{{ group.volunteer.name }}</strong>
+              <span>{{ group.tasks.length }}单 · {{ group.volunteer.area }}</span>
+            </div>
+            <div class="kanban-cards">
+              <div class="kanban-card" *ngFor="let task of group.tasks; let i = index">
+                <div class="kanban-card-info">
+                  <strong>{{ elderName(task.elderId) }}</strong>
+                  <span>{{ elderAddress(task.elderId) }}</span>
+                  <small>{{ elderPreference(task.elderId) }}</small>
+                  <p class="kanban-status" [class.warn]="task.status === '异常'">{{ task.status }}</p>
+                </div>
+                <div class="kanban-order-btns">
+                  <button type="button" class="ghost sm" [disabled]="i === 0" (click)="moveTask(group.volunteer.id, task.id, -1)">↑</button>
+                  <button type="button" class="ghost sm" [disabled]="i === group.tasks.length - 1" (click)="moveTask(group.volunteer.id, task.id, 1)">↓</button>
+                </div>
+              </div>
+              <p class="muted" *ngIf="group.tasks.length === 0">暂无任务</p>
+            </div>
+          </div>
+
+          <div class="kanban-column kanban-unassigned">
+            <div class="kanban-header">
+              <strong>未分配</strong>
+              <span>{{ unassignedKanbanTasks().length }}单</span>
+            </div>
+            <div class="kanban-cards">
+              <div class="kanban-card" *ngFor="let task of unassignedKanbanTasks()">
+                <div class="kanban-card-info">
+                  <strong>{{ elderName(task.elderId) }}</strong>
+                  <span>{{ elderAddress(task.elderId) }}</span>
+                  <small>{{ elderPreference(task.elderId) }}</small>
+                  <p class="kanban-status">{{ task.status }}</p>
+                </div>
+              </div>
+              <p class="muted" *ngIf="unassignedKanbanTasks().length === 0">全部已分配</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
   `,
   styles: [`
@@ -163,6 +219,21 @@ const today = new Date().toISOString().slice(0, 10);
     .progress strong { font-size: 24px; }
     .exception, .load { border-bottom: 1px solid #edf0e8; padding: 10px 0; margin: 0; }
     @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } .taskList article { grid-template-columns: 1fr; } .toolbar, .toolbar div, .hero { flex-direction: column; align-items: stretch; } }
+    .kanban-section { margin-top: 16px; }
+    .kanban-grid { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 4px; }
+    .kanban-column { min-width: 240px; flex: 1; background: #f7f8f4; border: 1px solid #e2e7da; border-radius: 8px; padding: 14px; }
+    .kanban-unassigned { background: #f9f6ef; border-color: #ddd5c3; }
+    .kanban-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #e2e7da; }
+    .kanban-header strong { font-size: 15px; }
+    .kanban-header span { font-size: 12px; color: #65715f; }
+    .kanban-cards { display: flex; flex-direction: column; gap: 8px; }
+    .kanban-card { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; border: 1px solid #e0e6d8; border-radius: 8px; padding: 12px; background: #fff; }
+    .kanban-card-info strong, .kanban-card-info span, .kanban-card-info small { display: block; }
+    .kanban-card-info span, .kanban-card-info small { color: #65715f; }
+    .kanban-status { margin: 6px 0 0; font-size: 12px; color: #65715f; }
+    .kanban-order-btns { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+    .sm { padding: 4px 8px; font-size: 13px; }
+    .sm:disabled { opacity: .3; cursor: default; }
   `],
 })
 export class App {
@@ -179,11 +250,13 @@ export class App {
 
   tasks: MealTask[] = [];
   taskDate = today;
+  kanbanSort: KanbanSortMap = {};
   elderForm: Omit<Elder, 'id'> = { name: '', preference: '', address: '', contact: '', note: '' };
   volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '' };
 
   constructor() {
     this.load();
+    this.loadKanbanSort();
     if (this.tasks.length === 0) this.generateTasks();
   }
 
@@ -256,6 +329,54 @@ export class App {
 
   elderPreference(id: string) {
     return this.elders.find((elder) => elder.id === id)?.preference || '';
+  }
+
+  kanbanGroups(): KanbanGroup[] {
+    const dateTasks = this.filteredTasks();
+    const dateSort = this.kanbanSort[this.taskDate] || {};
+    return this.volunteers.map((volunteer) => {
+      let vTasks = dateTasks.filter((t) => t.volunteerId === volunteer.id);
+      const order = dateSort[volunteer.id];
+      if (order && order.length) {
+        const orderIndex = new Map(order.map((id, i) => [id, i]));
+        vTasks = [...vTasks].sort((a, b) => {
+          const ai = orderIndex.has(a.id) ? orderIndex.get(a.id)! : order.length;
+          const bi = orderIndex.has(b.id) ? orderIndex.get(b.id)! : order.length;
+          return ai - bi;
+        });
+      }
+      return { volunteer, tasks: vTasks };
+    });
+  }
+
+  unassignedKanbanTasks(): MealTask[] {
+    return this.filteredTasks().filter((t) => !t.volunteerId);
+  }
+
+  moveTask(volunteerId: string, taskId: string, direction: -1 | 1) {
+    if (!this.kanbanSort[this.taskDate]) this.kanbanSort[this.taskDate] = {};
+    const dateSort = this.kanbanSort[this.taskDate];
+    if (!dateSort[volunteerId]) {
+      dateSort[volunteerId] = this.filteredTasks()
+        .filter((t) => t.volunteerId === volunteerId)
+        .map((t) => t.id);
+    }
+    const list = dateSort[volunteerId];
+    const idx = list.indexOf(taskId);
+    if (idx === -1) return;
+    const target = idx + direction;
+    if (target < 0 || target >= list.length) return;
+    [list[idx], list[target]] = [list[target], list[idx]];
+    this.saveKanbanSort();
+  }
+
+  private saveKanbanSort() {
+    localStorage.setItem('zfl-4-kanban-sort', JSON.stringify(this.kanbanSort));
+  }
+
+  private loadKanbanSort() {
+    const raw = localStorage.getItem('zfl-4-kanban-sort');
+    if (raw) this.kanbanSort = JSON.parse(raw);
   }
 
   private load() {
