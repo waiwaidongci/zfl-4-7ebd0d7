@@ -1,5 +1,12 @@
 export type PrepStatus = '待备餐' | '备餐中' | '已完成' | '缺餐异常';
 
+export type VolunteerRef = {
+  id: string;
+  name: string;
+  phone: string;
+  area: string;
+};
+
 export type ElderRef = {
   id: string;
   name: string;
@@ -18,6 +25,7 @@ export type PrepItem = {
   missingNote: string;
   exceptionRecorded: boolean;
   notificationAdded: boolean;
+  volunteer?: VolunteerRef;
 };
 
 export type PrepBatch = {
@@ -31,6 +39,48 @@ export type PrepBatch = {
   completedCount: number;
   missingCount: number;
   inProgressCount: number;
+};
+
+export type PrintGroupType = 'tag' | 'special' | 'paused' | 'missing' | 'all';
+
+export type PrintGroup = {
+  groupKey: string;
+  groupLabel: string;
+  groupType: PrintGroupType;
+  tagId?: string;
+  color: string;
+  items: PrintItem[];
+  totalCount: number;
+};
+
+export type PrintItem = {
+  id: string;
+  elderName: string;
+  address: string;
+  contact: string;
+  mealTags: Array<{ id: string; name: string; color: string }>;
+  specialMealNote: string;
+  isPaused: boolean;
+  isMissing: boolean;
+  missingNote: string;
+  volunteerName: string;
+  volunteerPhone: string;
+  volunteerArea: string;
+  status: PrepStatus;
+};
+
+export type KitchenPrintViewData = {
+  date: string;
+  generatedAt: string;
+  totalMeals: number;
+  totalActive: number;
+  totalPaused: number;
+  totalMissing: number;
+  totalSpecial: number;
+  groups: PrintGroup[];
+  missingGroup?: PrintGroup;
+  pausedGroup?: PrintGroup;
+  specialGroup?: PrintGroup;
 };
 
 export type TagBreakdownStat = {

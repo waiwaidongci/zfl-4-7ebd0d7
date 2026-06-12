@@ -5,6 +5,7 @@
       <span class="batch-bulk-label">日期：</span>
       <input type="date" [(ngModel)]="date" (ngModelChange)="refresh()" />
       <button type="button" (click)="refresh()">🔄 刷新备餐清单</button>
+      <button type="button" class="print-btn" (click)="openPrintView()">🖨️ 厨房批次打印</button>
     </div>
   </div>
 
@@ -382,3 +383,25 @@
     该日期暂无备餐任务，请先在上方「每日送餐任务」生成当日任务。
   </div>
 </section>
+
+<div class="print-modal-overlay" *ngIf="printViewVisible" (click)="closePrintView()">
+  <div class="print-modal-panel" (click)="$event.stopPropagation()">
+    <div class="print-modal-header">
+      <div>
+        <h2>🖨️ 厨房批次出餐清单</h2>
+        <p class="muted">{{ printViewData?.date }} · 生成于 {{ printViewData?.generatedAt }}</p>
+      </div>
+      <div class="print-modal-actions">
+        <button type="button" class="ghost sm" (click)="closePrintView()">关闭</button>
+        <button type="button" class="sm" style="background:#315448" (click)="triggerPrint()">打印清单</button>
+      </div>
+    </div>
+    <kitchen-print
+      *ngIf="printViewData"
+      [data]="printViewData"
+      [currentDate]="date"
+      (dateChange)="onPrintDateChange($event)"
+      (printRequested)="triggerPrint()"
+    ></kitchen-print>
+  </div>
+</div>

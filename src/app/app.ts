@@ -1,14 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, Inject } from '@angular/core';
+import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { MealPrepComponent } from './meal-prep/meal-prep.component';
-import { MealPrepService, PrepStorageData, ExceptionRecord as PrepExceptionRecord, PhoneNotification as PrepPhoneNotification, MealTask as PrepMealTask } from './meal-prep/meal-prep.service';
-import { VolunteerDeliveryComponent } from './volunteer-delivery/volunteer-delivery.component';
-import {
-  VolunteerDeliveryService,
-  ExceptionRecord as DeliveryExceptionRecord,
-  PhoneNotification as DeliveryPhoneNotification,
-} from './volunteer-delivery/volunteer-delivery.service';
 
 type MealTag = {
   id: string;
@@ -24,9 +16,6 @@ type Elder = {
   address: string;
   contact: string;
   note: string;
-  deliveryDays: number[];
-  pauseDates: string[];
-  specialMealNote: string;
 };
 
 type Volunteer = {
@@ -35,7 +24,6 @@ type Volunteer = {
   phone: string;
   capacity: number;
   area: string;
-  availableDays: number[];
 };
 
 type MealTask = {
@@ -45,43 +33,11 @@ type MealTask = {
   volunteerId: string;
   status: '待分配' | '配送中' | '已送达' | '异常';
   exception: string;
-  isManuallyModified: boolean;
-  specialMealNote: string;
-};
-
-type ScheduleFailureReason = 'paused' | 'no_volunteer' | 'capacity_full' | 'not_scheduled_day';
-
-type ScheduleFailure = {
-  elderId: string;
-  elderName: string;
-  date: string;
-  reason: ScheduleFailureReason;
-  reasonText: string;
-};
-
-type WeeklyScheduleResult = {
-  weekStart: string;
-  weekEnd: string;
-  generatedTasks: MealTask[];
-  takenOverTasks: MealTask[];
-  assignedTasks: AutoAssignEntry[];
-  failures: ScheduleFailure[];
-  skippedManualTasks: string[];
-};
-
-type WeeklyDayColumn = {
-  date: string;
-  dayName: string;
-  dayOfWeek: number;
-  tasks: MealTask[];
-  failures: ScheduleFailure[];
 };
 
 type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收' | '餐食问题' | '配送延误' | '老人身体不适' | '其他';
 type ExceptionSeverity = '一般' | '较重' | '紧急';
 type ExceptionStatus = '待处理' | '处理中' | '已解决';
-
-type ExceptionSource = '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
 
 type ExceptionRecord = {
   id: string;
@@ -94,7 +50,6 @@ type ExceptionRecord = {
   handler: string;
   status: ExceptionStatus;
   result: string;
-  source: ExceptionSource;
   createdAt: string;
   updatedAt: string;
 };
@@ -108,22 +63,6 @@ type VisitRecord = {
   mealFeedback: string;
   nextAttention: string;
   createdAt: string;
-};
-
-type NotificationStatus = '未通知' | '已通知' | '未接通' | '稍后再拨';
-type NotificationTargetType = 'elder' | 'volunteer';
-
-type PhoneNotification = {
-  id: string;
-  date: string;
-  targetType: NotificationTargetType;
-  targetId: string;
-  phone: string;
-  taskId: string;
-  notificationStatus: NotificationStatus;
-  remark: string;
-  source: ExceptionSource;
-  updatedAt: string;
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -179,32 +118,8 @@ type BackupData = {
   mealTags: MealTag[];
   exceptionRecords: ExceptionRecord[];
   visitRecords: VisitRecord[];
-  phoneNotifications: PhoneNotification[];
   kanbanSort: KanbanSortMap;
-  manuallySortedRoutes?: Record<string, Record<string, boolean>>;
-  weeklyScheduleStart?: string;
-  mealPrepData?: PrepStorageData;
 };
-
-const WEEK_DAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-
-function inferExceptionSource(exc: any): ExceptionSource {
-  if (exc.source && ['备餐缺餐', '配送异常', '未接通', '手动登记'].includes(exc.source)) return exc.source;
-  const desc: string = exc.description || '';
-  if (desc.includes('备餐缺餐') || desc.includes('厨房备餐') || desc.includes('厨房缺餐')) return '备餐缺餐';
-  if (desc.includes('未接通') || desc.includes('无人接听')) return '未接通';
-  if (desc.includes('配送异常') || desc.includes('志愿者配送')) return '配送异常';
-  return '手动登记';
-}
-
-function inferNotificationSource(pn: any): ExceptionSource {
-  if (pn.source && ['备餐缺餐', '配送异常', '未接通', '手动登记'].includes(pn.source)) return pn.source;
-  const remark: string = pn.remark || '';
-  if (remark.includes('备餐缺餐') || remark.includes('厨房缺餐')) return '备餐缺餐';
-  if (remark.includes('未接通') || remark.includes('无人接听')) return '未接通';
-  if (remark.includes('配送异常') || remark.includes('配送未接通')) return '配送异常';
-  return '手动登记';
-}
 
 type ImportPreviewItem<T> = {
   item: T;
@@ -218,7 +133,6 @@ type ImportPreview = {
   mealTags: ImportPreviewItem<MealTag>[];
   exceptionRecords: ImportPreviewItem<ExceptionRecord>[];
   visitRecords: ImportPreviewItem<VisitRecord>[];
-  phoneNotifications: ImportPreviewItem<PhoneNotification>[];
 };
 
 type ImportError = {
@@ -227,64 +141,12 @@ type ImportError = {
   details?: string[];
 };
 
-type SyncDataType = 'elders' | 'volunteers' | 'tasks' | 'exceptionRecords' | 'phoneNotifications';
-
-type DataVersionMap = Record<SyncDataType, number>;
-
-type DataSnapshot = {
-  elders: Elder[];
-  volunteers: Volunteer[];
-  tasks: MealTask[];
-  exceptionRecords: ExceptionRecord[];
-  phoneNotifications: PhoneNotification[];
-};
-
-type ConflictField = {
-  field: string;
-  localValue: any;
-  remoteValue: any;
-};
-
-type ItemConflict = {
-  id: string;
-  label: string;
-  type: SyncDataType;
-  fields: ConflictField[];
-  localOnly: boolean;
-  remoteOnly: boolean;
-  isEditing: boolean;
-  editingType: string | null;
-};
-
-type EditingStateItem = {
-  type: SyncDataType | 'mealTag' | 'phoneNotification';
-  id: string;
-  label: string;
-};
-
-type ConflictSummary = {
-  elders: ItemConflict[];
-  volunteers: ItemConflict[];
-  tasks: ItemConflict[];
-  exceptionRecords: ItemConflict[];
-  phoneNotifications: ItemConflict[];
-};
-
-type SyncStatus = 'idle' | 'remote-changes' | 'conflict';
-
-type SyncNotification = {
-  status: SyncStatus;
-  remoteVersions: DataVersionMap;
-  conflictSummary: ConflictSummary | null;
-  pendingRemoteData: DataSnapshot | null;
-};
-
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, MealPrepComponent, VolunteerDeliveryComponent],
+  imports: [CommonModule, FormsModule],
   template: `
     <main>
-      <header class="hero" *ngIf="appViewMode === 'schedule'">
+      <header class="hero">
         <div>
           <p>社区老人送餐</p>
           <h1>排班前端</h1>
@@ -295,41 +157,8 @@ type SyncNotification = {
           <span>{{ todayTasks().length }}个今日任务</span>
           <span>{{ todayUnresolvedExceptions().length }}条异常</span>
         </div>
-        <div class="hero-actions">
-          <button type="button" class="delivery-view-btn" (click)="openVolunteerDelivery()">📱 志愿者配送端</button>
-          <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
-        </div>
+        <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
       </header>
-
-      <ng-container *ngIf="appViewMode === 'schedule'">
-      <div class="sync-alert" *ngIf="syncNotification.status !== 'idle'" [class.conflict]="syncNotification.status === 'conflict'" [class.editing-conflict]="hasEditingConflicts()" (click)="openSyncPanel()">
-        <div class="sync-alert-icon">
-          <ng-container *ngIf="hasEditingConflicts()">🚨</ng-container>
-          <ng-container *ngIf="!hasEditingConflicts() && syncNotification.status === 'conflict'">⚠️</ng-container>
-          <ng-container *ngIf="syncNotification.status === 'remote-changes'">🔄</ng-container>
-        </div>
-        <div class="sync-alert-content">
-          <ng-container *ngIf="hasEditingConflicts()">
-            <strong>编辑中的数据发生冲突</strong>
-            <span>{{ getEditingSyncTip() }}。同时其他窗口更新了 {{ syncSummaryCounts.total }} 项数据，请立即处理。</span>
-          </ng-container>
-          <ng-container *ngIf="!hasEditingConflicts() && syncNotification.status === 'conflict'">
-            <strong>检测到数据冲突</strong>
-            <span>本窗口有未保存的修改，同时其他窗口更新了 {{ syncSummaryCounts.total }} 项数据。</span>
-            <span class="sync-sub-tip" *ngIf="hasEditingItems()">（{{ getEditingSyncTip() }}）</span>
-          </ng-container>
-          <ng-container *ngIf="syncNotification.status === 'remote-changes'">
-            <strong>发现新数据可同步</strong>
-            <span>其他窗口更新了 {{ syncSummaryCounts.total }} 项数据，本窗口无冲突，可一键同步。</span>
-            <span class="sync-sub-tip" *ngIf="hasEditingItems()">（{{ getEditingSyncTip() }}）</span>
-          </ng-container>
-        </div>
-        <div class="sync-alert-actions">
-          <button type="button" class="ghost sm" (click)="$event.stopPropagation(); closeSyncPanel()">忽略</button>
-          <button type="button" class="sm" (click)="$event.stopPropagation(); openSyncPanel()">查看详情</button>
-          <button type="button" class="sm" *ngIf="syncNotification.status === 'remote-changes'" style="background:#4a9f6d" (click)="$event.stopPropagation(); adoptAllRemote()">一键同步</button>
-        </div>
-      </div>
 
       <section class="layout">
         <aside class="stack">
@@ -346,19 +175,9 @@ type SyncNotification = {
                 </label>
               </div>
             </div>
-            <div class="tag-select">
-              <label class="tag-select-label">固定送餐周期</label>
-              <div class="tag-select-grid">
-                <label class="tag-check" *ngFor="let day of WEEK_DAYS; let i = index">
-                  <input type="checkbox" [checked]="elderForm.deliveryDays.includes(i)" (change)="toggleElderDeliveryDay(i)" />
-                  <span>{{ day }}</span>
-                </label>
-              </div>
-            </div>
-            <textarea name="elderSpecialNote" [(ngModel)]="elderForm.specialMealNote" rows="2" placeholder="特殊餐食备注（如：少糖、不吃辣等）"></textarea>
             <input name="elderAddress" [(ngModel)]="elderForm.address" placeholder="送餐地址" />
             <input name="elderContact" [(ngModel)]="elderForm.contact" placeholder="紧急联系" />
-            <input name="elderNote" [(ngModel)]="elderForm.note" placeholder="其他备注" />
+            <input name="elderNote" [(ngModel)]="elderForm.note" placeholder="备注" />
             <button>保存老人</button>
           </form>
 
@@ -404,29 +223,6 @@ type SyncNotification = {
                       </label>
                     </div>
                   </div>
-                  <div class="tag-select">
-                    <label class="tag-select-label">固定送餐周期</label>
-                    <div class="tag-select-grid">
-                      <label class="tag-check" *ngFor="let day of WEEK_DAYS; let i = index">
-                        <input type="checkbox" [checked]="elderEditForm.deliveryDays.includes(i)" (change)="toggleElderEditDeliveryDay(i)" />
-                        <span>{{ day }}</span>
-                      </label>
-                    </div>
-                  </div>
-                  <textarea [(ngModel)]="elderEditForm.specialMealNote" name="editElderSpecialNote" rows="2" placeholder="特殊餐食备注（如：少糖、不吃辣等）"></textarea>
-                  <div class="pause-dates-section">
-                    <label class="tag-select-label">暂停送餐日期</label>
-                    <div class="pause-dates-list">
-                      <span class="pause-date-tag" *ngFor="let pd of elderEditForm.pauseDates">
-                        {{ pd }}
-                        <button type="button" class="tag-del" (click)="removeEditPauseDate(pd)">×</button>
-                      </span>
-                    </div>
-                    <div class="pause-date-input">
-                      <input type="date" #pauseDateInput />
-                      <button type="button" class="sm" (click)="addEditPauseDate(pauseDateInput)">添加</button>
-                    </div>
-                  </div>
                   <input [(ngModel)]="elderEditForm.address" name="editElderAddress" placeholder="送餐地址" />
                   <input [(ngModel)]="elderEditForm.contact" name="editElderContact" placeholder="紧急联系" />
                   <input [(ngModel)]="elderEditForm.note" name="editElderNote" placeholder="备注" />
@@ -467,15 +263,6 @@ type SyncNotification = {
             <input name="volunteerPhone" [(ngModel)]="volunteerForm.phone" placeholder="电话" />
             <input name="volunteerArea" [(ngModel)]="volunteerForm.area" placeholder="熟悉片区" />
             <input name="volunteerCapacity" type="number" min="1" [(ngModel)]="volunteerForm.capacity" placeholder="每日可送数量" />
-            <div class="tag-select">
-              <label class="tag-select-label">每周可服务日期</label>
-              <div class="tag-select-grid">
-                <label class="tag-check" *ngFor="let day of WEEK_DAYS; let i = index">
-                  <input type="checkbox" [checked]="volunteerForm.availableDays.includes(i)" (change)="toggleVolunteerAvailableDay(i)" />
-                  <span>{{ day }}</span>
-                </label>
-              </div>
-            </div>
             <button>保存志愿者</button>
           </form>
         </aside>
@@ -484,7 +271,6 @@ type SyncNotification = {
           <div class="toolbar">
             <h2>每日送餐任务</h2>
             <div>
-              <button type="button" class="ghost" (click)="openWeeklySchedulePanel()">📅 多日排班计划</button>
               <input type="date" [(ngModel)]="taskDate" />
               <button type="button" (click)="generateTasks()">生成当日任务</button>
               <button type="button" class="auto-assign-btn" (click)="autoAssignTasks()">自动分配</button>
@@ -518,18 +304,14 @@ type SyncNotification = {
           </div>
 
           <div class="taskList">
-            <article *ngFor="let task of filteredTasks()" [class.warn]="task.status === '异常'" [class.manual-modified]="task.isManuallyModified">
+            <article *ngFor="let task of filteredTasks()" [class.warn]="task.status === '异常'">
               <div>
-                <div class="task-header">
-                  <strong>{{ elderName(task.elderId) }}</strong>
-                  <span class="manual-badge" *ngIf="task.isManuallyModified" title="已手动修改，自动排班不会覆盖">✋ 手动</span>
-                </div>
+                <strong>{{ elderName(task.elderId) }}</strong>
                 <span>{{ elderAddress(task.elderId) }}</span>
                 <small>{{ elderPreference(task.elderId) }}</small>
                 <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
                   <span class="tag-chip" *ngFor="let tag of elderMealTags(task.elderId)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
                 </div>
-                <p class="special-note" *ngIf="task.specialMealNote">🍽️ {{ task.specialMealNote }}</p>
               </div>
               <select [ngModel]="task.volunteerId" (ngModelChange)="assignTask(task.id, $event)">
                 <option value="">未分配</option>
@@ -585,7 +367,6 @@ type SyncNotification = {
                 </div>
                 <div class="exc-item-meta">
                   <span class="exc-category">{{ exc.category }}</span>
-                  <span class="exc-source-tag" [style.color]="sourceColor(exc.source)" [style.borderColor]="sourceColor(exc.source)">{{ sourceLabel(exc.source) }}</span>
                   <span class="exc-status-tag" [style.color]="statusColor(exc.status)" [style.borderColor]="statusColor(exc.status)">{{ exc.status }}</span>
                 </div>
                 <p class="exc-item-desc">{{ exc.description }}</p>
@@ -670,90 +451,6 @@ type SyncNotification = {
           </div>
         </div>
       </section>
-
-      <section class="panel phone-notification-section">
-        <div class="toolbar">
-          <h2>📞 电话通知清单</h2>
-          <div>
-            <input type="date" [(ngModel)]="taskDate" (ngModelChange)="generatePhoneNotificationsForDate(taskDate)" />
-            <button type="button" (click)="generatePhoneNotificationsForDate(taskDate)">刷新清单</button>
-          </div>
-        </div>
-
-        <div class="pn-status-row">
-          <div class="pn-status-item"><strong>{{ notificationCountByStatus('未通知') }}</strong><span>未通知</span></div>
-          <div class="pn-status-item"><strong style="color:#4a9f6d">{{ notificationCountByStatus('已通知') }}</strong><span>已通知</span></div>
-          <div class="pn-status-item"><strong style="color:#c75454">{{ notificationCountByStatus('未接通') }}</strong><span>未接通</span></div>
-          <div class="pn-status-item"><strong style="color:#d9a84a">{{ notificationCountByStatus('稍后再拨') }}</strong><span>稍后再拨</span></div>
-        </div>
-
-        <div class="pn-tabs">
-          <button type="button" [class.active-tab]="phoneNotificationTab === 'all'" (click)="phoneNotificationTab = 'all'">全部 ({{ phoneNotificationsForCurrentDateCount }})</button>
-          <button type="button" [class.active-tab]="phoneNotificationTab === 'elder'" (click)="phoneNotificationTab = 'elder'">👴 老人</button>
-          <button type="button" [class.active-tab]="phoneNotificationTab === 'volunteer'" (click)="phoneNotificationTab = 'volunteer'">👥 志愿者</button>
-        </div>
-        <div class="pn-source-filter">
-          <label>来源：</label>
-          <select [(ngModel)]="phoneNotificationSource">
-            <option value="全部">全部来源</option>
-            <option value="备餐缺餐">备餐缺餐</option>
-            <option value="配送异常">配送异常</option>
-            <option value="未接通">未接通</option>
-            <option value="手动登记">手动登记</option>
-          </select>
-        </div>
-
-        <div class="pn-list">
-          <ng-container *ngFor="let n of phoneNotificationsForDate()">
-            <div class="pn-item" [class.pn-pending]="n.notificationStatus === '未通知'" [class.pn-warning]="n.notificationStatus === '未接通' || n.notificationStatus === '稍后再拨'">
-              <div class="pn-item-header">
-                <div class="pn-item-title">
-                  <span class="pn-type-tag" [class.elder-tag]="n.targetType === 'elder'" [class.volunteer-tag]="n.targetType === 'volunteer'">{{ phoneNotificationTargetLabel(n) }}</span>
-                  <strong>{{ phoneNotificationTargetName(n) }}</strong>
-                </div>
-                <span class="pn-status-tag" [style.color]="notificationStatusColor(n.notificationStatus)" [style.borderColor]="notificationStatusColor(n.notificationStatus)">
-                  {{ n.notificationStatus }}
-                </span>
-              </div>
-              <div class="pn-item-meta">
-                <span class="pn-phone">📱 {{ n.phone || '暂无电话' }}</span>
-                <span class="pn-task-status">任务状态：{{ phoneNotificationTaskStatus(n) }}</span>
-                <span class="pn-source-tag" [style.color]="sourceColor(n.source)" [style.borderColor]="sourceColor(n.source)">{{ sourceLabel(n.source) }}</span>
-              </div>
-              <div class="pn-item-remark" *ngIf="n.remark && editingNotificationId !== n.id">
-                <label>备注：</label>
-                <span>{{ n.remark }}</span>
-              </div>
-              <div class="pn-item-remark-edit" *ngIf="editingNotificationId === n.id">
-                <textarea [(ngModel)]="editingNotificationRemark" rows="2" placeholder="输入简短备注..."></textarea>
-                <div class="pn-remark-actions">
-                  <button type="button" class="ghost sm" (click)="cancelEditNotificationRemark()">取消</button>
-                  <button type="button" class="sm" (click)="saveNotificationRemark(n.id)">保存</button>
-                </div>
-              </div>
-              <div class="pn-item-actions">
-                <button type="button" class="sm" (click)="setNotificationStatus(n.id, '已通知')" [disabled]="n.notificationStatus === '已通知'">✓ 已通知</button>
-                <button type="button" class="sm" style="background:#c75454" (click)="setNotificationStatus(n.id, '未接通')" [disabled]="n.notificationStatus === '未接通'">✗ 未接通</button>
-                <button type="button" class="sm" style="background:#d9a84a" (click)="setNotificationStatus(n.id, '稍后再拨')" [disabled]="n.notificationStatus === '稍后再拨'">⏱ 稍后再拨</button>
-                <button type="button" class="ghost sm" (click)="startEditNotificationRemark(n.id)" *ngIf="editingNotificationId !== n.id">📝 备注</button>
-                <button type="button" class="ghost sm" (click)="setNotificationStatus(n.id, '未通知')" *ngIf="n.notificationStatus !== '未通知'">重置</button>
-              </div>
-              <small class="pn-updated-at">更新于 {{ n.updatedAt }}</small>
-            </div>
-          </ng-container>
-          <p class="muted center" *ngIf="phoneNotificationsForDate().length === 0">暂无电话通知记录，请先生成当日任务</p>
-        </div>
-      </section>
-
-      <app-meal-prep
-        [date]="taskDate"
-        [tasks]="tasks"
-        [elders]="elders"
-        [mealTags]="mealTags"
-        (exceptionCreated)="onPrepExceptionCreated($event)"
-        (notificationCreated)="onPrepNotificationCreated($event)"
-        (taskUpdated)="onPrepTaskUpdated($event)"
-      ></app-meal-prep>
 
       <div class="modal-overlay" *ngIf="visitPanelVisible" (click)="closeVisitPanel()">
         <div class="modal-panel" (click)="$event.stopPropagation()">
@@ -919,13 +616,6 @@ type SyncNotification = {
                   <option value="">全部老人</option>
                   <option *ngFor="let e of elders" [value]="e.id">{{ e.name }}</option>
                 </select>
-                <select [(ngModel)]="exceptionListSource">
-                  <option value="全部">全部来源</option>
-                  <option value="备餐缺餐">备餐缺餐</option>
-                  <option value="配送异常">配送异常</option>
-                  <option value="未接通">未接通</option>
-                  <option value="手动登记">手动登记</option>
-                </select>
               </div>
               <div class="exc-modal-items">
                 <div class="exc-modal-item" *ngFor="let exc of filteredExceptionRecords()">
@@ -941,7 +631,6 @@ type SyncNotification = {
                   </div>
                   <div class="exc-modal-item-meta">
                     <span class="exc-category">{{ exc.category }}</span>
-                    <span class="exc-source-tag" [style.color]="sourceColor(exc.source)" [style.borderColor]="sourceColor(exc.source)">{{ sourceLabel(exc.source) }}</span>
                     <span *ngIf="exc.handler">负责人：{{ exc.handler }}</span>
                   </div>
                   <p class="exc-modal-item-desc">{{ exc.description }}</p>
@@ -984,13 +673,6 @@ type SyncNotification = {
                 <option value="">全部老人</option>
                 <option *ngFor="let e of elders" [value]="e.id">{{ e.name }}</option>
               </select>
-              <select [(ngModel)]="exceptionHistorySource">
-                <option value="全部">全部来源</option>
-                <option value="备餐缺餐">备餐缺餐</option>
-                <option value="配送异常">配送异常</option>
-                <option value="未接通">未接通</option>
-                <option value="手动登记">手动登记</option>
-              </select>
             </div>
             <div class="exc-modal-items">
               <div class="exc-modal-item" *ngFor="let exc of historyExceptionRecords()">
@@ -1006,7 +688,6 @@ type SyncNotification = {
                 </div>
                 <div class="exc-modal-item-meta">
                   <span class="exc-category">{{ exc.category }}</span>
-                  <span class="exc-source-tag" [style.color]="sourceColor(exc.source)" [style.borderColor]="sourceColor(exc.source)">{{ sourceLabel(exc.source) }}</span>
                   <span *ngIf="exc.handler">负责人：{{ exc.handler }}</span>
                 </div>
                 <p class="exc-modal-item-desc">{{ exc.description }}</p>
@@ -1049,7 +730,6 @@ type SyncNotification = {
                   <li><strong>{{ mealTags.length }}</strong> 个餐食标签</li>
                   <li><strong>{{ exceptionRecords.length }}</strong> 条异常记录</li>
                   <li><strong>{{ visitRecords.length }}</strong> 条回访记录</li>
-                  <li><strong>{{ phoneNotifications.length }}</strong> 条电话通知记录</li>
                 </ul>
               </div>
               <button type="button" class="export-btn" (click)="exportData()">📥 导出备份文件</button>
@@ -1141,12 +821,6 @@ type SyncNotification = {
                       <span class="stat overwrite">~{{ importPreviewSummary.exceptionRecords.overwrite }}</span>
                       <span class="stat duplicate">={{ importPreviewSummary.exceptionRecords.duplicate }}</span>
                     </div>
-                    <div class="preview-source-breakdown">
-                      <span class="source-tag" style="color:#e67e22;border-color:#e67e22">备餐缺餐 {{ importPreviewSummary.exceptionRecords.bySource['备餐缺餐'] }}</span>
-                      <span class="source-tag" style="color:#c75454;border-color:#c75454">配送异常 {{ importPreviewSummary.exceptionRecords.bySource['配送异常'] }}</span>
-                      <span class="source-tag" style="color:#d9a84a;border-color:#d9a84a">未接通 {{ importPreviewSummary.exceptionRecords.bySource['未接通'] }}</span>
-                      <span class="source-tag" style="color:#666;border-color:#666">手动登记 {{ importPreviewSummary.exceptionRecords.bySource['手动登记'] }}</span>
-                    </div>
                   </div>
 
                   <div class="preview-card" *ngIf="importPreviewSummary.visitRecords.total > 0">
@@ -1155,21 +829,6 @@ type SyncNotification = {
                       <span class="stat new">+{{ importPreviewSummary.visitRecords.new }}</span>
                       <span class="stat overwrite">~{{ importPreviewSummary.visitRecords.overwrite }}</span>
                       <span class="stat duplicate">={{ importPreviewSummary.visitRecords.duplicate }}</span>
-                    </div>
-                  </div>
-
-                  <div class="preview-card" *ngIf="importPreviewSummary.phoneNotifications.total > 0">
-                    <h4>📞 电话通知</h4>
-                    <div class="preview-stats">
-                      <span class="stat new">+{{ importPreviewSummary.phoneNotifications.new }}</span>
-                      <span class="stat overwrite">~{{ importPreviewSummary.phoneNotifications.overwrite }}</span>
-                      <span class="stat duplicate">={{ importPreviewSummary.phoneNotifications.duplicate }}</span>
-                    </div>
-                    <div class="preview-source-breakdown">
-                      <span class="source-tag" style="color:#e67e22;border-color:#e67e22">备餐缺餐 {{ importPreviewSummary.phoneNotifications.bySource['备餐缺餐'] }}</span>
-                      <span class="source-tag" style="color:#c75454;border-color:#c75454">配送异常 {{ importPreviewSummary.phoneNotifications.bySource['配送异常'] }}</span>
-                      <span class="source-tag" style="color:#d9a84a;border-color:#d9a84a">未接通 {{ importPreviewSummary.phoneNotifications.bySource['未接通'] }}</span>
-                      <span class="source-tag" style="color:#666;border-color:#666">手动登记 {{ importPreviewSummary.phoneNotifications.bySource['手动登记'] }}</span>
                     </div>
                   </div>
                 </div>
@@ -1188,347 +847,6 @@ type SyncNotification = {
           </div>
         </div>
       </div>
-
-      <div class="modal-overlay" *ngIf="showWeeklySchedulePanel" (click)="closeWeeklySchedulePanel()">
-        <div class="modal-panel weekly-schedule-modal" (click)="$event.stopPropagation()">
-          <div class="modal-header">
-            <div>
-              <h2>📅 多日排班计划</h2>
-              <p class="muted">选择一周，自动生成排班并分配志愿者</p>
-            </div>
-            <button type="button" class="ghost sm" (click)="closeWeeklySchedulePanel()">关闭</button>
-          </div>
-
-          <div class="modal-body">
-            <div class="weekly-toolbar">
-              <div class="week-nav">
-                <button type="button" class="ghost sm" (click)="prevWeek()">← 上周</button>
-                <input type="date" [(ngModel)]="weeklyScheduleStart" (change)="onWeekStartChange()" />
-                <button type="button" class="ghost sm" (click)="nextWeek()">下周 →</button>
-                <button type="button" class="ghost sm" (click)="goToCurrentWeek()">本周</button>
-              </div>
-              <button type="button" class="auto-assign-btn" (click)="generateWeeklySchedule()">🔄 生成一周排班</button>
-            </div>
-
-            <div class="weekly-summary" *ngIf="weeklyScheduleResult">
-              <div class="summary-item ok">
-                <strong>{{ weeklyScheduleResult.generatedTasks.length }}</strong>
-                <span>已生成任务</span>
-              </div>
-              <div class="summary-item ok">
-                <strong>{{ weeklyScheduleResult.takenOverTasks.length }}</strong>
-                <span>已接管任务</span>
-              </div>
-              <div class="summary-item ok">
-                <strong>{{ weeklyScheduleResult.assignedTasks.length }}</strong>
-                <span>已自动分配</span>
-              </div>
-              <div class="summary-item fail" *ngIf="weeklyScheduleResult.failures.length > 0">
-                <strong>{{ weeklyScheduleResult.failures.length }}</strong>
-                <span>未排上</span>
-              </div>
-              <div class="summary-item warn" *ngIf="weeklyScheduleResult.skippedManualTasks.length > 0">
-                <strong>{{ weeklyScheduleResult.skippedManualTasks.length }}</strong>
-                <span>已跳过（手动修改）</span>
-              </div>
-            </div>
-
-            <div class="skipped-list" *ngIf="weeklyScheduleResult && weeklyScheduleResult.skippedManualTasks.length > 0">
-              <p class="muted"><strong>✋ 以下任务因已手动修改而跳过：</strong></p>
-              <div class="skipped-tags">
-                <span class="tag-chip sm" *ngFor="let s of weeklyScheduleResult.skippedManualTasks">{{ s }}</span>
-              </div>
-            </div>
-
-            <div class="weekly-grid">
-              <div class="weekly-column" *ngFor="let col of getWeeklyDayColumns()" [class.today]="col.date === today">
-                <div class="weekly-column-header">
-                  <strong>{{ col.dayName }}</strong>
-                  <span>{{ col.date }}</span>
-                  <span class="col-count">{{ col.tasks.length }}单</span>
-                </div>
-                <div class="weekly-column-body">
-                  <div class="weekly-task" *ngFor="let task of col.tasks" [class.warn]="task.status === '异常'" [class.manual-modified]="task.isManuallyModified">
-                    <div class="weekly-task-header">
-                      <strong>{{ elderName(task.elderId) }}</strong>
-                      <span class="manual-badge sm" *ngIf="task.isManuallyModified">✋</span>
-                    </div>
-                    <small>{{ elderAddress(task.elderId) }}</small>
-                    <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
-                      <span class="tag-chip sm" *ngFor="let tag of elderMealTags(task.elderId)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
-                    </div>
-                    <p class="special-note sm" *ngIf="task.specialMealNote">🍽️ {{ task.specialMealNote }}</p>
-                    <p class="weekly-volunteer">
-                      <ng-container *ngIf="task.volunteerId">
-                        👤 {{ getVolunteerName(task.volunteerId) }}
-                      </ng-container>
-                      <ng-container *ngIf="!task.volunteerId">
-                        ⏳ 未分配
-                      </ng-container>
-                      <span class="task-status" [class.status-pending]="task.status === '待分配'" [class.status-delivering]="task.status === '配送中'" [class.status-done]="task.status === '已送达'" [class.status-exception]="task.status === '异常'">{{ task.status }}</span>
-                    </p>
-                  </div>
-
-                  <div class="weekly-failure" *ngFor="let fail of col.failures">
-                    <span class="fail-icon">
-                      <ng-container [ngSwitch]="fail.reason">
-                        <ng-container *ngSwitchCase="'paused'">⏸️</ng-container>
-                        <ng-container *ngSwitchCase="'no_volunteer'">👤❌</ng-container>
-                        <ng-container *ngSwitchCase="'capacity_full'">📦</ng-container>
-                        <ng-container *ngSwitchDefault>⚠️</ng-container>
-                      </ng-container>
-                    </span>
-                    <div class="fail-content">
-                      <strong>{{ fail.elderName }}</strong>
-                      <small>{{ fail.reasonText }}</small>
-                    </div>
-                  </div>
-
-                  <p class="muted center" *ngIf="col.tasks.length === 0 && col.failures.length === 0">暂无任务</p>
-                </div>
-              </div>
-            </div>
-
-            <div class="failure-legend" *ngIf="weeklyScheduleResult && weeklyScheduleResult.failures.length > 0">
-              <h4>未排上原因说明</h4>
-              <div class="legend-grid">
-                <div class="legend-item"><span class="fail-icon">⏸️</span><span>老人暂停送餐</span></div>
-                <div class="legend-item"><span class="fail-icon">👤❌</span><span>无可用志愿者</span></div>
-                <div class="legend-item"><span class="fail-icon">📦</span><span>志愿者容量已满</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-overlay" *ngIf="syncPanelVisible" (click)="closeSyncPanel()">
-        <div class="modal-panel sync-modal" (click)="$event.stopPropagation()">
-          <div class="modal-header">
-            <div>
-              <h2>多窗口数据同步</h2>
-              <p class="muted">
-                <ng-container *ngIf="hasEditingConflicts()">
-                  🚨 编辑中的数据同时被其他窗口修改，请立即处理！
-                </ng-container>
-                <ng-container *ngIf="!hasEditingConflicts() && syncNotification.status === 'conflict'">
-                  ⚠️ 检测到数据冲突，请选择处理方式
-                </ng-container>
-                <ng-container *ngIf="syncNotification.status === 'remote-changes'">
-                  🔄 其他窗口有更新数据，可直接同步
-                </ng-container>
-              </p>
-            </div>
-            <button type="button" class="ghost sm" (click)="closeSyncPanel()">关闭</button>
-          </div>
-
-          <div class="editing-alert" *ngIf="hasEditingConflicts()">
-            <div class="editing-alert-icon">🚨</div>
-            <div class="editing-alert-content">
-              <strong>重要提醒</strong>
-              <span>您正在编辑的以下记录同时被其他窗口修改：</span>
-              <div class="editing-alert-items">
-                <span class="editing-alert-item" *ngFor="let e of getEditingConflictItems()">
-                  ✏️ {{ e.label }}
-                </span>
-              </div>
-              <div class="editing-alert-tip">
-                建议先 <button type="button" class="inline-btn" (click)="closeSyncPanel()">关闭此面板保存编辑</button> 或选择合适的合并策略。
-              </div>
-            </div>
-          </div>
-
-          <div class="sync-modal-actions">
-            <div class="sync-bulk-actions">
-              <button type="button" class="ghost sm" (click)="keepAllLocal()">📝 保留本窗口全部</button>
-              <button type="button" class="sm" style="background:#4a9f6d" (click)="adoptAllRemote()">🔄 采用最新数据</button>
-              <button type="button" *ngIf="syncNotification.conflictSummary" class="sm" style="background:#5a8fd9" (click)="applyFullMerge()">🔀 按选择合并</button>
-            </div>
-          </div>
-
-          <div class="modal-tabs">
-            <button type="button" [class.active-tab]="syncPanelTab === 'summary'" (click)="syncPanelTab = 'summary'">
-              📊 总览
-              <span class="badge" *ngIf="getBadgeCount('summary') > 0">{{ getBadgeCount('summary') }}</span>
-            </button>
-            <button type="button" [class.active-tab]="syncPanelTab === 'elders'" (click)="syncPanelTab = 'elders'">
-              👴 老人
-              <span class="badge" *ngIf="getBadgeCount('elders') > 0">{{ getBadgeCount('elders') }}</span>
-            </button>
-            <button type="button" [class.active-tab]="syncPanelTab === 'volunteers'" (click)="syncPanelTab = 'volunteers'">
-              👥 志愿者
-              <span class="badge" *ngIf="getBadgeCount('volunteers') > 0">{{ getBadgeCount('volunteers') }}</span>
-            </button>
-            <button type="button" [class.active-tab]="syncPanelTab === 'tasks'" (click)="syncPanelTab = 'tasks'">
-              📋 任务
-              <span class="badge" *ngIf="getBadgeCount('tasks') > 0">{{ getBadgeCount('tasks') }}</span>
-            </button>
-            <button type="button" [class.active-tab]="syncPanelTab === 'exceptionRecords'" (click)="syncPanelTab = 'exceptionRecords'">
-              ⚠️ 异常
-              <span class="badge" *ngIf="getBadgeCount('exceptionRecords') > 0">{{ getBadgeCount('exceptionRecords') }}</span>
-            </button>
-            <button type="button" [class.active-tab]="syncPanelTab === 'phoneNotifications'" (click)="syncPanelTab = 'phoneNotifications'">
-              📞 通知
-              <span class="badge" *ngIf="getBadgeCount('phoneNotifications') > 0">{{ getBadgeCount('phoneNotifications') }}</span>
-            </button>
-          </div>
-
-          <div class="modal-body sync-modal-body">
-            <div *ngIf="syncPanelTab === 'summary'" class="sync-summary">
-              <div class="sync-editing-summary" *ngIf="hasEditingConflicts()">
-                <div class="sync-editing-summary-icon">✏️</div>
-                <div class="sync-editing-summary-content">
-                  <h4>正在编辑中的冲突</h4>
-                  <p class="muted">以下记录您正在编辑，同时被其他窗口修改，需特别注意：</p>
-                  <div class="sync-editing-items">
-                    <span class="sync-editing-item" *ngFor="let e of getEditingConflictItems()">
-                      <span class="sync-editing-item-icon">🚨</span>
-                      <span class="sync-editing-item-type">{{ getEditingTypeLabel(e.type) }}</span>
-                      <span class="sync-editing-item-label">{{ e.label }}</span>
-                    </span>
-                  </div>
-                  <button type="button" class="sm" style="background:#e55353; margin-top:12px" (click)="closeSyncPanel()">先关闭去保存编辑</button>
-                </div>
-              </div>
-
-              <div class="sync-summary-card" *ngFor="let t of SYNC_DATA_TYPES">
-                <div class="sync-summary-icon">
-                  <ng-container [ngSwitch]="t">
-                    <ng-container *ngSwitchCase="'elders'">👴</ng-container>
-                    <ng-container *ngSwitchCase="'volunteers'">👥</ng-container>
-                    <ng-container *ngSwitchCase="'tasks'">📋</ng-container>
-                    <ng-container *ngSwitchCase="'exceptionRecords'">⚠️</ng-container>
-                    <ng-container *ngSwitchCase="'phoneNotifications'">📞</ng-container>
-                  </ng-container>
-                </div>
-                <div class="sync-summary-info">
-                  <h4>
-                    {{ getDataTypeLabel(t) }}
-                    <span class="conflict-tag editing-tag" *ngIf="hasEditingConflictInType(t)">✏️ 含编辑中</span>
-                  </h4>
-                  <div class="sync-summary-counts">
-                    <span *ngIf="syncNotification.conflictSummary">
-                      冲突 {{ getTabConflictCount(t) }} 项
-                    </span>
-                    <span *ngIf="!syncNotification.conflictSummary && syncNotification.pendingRemoteData">
-                      变更 {{ getSyncTypeCount(t) }} 项
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="sync-tips" *ngIf="syncNotification.status === 'conflict'">
-                <h4>💡 冲突解决建议</h4>
-                <ul>
-                  <li><strong>保留本窗口</strong>：以当前页面的修改为准，其他窗口的更新会被覆盖。</li>
-                  <li><strong>采用最新数据</strong>：使用其他窗口的最新数据，本窗口的未保存修改将丢失。</li>
-                  <li><strong>按选择合并</strong>：在各分类标签中逐条选择保留本窗口或采用新数据，灵活处理。</li>
-                </ul>
-              </div>
-            </div>
-
-            <ng-container *ngIf="syncNotification.conflictSummary">
-              <ng-container *ngIf="syncPanelTab !== 'summary'">
-                <div class="conflict-list">
-                  <div class="conflict-item" *ngFor="let c of getTabConflicts(syncPanelTab)" [class.editing-item]="c.isEditing">
-                    <div class="conflict-item-header">
-                      <div class="conflict-item-title">
-                        <span class="conflict-tag" [class.local-only]="c.localOnly" [class.remote-only]="c.remoteOnly">
-                          <ng-container *ngIf="c.localOnly">仅本窗口新增</ng-container>
-                          <ng-container *ngIf="c.remoteOnly">仅其他窗口新增</ng-container>
-                          <ng-container *ngIf="!c.localOnly && !c.remoteOnly">字段冲突</ng-container>
-                        </span>
-                        <span class="conflict-tag editing-tag" *ngIf="c.isEditing">✏️ 正在编辑</span>
-                        <strong>{{ c.label }}</strong>
-                      </div>
-                      <div class="conflict-choose" *ngIf="c.localOnly || c.remoteOnly">
-                        <label>
-                          <input type="radio" [name]="'conf-' + c.id" value="keep" [checked]="getMergeSelection(syncPanelTab, c.id) === 'keep'" (change)="setMergeSelection(syncPanelTab, c.id, 'keep')" />
-                          <span>保留{{ c.localOnly ? '（不删除）' : '（不添加）' }}</span>
-                        </label>
-                        <label>
-                          <input type="radio" [name]="'conf-' + c.id" value="adopt" [checked]="getMergeSelection(syncPanelTab, c.id) === 'adopt'" (change)="setMergeSelection(syncPanelTab, c.id, 'adopt')" />
-                          <span>采用{{ c.remoteOnly ? '（添加）' : '（删除）' }}</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    <div class="editing-warning" *ngIf="c.isEditing">
-                      <span>⚠️ 您正在编辑此记录，请确认合并策略。建议先保存当前编辑再处理同步。</span>
-                    </div>
-
-                    <div class="conflict-fields" *ngIf="!c.localOnly && !c.remoteOnly">
-                      <div class="conflict-field-item" *ngFor="let f of c.fields">
-                        <div class="field-name">{{ fieldLabel(c.type, f.field) }}</div>
-                        <div class="field-compare">
-                          <div class="field-col local">
-                            <div class="field-col-label">📝 本窗口
-                              <label class="choose-radio">
-                                <input type="radio" [name]="'field-' + c.id + '-' + f.field" value="keep"
-                                  [checked]="getMergeSelection(syncPanelTab, c.id) === 'keep'"
-                                  (change)="setMergeSelection(syncPanelTab, c.id, 'keep')" />
-                                选这个
-                              </label>
-                            </div>
-                            <div class="field-value">{{ formatValue(f.localValue) }}</div>
-                          </div>
-                          <div class="field-arrow">↔</div>
-                          <div class="field-col remote">
-                            <div class="field-col-label">🔄 最新
-                              <label class="choose-radio">
-                                <input type="radio" [name]="'field-' + c.id + '-' + f.field" value="adopt"
-                                  [checked]="getMergeSelection(syncPanelTab, c.id) === 'adopt'"
-                                  (change)="setMergeSelection(syncPanelTab, c.id, 'adopt')" />
-                                选这个
-                              </label>
-                            </div>
-                            <div class="field-value">{{ formatValue(f.remoteValue) }}</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p class="muted center" *ngIf="getTabConflictCount(syncPanelTab) === 0">
-                    该类型无冲突
-                  </p>
-                </div>
-              </ng-container>
-            </ng-container>
-
-            <ng-container *ngIf="!syncNotification.conflictSummary && syncPanelTab !== 'summary' && syncNotification.pendingRemoteData">
-              <div class="no-conflict-info">
-                <div class="no-conflict-icon">✅</div>
-                <h4>该类型无冲突</h4>
-                <p class="muted">本窗口对 {{ getDataTypeLabel(syncPanelTab) }} 无未保存修改，点击「采用最新数据」即可一键同步。</p>
-              </div>
-            </ng-container>
-          </div>
-
-          <div class="sync-modal-footer">
-            <button type="button" class="ghost" (click)="closeSyncPanel()">暂不处理</button>
-            <button type="button" class="ghost sm" (click)="keepAllLocal()">📝 保留本窗口</button>
-            <button type="button" class="sm" style="background:#4a9f6d" (click)="adoptAllRemote()">🔄 采用最新数据</button>
-            <button type="button" *ngIf="syncNotification.conflictSummary" class="sm" style="background:#5a8fd9" (click)="applyFullMerge()">🔀 确认合并</button>
-          </div>
-        </div>
-      </div>
-
-      </ng-container>
-
-      <app-volunteer-delivery
-        *ngIf="appViewMode === 'delivery'"
-        [date]="taskDate"
-        [volunteerId]="selectedDeliveryVolunteerId"
-        [volunteers]="volunteers"
-        [tasks]="tasks"
-        [elders]="elders"
-        [mealTags]="mealTags"
-        [visitRecords]="visitRecords"
-        [kanbanSort]="kanbanSort"
-        (statusUpdated)="onDeliveryStatusUpdated($event)"
-        (backToSchedule)="closeVolunteerDelivery()"
-      ></app-volunteer-delivery>
-
     </main>
   `,
   styles: [`
@@ -1541,9 +859,6 @@ type SyncNotification = {
     h2 { margin: 0 0 16px; font-size: 18px; }
     .stats { display: flex; flex-wrap: wrap; gap: 10px; }
     .stats span { padding: 10px 12px; border-radius: 8px; border: 1px solid rgb(255 255 255 / .22); background: rgb(255 255 255 / .12); }
-    .hero-actions { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-    .delivery-view-btn { background: linear-gradient(135deg, #5a8fd9, #4a7fc9); color: white; padding: 10px 16px; font-size: 13px; font-weight: 500; border: 1px solid rgba(255,255,255,.25); border-radius: 8px; cursor: pointer; transition: all .15s; white-space: nowrap; }
-    .delivery-view-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(90,143,217,.35); }
     .layout { display: grid; grid-template-columns: 300px 1fr 300px; gap: 16px; margin-top: 16px; align-items: start; }
     .stack { display: grid; gap: 16px; }
     .panel { background: #fff; border: 1px solid #dfe4d8; border-radius: 8px; padding: 18px; box-shadow: 0 10px 28px rgb(38 49 34 / .07); }
@@ -1693,10 +1008,9 @@ type SyncNotification = {
     .exc-item-desc { margin: 0 0 6px; font-size: 13px; color: #3d4a38; line-height: 1.5; }
     .exc-item-handler { font-size: 12px; color: #5a8fd9; margin-bottom: 6px; }
     .exc-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .exc-severity, .exc-status-tag, .exc-category, .exc-source-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; border: 1px solid; }
+    .exc-severity, .exc-status-tag, .exc-category { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; border: 1px solid; }
     .exc-severity { background: transparent; }
     .exc-status-tag { background: transparent; }
-    .exc-source-tag { background: transparent; }
     .exc-category { background: #f0f5fc; color: #5a8fd9; border-color: #c4d9f0; }
     .exc-modal { max-width: 700px; }
     .exc-form { display: flex; flex-direction: column; gap: 16px; }
@@ -1775,260 +1089,33 @@ type SyncNotification = {
       .export-list { grid-template-columns: 1fr; }
       .preview-cards { grid-template-columns: 1fr 1fr; }
     }
-
-    .phone-notification-section { margin-top: 16px; }
-    .pn-status-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
-    .pn-status-item { text-align: center; border: 1px solid #e2e7da; border-radius: 8px; padding: 10px 6px; background: #fbfcf9; }
-    .pn-status-item strong { display: block; font-size: 22px; margin-bottom: 2px; color: #315448; }
-    .pn-status-item span { font-size: 12px; color: #65715f; }
-
-    .pn-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid #e8ede1; }
-    .pn-tabs button { background: transparent; color: #65715f; border: 0; padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 14px; }
-    .pn-tabs button.active-tab { color: #315448; border-bottom-color: #315448; font-weight: 600; }
-
-    .pn-list { display: flex; flex-direction: column; gap: 10px; max-height: 600px; overflow-y: auto; }
-    .pn-item { border: 1px solid #e0e6d8; border-radius: 10px; padding: 14px 16px; background: #fbfcf9; position: relative; }
-    .pn-item.pn-pending { border-left: 4px solid #8a9783; }
-    .pn-item.pn-warning { border-left: 4px solid #d9a84a; background: #fffbf3; }
-    .pn-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .pn-item-title { display: flex; align-items: center; gap: 8px; }
-    .pn-item-title strong { font-size: 15px; }
-
-    .pn-type-tag { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-    .pn-type-tag.elder-tag { background: #eef3ea; color: #315448; border: 1px solid #c4d6ba; }
-    .pn-type-tag.volunteer-tag { background: #f0f5fc; color: #5a8fd9; border: 1px solid #c4d9f0; }
-
-    .pn-status-tag { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; border: 1px solid; background: transparent; }
-    .pn-source-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; border: 1px solid; background: transparent; }
-
-    .pn-item-meta { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; font-size: 13px; color: #5a6b53; }
-    .pn-phone { font-weight: 600; color: #315448; }
-
-    .pn-item-remark { display: flex; gap: 6px; padding: 8px 10px; background: #fff; border-radius: 6px; border: 1px solid #edf0e8; margin-bottom: 10px; font-size: 13px; }
-    .pn-item-remark label { font-weight: 600; color: #5a6b53; white-space: nowrap; }
-    .pn-item-remark span { color: #3d4a38; line-height: 1.5; flex: 1; }
-
-    .pn-item-remark-edit { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-    .pn-item-remark-edit textarea { width: 100%; border: 1px solid #cfd8ca; border-radius: 8px; padding: 10px; background: #fff; color: #242923; resize: vertical; font-family: inherit; font-size: 13px; }
-    .pn-remark-actions { display: flex; justify-content: flex-end; gap: 8px; }
-
-    .pn-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .pn-item-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .pn-updated-at { display: block; margin-top: 10px; color: #99a593; font-size: 11px; text-align: right; }
-
-    @media (max-width: 600px) {
-      .pn-status-row { grid-template-columns: repeat(2, 1fr); }
-      .pn-tabs { overflow-x: auto; }
-      .pn-tabs button { white-space: nowrap; }
-    }
-
-    .task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-    .manual-badge { display: inline-block; padding: 2px 8px; background: #fff7ef; color: #b36a2e; border: 1px solid #f0d9c4; border-radius: 10px; font-size: 11px; font-weight: 600; }
-    .manual-badge.sm { padding: 1px 6px; font-size: 10px; }
-    .manual-modified { border-color: #d9a84a !important; background: #fffbf3 !important; }
-    .special-note { margin: 6px 0 0; padding: 6px 10px; background: #f0f5fc; border-radius: 6px; font-size: 12px; color: #5a8fd9; }
-    .special-note.sm { padding: 4px 8px; font-size: 11px; }
-
-    .pause-dates-section { display: flex; flex-direction: column; gap: 8px; }
-    .pause-dates-list { display: flex; flex-wrap: wrap; gap: 6px; }
-    .pause-date-tag { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: #fff7ef; color: #b36a2e; border: 1px solid #f0d9c4; border-radius: 10px; font-size: 12px; }
-    .pause-date-input { display: flex; gap: 6px; }
-    .pause-date-input input { flex: 1; }
-
-    .weekly-schedule-modal { max-width: 1400px; width: 95vw; }
-    .weekly-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; padding: 14px; background: #f7f8f4; border-radius: 8px; }
-    .week-nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .week-nav input { width: 140px; }
-
-    .weekly-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
-    .summary-item { text-align: center; padding: 14px; border-radius: 8px; border: 1px solid #e2e7da; background: #fbfcf9; }
-    .summary-item strong { display: block; font-size: 28px; margin-bottom: 4px; }
-    .summary-item span { font-size: 13px; color: #65715f; }
-    .summary-item.ok strong { color: #4a9f6d; }
-    .summary-item.fail strong { color: #c75454; }
-    .summary-item.warn strong { color: #d9a84a; }
-
-    .skipped-list { margin-bottom: 16px; padding: 12px 14px; background: #fffbf3; border: 1px solid #f0e6c4; border-radius: 8px; }
-    .skipped-list p { margin: 0 0 8px; }
-    .skipped-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-
-    .weekly-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 16px; }
-    .weekly-column { background: #f7f8f4; border: 1px solid #e2e7da; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
-    .weekly-column.today { border-color: #315448; }
-    .weekly-column.today .weekly-column-header { background: #eef3ea; }
-    .weekly-column-header { display: flex; flex-direction: column; gap: 2px; padding: 12px; background: #eef1e8; border-bottom: 1px solid #e2e7da; }
-    .weekly-column-header strong { font-size: 15px; color: #315448; }
-    .weekly-column-header span { font-size: 12px; color: #65715f; }
-    .col-count { display: inline-block; background: #315448; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; width: fit-content; margin-top: 4px; }
-    .weekly-column.today .col-count { background: #315448; }
-    .weekly-column-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: 500px; }
-
-    .weekly-task { background: #fff; border: 1px solid #e0e6d8; border-radius: 8px; padding: 10px; font-size: 13px; }
-    .weekly-task.warn { border-color: #d78b63; background: #fff7ef; }
-    .weekly-task.manual-modified { border-color: #d9a84a; background: #fffbf3; }
-    .weekly-task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-    .weekly-task-header strong { font-size: 14px; }
-    .weekly-task small { display: block; color: #65715f; margin-bottom: 4px; }
-    .weekly-volunteer { margin: 6px 0 0; padding-top: 6px; border-top: 1px dashed #e0e6d8; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #3d4a38; }
-    .task-status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-    .task-status.status-pending { background: #eef1ec; color: #8a9783; }
-    .task-status.status-delivering { background: #e8f3ec; color: #4a9f6d; }
-    .task-status.status-done { background: #f0f5fc; color: #5a8fd9; }
-    .task-status.status-exception { background: #fff7ef; color: #c75454; }
-
-    .weekly-failure { display: flex; gap: 8px; padding: 10px; background: #fff7ef; border: 1px solid #f0d9c4; border-radius: 8px; }
-    .fail-icon { font-size: 18px; flex-shrink: 0; }
-    .fail-content { flex: 1; }
-    .fail-content strong { display: block; font-size: 13px; color: #3d4a38; margin-bottom: 2px; }
-    .fail-content small { font-size: 11px; color: #b36a2e; line-height: 1.4; }
-
-    .failure-legend { padding: 14px; background: #fbfcf9; border: 1px solid #e2e7da; border-radius: 8px; }
-    .failure-legend h4 { margin: 0 0 12px; font-size: 14px; color: #315448; }
-    .legend-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-    .failure-legend .legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #5a6b53; }
-    .failure-legend .legend-item .fail-icon { font-size: 16px; }
-
-    @media (max-width: 1200px) {
-      .weekly-grid { grid-template-columns: repeat(2, 1fr); }
-      .weekly-summary { grid-template-columns: repeat(2, 1fr); }
-      .legend-grid { grid-template-columns: repeat(2, 1fr); }
-      .weekly-toolbar { flex-direction: column; align-items: stretch; }
-      .weekly-toolbar .week-nav { justify-content: center; }
-      .weekly-toolbar button { width: 100%; }
-    }
-
-    .sync-alert { display: flex; align-items: center; gap: 16px; padding: 14px 20px; margin-top: 16px; border-radius: 10px; background: #e8f3ec; border: 1px solid #c4d6ba; cursor: pointer; transition: all .15s; }
-    .sync-alert:hover { box-shadow: 0 4px 14px rgba(74,159,109,.15); }
-    .sync-alert.conflict { background: #fff3e6; border-color: #f0d2b4; }
-    .sync-alert.editing-conflict { background: #fdecec; border-color: #f0c4c4; animation: pulse-warning 2s ease-in-out infinite; }
-    @keyframes pulse-warning { 0%, 100% { box-shadow: 0 0 0 0 rgba(229,83,83,.4); } 50% { box-shadow: 0 0 0 8px rgba(229,83,83,0); } }
-    .sync-alert.editing-conflict .sync-alert-content strong { color: #c64040; }
-    .sync-alert.editing-conflict .sync-alert-content span { color: #a05050; }
-    .sync-alert-icon { font-size: 28px; flex-shrink: 0; }
-    .sync-alert-content { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-    .sync-alert-content strong { font-size: 15px; color: #315448; }
-    .sync-alert-content span { font-size: 13px; color: #5a6b53; }
-    .sync-alert-content .sync-sub-tip { font-size: 12px; color: #8a9b83; opacity: .8; }
-    .sync-alert.conflict .sync-alert-content strong { color: #b36a2e; }
-    .sync-alert-actions { display: flex; gap: 8px; }
-
-    .sync-modal { max-width: 960px !important; width: 92vw; }
-    .sync-modal-actions { padding: 14px 22px; border-bottom: 1px solid #e8ede1; background: #fafbf7; }
-    .sync-bulk-actions { display: flex; gap: 10px; }
-    .sync-modal-body { padding-top: 0 !important; padding-bottom: 0 !important; }
-    .sync-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid #e8ede1; background: #fafbf7; }
-
-    .editing-alert { display: flex; gap: 14px; padding: 16px 20px; background: #fdecec; border-bottom: 1px solid #f0c4c4; }
-    .editing-alert-icon { font-size: 28px; flex-shrink: 0; }
-    .editing-alert-content { flex: 1; display: flex; flex-direction: column; gap: 6px; }
-    .editing-alert-content strong { font-size: 15px; color: #c64040; }
-    .editing-alert-content > span { font-size: 13px; color: #a05050; }
-    .editing-alert-items { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-    .editing-alert-item { padding: 4px 10px; background: #fff; border: 1px solid #f0c4c4; border-radius: 12px; font-size: 12px; color: #c64040; }
-    .editing-alert-tip { font-size: 12px; color: #8a5050; margin-top: 4px; }
-    .inline-btn { display: inline; padding: 2px 8px; margin: 0 4px; background: #c64040; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer; }
-
-    .sync-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 20px 0; }
-    .sync-editing-summary { grid-column: 1 / -1; display: flex; gap: 14px; padding: 16px; background: #fdecec; border: 2px solid #e55353; border-radius: 10px; }
-    .sync-editing-summary-icon { font-size: 32px; flex-shrink: 0; }
-    .sync-editing-summary-content { flex: 1; }
-    .sync-editing-summary-content h4 { margin: 0 0 6px; font-size: 15px; color: #c64040; }
-    .sync-editing-items { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-    .sync-editing-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; border-radius: 6px; font-size: 13px; }
-    .sync-editing-item-icon { font-size: 14px; }
-    .sync-editing-item-type { font-weight: 600; color: #c64040; }
-    .sync-editing-item-label { color: #5a5050; }
-    .sync-summary-card { display: flex; align-items: center; gap: 14px; padding: 16px; border: 1px solid #e2e7da; border-radius: 10px; background: #fbfcf9; }
-    .sync-summary-icon { font-size: 36px; flex-shrink: 0; }
-    .sync-summary-info h4 { margin: 0 0 6px; font-size: 15px; color: #315448; display: flex; align-items: center; gap: 8px; }
-    .sync-summary-counts { font-size: 13px; color: #5a8fd9; font-weight: 500; }
-
-    .sync-tips { grid-column: 1 / -1; padding: 16px; background: #fff7ef; border: 1px solid #f0d9c4; border-radius: 10px; margin-top: 8px; }
-    .sync-tips h4 { margin: 0 0 10px; font-size: 14px; color: #b36a2e; }
-    .sync-tips ul { margin: 0; padding-left: 20px; color: #8a6a2a; font-size: 13px; line-height: 1.8; }
-    .sync-tips li strong { color: #5a4a2a; }
-
-    .conflict-list { padding: 20px 0; display: flex; flex-direction: column; gap: 14px; }
-    .conflict-item { border: 1px solid #e0e6d8; border-radius: 10px; padding: 14px 16px; background: #fbfcf9; }
-    .conflict-item.editing-item { border: 2px solid #e55353; background: #fff8f8; }
-    .conflict-item-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed #e0e6d8; }
-    .conflict-item.editing-item .conflict-item-header { border-bottom-color: #f0c4c4; }
-    .conflict-item-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .conflict-item-title strong { font-size: 15px; color: #315448; }
-    .conflict-tag { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #fff3e6; color: #b36a2e; border: 1px solid #f0d2b4; }
-    .conflict-tag.local-only { background: #eef3ea; color: #315448; border-color: #c4d6ba; }
-    .conflict-tag.remote-only { background: #f0f5fc; color: #5a8fd9; border-color: #c4d9f0; }
-    .conflict-tag.editing-tag { background: #fdecec; color: #c64040; border-color: #f0c4c4; }
-    .editing-warning { padding: 10px 12px; margin-bottom: 12px; background: #fef0f0; border: 1px dashed #f0c4c4; border-radius: 6px; font-size: 12px; color: #a05050; }
-    .conflict-choose { display: flex; gap: 14px; flex-shrink: 0; }
-    .conflict-choose label { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #5a6b53; cursor: pointer; }
-    .conflict-choose input { accent-color: #315448; margin: 0; }
-
-    .conflict-fields { display: flex; flex-direction: column; gap: 10px; }
-    .conflict-field-item { border: 1px solid #edf0e8; border-radius: 8px; padding: 10px 12px; background: #fff; }
-    .field-name { font-size: 12px; font-weight: 600; color: #5a6b53; margin-bottom: 8px; }
-    .field-compare { display: flex; gap: 10px; align-items: stretch; }
-    .field-col { flex: 1; border-radius: 6px; padding: 10px; background: #f7f8f4; border: 1px solid #e2e7da; }
-    .field-col.local { background: #eef3ea; border-color: #c4d6ba; }
-    .field-col.remote { background: #f0f5fc; border-color: #c4d9f0; }
-    .field-col-label { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 500; margin-bottom: 6px; color: #3d4a38; }
-    .field-col.local .field-col-label { color: #315448; }
-    .field-col.remote .field-col-label { color: #5a8fd9; }
-    .choose-radio { font-size: 11px; font-weight: normal; display: inline-flex; align-items: center; gap: 4px; color: #5a6b53; cursor: pointer; }
-    .choose-radio input { accent-color: #315448; margin: 0; width: auto; }
-    .field-value { font-size: 13px; color: #3d4a38; line-height: 1.5; word-break: break-all; }
-    .field-arrow { display: flex; align-items: center; justify-content: center; font-size: 18px; color: #99a593; flex-shrink: 0; width: 30px; }
-
-    .no-conflict-info { text-align: center; padding: 60px 20px; }
-    .no-conflict-icon { font-size: 56px; margin-bottom: 16px; }
-    .no-conflict-info h4 { margin: 0 0 8px; font-size: 18px; color: #4a9f6d; }
-
-    @media (max-width: 800px) {
-      .sync-summary { grid-template-columns: 1fr; }
-      .field-compare { flex-direction: column; }
-      .field-arrow { transform: rotate(90deg); margin: 4px 0; }
-      .conflict-item-header { flex-direction: column; align-items: flex-start; }
-      .sync-alert { flex-direction: column; align-items: stretch; gap: 10px; }
-      .sync-alert-actions { justify-content: flex-end; }
-      .editing-alert { flex-direction: column; gap: 10px; }
-    }
   `],
 })
 export class App {
-  private mealPrepService: MealPrepService;
   elders: Elder[] = [
-    { id: crypto.randomUUID(), name: '苏阿姨', preference: '少盐软饭', mealTags: ['low-salt', 'soft-food'], address: '松桂里3栋201', contact: '女儿13800001111', note: '午餐需敲门等候', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' },
-    { id: crypto.randomUUID(), name: '何叔叔', preference: '糖尿病餐', mealTags: ['diabetic'], address: '松桂里5栋104', contact: '邻居王姐', note: '行动慢，放门口需电话确认', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '少糖' },
-    { id: crypto.randomUUID(), name: '林奶奶', preference: '素食', mealTags: ['vegetarian'], address: '梧桐巷12号', contact: '儿子13900002222', note: '周三加汤', deliveryDays: [1, 3, 5], pauseDates: [], specialMealNote: '' }
+    { id: crypto.randomUUID(), name: '苏阿姨', preference: '少盐软饭', mealTags: ['low-salt', 'soft-food'], address: '松桂里3栋201', contact: '女儿13800001111', note: '午餐需敲门等候' },
+    { id: crypto.randomUUID(), name: '何叔叔', preference: '糖尿病餐', mealTags: ['diabetic'], address: '松桂里5栋104', contact: '邻居王姐', note: '行动慢，放门口需电话确认' },
+    { id: crypto.randomUUID(), name: '林奶奶', preference: '素食', mealTags: ['vegetarian'], address: '梧桐巷12号', contact: '儿子13900002222', note: '周三加汤' }
   ];
 
   volunteers: Volunteer[] = [
-    { id: crypto.randomUUID(), name: '小赵', phone: '13600003333', capacity: 4, area: '松桂里', availableDays: [1, 2, 3, 4, 5] },
-    { id: crypto.randomUUID(), name: '陈姐', phone: '13700004444', capacity: 3, area: '梧桐巷', availableDays: [1, 3, 5] }
+    { id: crypto.randomUUID(), name: '小赵', phone: '13600003333', capacity: 4, area: '松桂里' },
+    { id: crypto.randomUUID(), name: '陈姐', phone: '13700004444', capacity: 3, area: '梧桐巷' }
   ];
 
   tasks: MealTask[] = [];
   taskDate = today;
   kanbanSort: KanbanSortMap = {};
-  manuallySortedRoutes: Record<string, Record<string, boolean>> = {};
-  appViewMode: 'schedule' | 'delivery' = 'schedule';
-  selectedDeliveryVolunteerId: string = '';
-  private deliveryService: VolunteerDeliveryService | null = null;
-  elderForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' };
-  volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '', availableDays: [1, 2, 3, 4, 5] };
-  editingElderId: string | null = null;
-  elderEditForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' };
-  weeklyScheduleStart: string = this.getWeekStart(today);
-  weeklyScheduleResult: WeeklyScheduleResult | null = null;
-  showWeeklySchedulePanel = false;
-  WEEK_DAYS = WEEK_DAYS;
-  today = today;
+  elderForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
+  volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '' };
 
   mealTags: MealTag[] = [...PRESET_TAGS];
   newTagName = '';
   editingTagId: string | null = null;
   editingTagName = '';
+
+  editingElderId: string | null = null;
+  elderEditForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
 
   visitRecords: VisitRecord[] = [];
   visitPanelVisible = false;
@@ -2055,23 +1142,14 @@ export class App {
     description: '',
     handler: '',
     status: '待处理',
-    result: '',
-    source: '手动登记'
+    result: ''
   };
   exceptionListFilter: ExceptionStatus | '全部' = '全部';
   exceptionListDate = '';
   exceptionListElderId = '';
-  exceptionListSource: ExceptionSource | '全部' = '全部';
   exceptionHistoryVisible = false;
   exceptionHistoryElderId = '';
   exceptionHistoryDate = '';
-  exceptionHistorySource: ExceptionSource | '全部' = '全部';
-
-  phoneNotifications: PhoneNotification[] = [];
-  phoneNotificationTab: 'all' | 'elder' | 'volunteer' = 'all';
-  phoneNotificationSource: ExceptionSource | '全部' = '全部';
-  editingNotificationId: string | null = null;
-  editingNotificationRemark: string = '';
 
   importExportPanelVisible = false;
   importTab: 'export' | 'import' = 'export';
@@ -2085,947 +1163,41 @@ export class App {
   EXCEPTION_CATEGORIES: ExceptionCategory[] = ['无人应答', '地址错误', '老人拒收', '餐食问题', '配送延误', '老人身体不适', '其他'];
   EXCEPTION_SEVERITIES: ExceptionSeverity[] = ['一般', '较重', '紧急'];
   EXCEPTION_STATUSES: ExceptionStatus[] = ['待处理', '处理中', '已解决'];
-  EXCEPTION_SOURCES: ExceptionSource[] = ['备餐缺餐', '配送异常', '未接通', '手动登记'];
-
-  NOTIFICATION_STATUSES: NotificationStatus[] = ['未通知', '已通知', '未接通', '稍后再拨'];
-
-  // ===== 多窗口数据一致性 =====
-  readonly SYNC_DATA_TYPES: SyncDataType[] = ['elders', 'volunteers', 'tasks', 'exceptionRecords', 'phoneNotifications'];
-  private readonly LS_VERSIONS_KEY = 'zfl-4-sync-versions';
-  private readonly WINDOW_ID = crypto.randomUUID().slice(0, 8);
-  private readonly LS_WRITER_KEY = 'zfl-4-last-writer';
-
-  localVersions: DataVersionMap = { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, phoneNotifications: 0 };
-  lastSyncSnapshot: DataSnapshot = { elders: [], volunteers: [], tasks: [], exceptionRecords: [], phoneNotifications: [] };
-
-  syncNotification: SyncNotification = {
-    status: 'idle',
-    remoteVersions: { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, phoneNotifications: 0 },
-    conflictSummary: null,
-    pendingRemoteData: null
-  };
-
-  syncPanelVisible = false;
-  syncPanelTab: 'summary' | 'elders' | 'volunteers' | 'tasks' | 'exceptionRecords' | 'phoneNotifications' = 'summary';
-  mergeSelections: Record<SyncDataType, Record<string, 'keep' | 'adopt'>> = {
-    elders: {}, volunteers: {}, tasks: {}, exceptionRecords: {}, phoneNotifications: {}
-  };
-  // ==============================
 
   get selectedElderForVisit(): Elder | undefined {
     return this.elders.find((e) => e.id === this.selectedElderIdForVisit);
   }
 
-  getWeekStart(dateStr: string): string {
-    const date = new Date(dateStr);
-    const day = date.getDay();
-    const diff = date.getDate() - day;
-    const monday = new Date(date);
-    monday.setDate(diff + (day === 0 ? -6 : 1));
-    return monday.toISOString().slice(0, 10);
-  }
-
-  getWeekDates(weekStart: string): string[] {
-    const dates: string[] = [];
-    const start = new Date(weekStart);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      dates.push(d.toISOString().slice(0, 10));
-    }
-    return dates;
-  }
-
-  getDayOfWeek(dateStr: string): number {
-    return new Date(dateStr).getDay();
-  }
-
-  isElderPaused(elderId: string, date: string): boolean {
-    const elder = this.elders.find((e) => e.id === elderId);
-    return elder?.pauseDates.includes(date) || false;
-  }
-
-  isElderScheduled(elderId: string, date: string): boolean {
-    const elder = this.elders.find((e) => e.id === elderId);
-    if (!elder) return false;
-    const dayOfWeek = this.getDayOfWeek(date);
-    return elder.deliveryDays.includes(dayOfWeek);
-  }
-
-  isVolunteerAvailable(volunteerId: string, date: string): boolean {
-    const volunteer = this.volunteers.find((v) => v.id === volunteerId);
-    if (!volunteer) return false;
-    const dayOfWeek = this.getDayOfWeek(date);
-    return volunteer.availableDays.includes(dayOfWeek);
-  }
-
-  toggleElderDeliveryDay(day: number) {
-    const idx = this.elderForm.deliveryDays.indexOf(day);
-    if (idx > -1) {
-      this.elderForm.deliveryDays = this.elderForm.deliveryDays.filter((d) => d !== day);
-    } else {
-      this.elderForm.deliveryDays = [...this.elderForm.deliveryDays, day].sort();
-    }
-  }
-
-  toggleElderEditDeliveryDay(day: number) {
-    const idx = this.elderEditForm.deliveryDays.indexOf(day);
-    if (idx > -1) {
-      this.elderEditForm.deliveryDays = this.elderEditForm.deliveryDays.filter((d) => d !== day);
-    } else {
-      this.elderEditForm.deliveryDays = [...this.elderEditForm.deliveryDays, day].sort();
-    }
-  }
-
-  toggleVolunteerAvailableDay(day: number) {
-    const idx = this.volunteerForm.availableDays.indexOf(day);
-    if (idx > -1) {
-      this.volunteerForm.availableDays = this.volunteerForm.availableDays.filter((d) => d !== day);
-    } else {
-      this.volunteerForm.availableDays = [...this.volunteerForm.availableDays, day].sort();
-    }
-  }
-
-  addPauseDate(elderId: string, date: string) {
-    const elder = this.elders.find((e) => e.id === elderId);
-    if (elder && !elder.pauseDates.includes(date)) {
-      elder.pauseDates = [...elder.pauseDates, date].sort();
-      this.save();
-    }
-  }
-
-  removePauseDate(elderId: string, date: string) {
-    const elder = this.elders.find((e) => e.id === elderId);
-    if (elder) {
-      elder.pauseDates = elder.pauseDates.filter((d) => d !== date);
-      this.save();
-    }
-  }
-
-  constructor(@Inject(MealPrepService) mealPrepService: MealPrepService) {
-    this.mealPrepService = mealPrepService;
+  constructor() {
     this.load();
     this.loadKanbanSort();
     this.loadVisits();
     this.loadMealTags();
     this.loadExceptions();
-    this.loadPhoneNotifications();
-    this.initSyncState();
-    this.setupStorageListener();
     if (this.tasks.length === 0) this.generateTasks();
   }
-
-  // ===== 多窗口数据一致性：初始化 =====
-  private initSyncState() {
-    const rawVersions = localStorage.getItem(this.LS_VERSIONS_KEY);
-    if (rawVersions) {
-      try {
-        const parsed = JSON.parse(rawVersions);
-        this.localVersions = {
-          elders: parsed.elders || 0,
-          volunteers: parsed.volunteers || 0,
-          tasks: parsed.tasks || 0,
-          exceptionRecords: parsed.exceptionRecords || 0,
-          phoneNotifications: parsed.phoneNotifications || 0,
-        };
-      } catch {
-        this.localVersions = { elders: Date.now(), volunteers: Date.now(), tasks: Date.now(), exceptionRecords: Date.now(), phoneNotifications: Date.now() };
-      }
-    } else {
-      this.localVersions = { elders: Date.now(), volunteers: Date.now(), tasks: Date.now(), exceptionRecords: Date.now(), phoneNotifications: Date.now() };
-    }
-    this.updateSyncSnapshot();
-  }
-
-  private updateSyncSnapshot() {
-    this.lastSyncSnapshot = {
-      elders: JSON.parse(JSON.stringify(this.elders)),
-      volunteers: JSON.parse(JSON.stringify(this.volunteers)),
-      tasks: JSON.parse(JSON.stringify(this.tasks)),
-      exceptionRecords: JSON.parse(JSON.stringify(this.exceptionRecords)),
-      phoneNotifications: JSON.parse(JSON.stringify(this.phoneNotifications))
-    };
-  }
-
-  private setupStorageListener() {
-    window.addEventListener('storage', (e) => this.handleStorageEvent(e));
-  }
-
-  private handleStorageEvent(e: StorageEvent) {
-    if (e.key === this.LS_VERSIONS_KEY && e.newValue) {
-      const writer = localStorage.getItem(this.LS_WRITER_KEY);
-      if (writer === this.WINDOW_ID) return;
-      try {
-        const remoteVersions: DataVersionMap = JSON.parse(e.newValue);
-        this.checkRemoteChanges(remoteVersions);
-      } catch {}
-    }
-  }
-
-  private checkRemoteChanges(remoteVersions: DataVersionMap) {
-    const changedTypes = this.SYNC_DATA_TYPES.filter(t => remoteVersions[t] > this.localVersions[t]);
-    if (changedTypes.length === 0) return;
-
-    const remoteData: DataSnapshot = {
-      elders: changedTypes.includes('elders') ? this.loadRemoteData('elders') : [...this.lastSyncSnapshot.elders],
-      volunteers: changedTypes.includes('volunteers') ? this.loadRemoteData('volunteers') : [...this.lastSyncSnapshot.volunteers],
-      tasks: changedTypes.includes('tasks') ? this.loadRemoteData('tasks') : [...this.lastSyncSnapshot.tasks],
-      exceptionRecords: changedTypes.includes('exceptionRecords') ? this.loadRemoteData('exceptionRecords') : [...this.lastSyncSnapshot.exceptionRecords],
-      phoneNotifications: changedTypes.includes('phoneNotifications') ? this.loadRemoteData('phoneNotifications') : [...this.lastSyncSnapshot.phoneNotifications]
-    };
-
-    const hasLocalChanges = this.hasUnsavedLocalChanges();
-
-    if (!hasLocalChanges) {
-      this.applyRemoteData(remoteData, remoteVersions, changedTypes);
-    } else {
-      const conflictSummary = this.buildConflictSummary(remoteData);
-      const hasConflicts = this.SYNC_DATA_TYPES.some(t => conflictSummary[t].length > 0);
-
-      this.syncNotification = {
-        status: hasConflicts ? 'conflict' : 'remote-changes',
-        remoteVersions,
-        conflictSummary: hasConflicts ? conflictSummary : null,
-        pendingRemoteData: remoteData
-      };
-    }
-  }
-
-  private loadRemoteData<T>(type: SyncDataType): T[] {
-    const keyMap: Record<SyncDataType, string> = {
-      elders: 'zfl-4-elders',
-      volunteers: 'zfl-4-volunteers',
-      tasks: 'zfl-4-tasks',
-      exceptionRecords: 'zfl-4-exceptions',
-      phoneNotifications: 'zfl-4-phone-notifications'
-    };
-    const raw = localStorage.getItem(keyMap[type]);
-    if (!raw) return [];
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
-
-  private hasUnsavedLocalChanges(): boolean {
-    return this.hasSyncEditingItems() || this.SYNC_DATA_TYPES.some(t => !this.deepEqual(
-      this[t as keyof DataSnapshot] as any[],
-      this.lastSyncSnapshot[t] as any[]
-    ));
-  }
-
-  private hasSyncEditingItems(): boolean {
-    return !!this.editingElderId;
-  }
-
-  private deepEqual(a: any[], b: any[]): boolean {
-    if (a.length !== b.length) return false;
-    const mapB = new Map(b.map(x => [x.id, x]));
-    for (const item of a) {
-      const match = mapB.get(item.id);
-      if (!match) return false;
-      if (JSON.stringify(item) !== JSON.stringify(match)) return false;
-    }
-    return true;
-  }
-
-  private applyRemoteData(remoteData: DataSnapshot, remoteVersions: DataVersionMap, types: SyncDataType[]) {
-    for (const t of types) {
-      (this as any)[t] = (remoteData[t] as any[]).map((x: any) => ({ ...x }));
-      this.localVersions[t] = remoteVersions[t];
-    }
-    this.updateSyncSnapshot();
-    this.persistVersions();
-  }
-
-  private buildConflictSummary(remote: DataSnapshot): ConflictSummary {
-    const local = this.getLocalConflictSnapshot();
-    return {
-      elders: this.compareArrays(local.elders, remote.elders, this.lastSyncSnapshot.elders, 'elders', (e) => e.name),
-      volunteers: this.compareArrays(local.volunteers, remote.volunteers, this.lastSyncSnapshot.volunteers, 'volunteers', (v) => v.name),
-      tasks: this.compareArrays(local.tasks, remote.tasks, this.lastSyncSnapshot.tasks, 'tasks', (t) => `${this.elderName(t.elderId)}(${t.date})`),
-      exceptionRecords: this.compareArrays(local.exceptionRecords, remote.exceptionRecords, this.lastSyncSnapshot.exceptionRecords, 'exceptionRecords', (e) => `${this.elderName(e.elderId)}·${e.category}`),
-      phoneNotifications: this.compareArrays(local.phoneNotifications, remote.phoneNotifications, this.lastSyncSnapshot.phoneNotifications, 'phoneNotifications', (n) => `${n.phone}·${n.notificationStatus}`)
-    };
-  }
-
-  private getLocalConflictSnapshot(): DataSnapshot {
-    return {
-      elders: this.getEldersWithEditDraft(),
-      volunteers: this.volunteers,
-      tasks: this.tasks,
-      exceptionRecords: this.exceptionRecords,
-      phoneNotifications: this.phoneNotifications
-    };
-  }
-
-  private getEldersWithEditDraft(): Elder[] {
-    if (!this.editingElderId) return this.elders;
-    return this.elders.map(e => e.id === this.editingElderId ? { id: e.id, ...this.elderEditForm } : e);
-  }
-
-  private compareArrays<T extends { id: string }>(
-    local: T[], remote: T[], base: T[],
-    type: SyncDataType,
-    labelFn: (item: T) => string
-  ): ItemConflict[] {
-    const conflicts: ItemConflict[] = [];
-    const localMap = new Map(local.map(x => [x.id, x]));
-    const remoteMap = new Map(remote.map(x => [x.id, x]));
-    const baseMap = new Map(base.map(x => [x.id, x]));
-    const allIds = new Set([...localMap.keys(), ...remoteMap.keys()]);
-
-    for (const id of allIds) {
-      const l = localMap.get(id);
-      const r = remoteMap.get(id);
-      const b = baseMap.get(id);
-      const editing = this.isItemEditing(type, id);
-      const editingType = editing ? this.getEditingTypeLabel(type) : null;
-
-      if (l && !r) {
-        conflicts.push({ id, label: labelFn(l), type, fields: [], localOnly: true, remoteOnly: false, isEditing: editing, editingType });
-        continue;
-      }
-      if (!l && r) {
-        conflicts.push({ id, label: labelFn(r), type, fields: [], localOnly: false, remoteOnly: true, isEditing: editing, editingType });
-        continue;
-      }
-      if (l && r) {
-        const localChanged = !b || JSON.stringify(l) !== JSON.stringify(b);
-        const remoteChanged = !b || JSON.stringify(r) !== JSON.stringify(b);
-        const editingConflict = editing && remoteChanged;
-        if ((localChanged && remoteChanged && JSON.stringify(l) !== JSON.stringify(r)) || editingConflict) {
-          const fields = this.findDiffFields(l, r);
-          if (fields.length > 0) {
-            conflicts.push({ id, label: labelFn(l), type, fields, localOnly: false, remoteOnly: false, isEditing: editing, editingType });
-          }
-        }
-      }
-    }
-    return conflicts;
-  }
-
-  private findDiffFields<T extends Record<string, any>>(a: T, b: T): ConflictField[] {
-    const fields: ConflictField[] = [];
-    const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
-    for (const key of allKeys) {
-      const va = a[key];
-      const vb = b[key];
-      if (JSON.stringify(va) !== JSON.stringify(vb)) {
-        fields.push({ field: key, localValue: va, remoteValue: vb });
-      }
-    }
-    return fields;
-  }
-
-  private persistVersions() {
-    localStorage.setItem(this.LS_VERSIONS_KEY, JSON.stringify(this.localVersions));
-  }
-
-  private bumpVersion(type: SyncDataType) {
-    this.localVersions[type] = Date.now() + Math.floor(Math.random() * 1000);
-    this.persistVersions();
-    localStorage.setItem(this.LS_WRITER_KEY, this.WINDOW_ID);
-  }
-
-  openSyncPanel() {
-    if (this.syncNotification.status === 'idle') return;
-    this.syncPanelVisible = true;
-    this.syncPanelTab = 'summary';
-    this.initMergeSelections();
-  }
-
-  closeSyncPanel() {
-    this.syncPanelVisible = false;
-  }
-
-  private initMergeSelections() {
-    if (!this.syncNotification.conflictSummary) return;
-    for (const type of this.SYNC_DATA_TYPES) {
-      this.mergeSelections[type] = {};
-      for (const c of this.syncNotification.conflictSummary[type]) {
-        this.mergeSelections[type][c.id] = 'keep';
-      }
-    }
-  }
-
-  get syncSummaryCounts() {
-    const s = this.syncNotification;
-    const counts = { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, phoneNotifications: 0, total: 0 };
-    if (s.conflictSummary) {
-      for (const t of this.SYNC_DATA_TYPES) {
-        counts[t] = s.conflictSummary[t].length;
-        counts.total += counts[t];
-      }
-    } else if (s.pendingRemoteData) {
-      for (const t of this.SYNC_DATA_TYPES) {
-        const remoteLen = (s.pendingRemoteData[t] as any[]).length;
-        const baseLen = (this.lastSyncSnapshot[t] as any[]).length;
-        counts[t] = Math.abs(remoteLen - baseLen);
-        counts.total += counts[t];
-      }
-    }
-    return counts;
-  }
-
-  adoptAllRemote() {
-    if (!this.syncNotification.pendingRemoteData) return;
-    const rd = this.syncNotification.pendingRemoteData;
-    const rv = this.syncNotification.remoteVersions;
-    this.applyRemoteData(rd, rv, this.SYNC_DATA_TYPES);
-    this.resetSyncNotification();
-    this.syncPanelVisible = false;
-  }
-
-  keepAllLocal() {
-    this.SYNC_DATA_TYPES.forEach(t => this.bumpVersion(t));
-    this.updateSyncSnapshot();
-    this.resetSyncNotification();
-    this.syncPanelVisible = false;
-  }
-
-  applyMergeByType(type: SyncDataType) {
-    if (!this.syncNotification.pendingRemoteData || !this.syncNotification.conflictSummary) return;
-    const conflicts = this.syncNotification.conflictSummary[type];
-    const remoteArr = (this.syncNotification.pendingRemoteData[type] as any[]).slice();
-    const result: any[] = [];
-    const processedIds = new Set<string>();
-
-    for (const c of conflicts) {
-      processedIds.add(c.id);
-      const choice = this.mergeSelections[type][c.id];
-      if (c.localOnly) {
-        if (choice === 'keep') result.push(...(this as any)[type].filter((x: any) => x.id === c.id));
-      } else if (c.remoteOnly) {
-        if (choice === 'adopt') result.push(...remoteArr.filter((x: any) => x.id === c.id));
-      } else {
-        if (choice === 'keep') {
-          result.push(...(this as any)[type].filter((x: any) => x.id === c.id));
-        } else {
-          result.push(...remoteArr.filter((x: any) => x.id === c.id));
-        }
-      }
-    }
-
-    const remoteMap = new Map(remoteArr.map(x => [x.id, x]));
-    const localMap = new Map((this as any)[type].map((x: any) => [x.id, x]));
-    const allNonConflict = new Set([...remoteMap.keys(), ...localMap.keys()]);
-    for (const id of allNonConflict) {
-      if (processedIds.has(id)) continue;
-      if (remoteMap.has(id)) result.push(remoteMap.get(id));
-      else if (localMap.has(id)) result.push(localMap.get(id));
-    }
-
-    (this as any)[type] = result;
-    this.localVersions[type] = this.syncNotification.remoteVersions[type];
-    this.updateSyncSnapshot();
-  }
-
-  applyFullMerge() {
-    for (const t of this.SYNC_DATA_TYPES) {
-      this.applyMergeByType(t);
-    }
-    this.persistVersions();
-    this.resetSyncNotification();
-    this.syncPanelVisible = false;
-  }
-
-  private resetSyncNotification() {
-    this.syncNotification = {
-      status: 'idle',
-      remoteVersions: { elders: 0, volunteers: 0, tasks: 0, exceptionRecords: 0, phoneNotifications: 0 },
-      conflictSummary: null,
-      pendingRemoteData: null
-    };
-  }
-
-  formatValue(v: any): string {
-    if (v === null || v === undefined) return '（空）';
-    if (Array.isArray(v)) return v.length > 0 ? `[${v.join(', ')}]` : '（空数组）';
-    if (typeof v === 'boolean') return v ? '是' : '否';
-    if (typeof v === 'object') return JSON.stringify(v);
-    return String(v);
-  }
-
-  fieldLabel(type: SyncDataType, field: string): string {
-    const labels: Record<string, Record<string, string>> = {
-      elders: { name: '姓名', preference: '餐食偏好', address: '地址', contact: '联系方式', note: '备注', mealTags: '餐食标签', deliveryDays: '送餐日期', pauseDates: '暂停日期', specialMealNote: '特殊备注' },
-      volunteers: { name: '姓名', phone: '电话', capacity: '每日容量', area: '片区', availableDays: '可服务日期' },
-      tasks: { volunteerId: '志愿者', status: '状态', exception: '异常描述', isManuallyModified: '手动标记', specialMealNote: '特殊餐食备注', elderId: '老人', date: '日期' },
-      exceptionRecords: { category: '分类', severity: '严重程度', description: '描述', handler: '负责人', status: '状态', result: '处理结果', source: '异常来源', updatedAt: '更新时间' },
-      phoneNotifications: { targetType: '通知对象类型', targetId: '通知对象', phone: '电话', notificationStatus: '通知状态', remark: '备注', source: '异常来源', updatedAt: '更新时间', taskId: '关联任务', date: '日期' }
-    };
-    return labels[type]?.[field] || field;
-  }
-
-  getTabConflicts(tab: string): ItemConflict[] {
-    if (!this.syncNotification.conflictSummary) return [];
-    const type = tab as SyncDataType;
-    return (this.syncNotification.conflictSummary[type] as ItemConflict[]) || [];
-  }
-
-  getTabConflictCount(tab: string): number {
-    return this.getTabConflicts(tab).length;
-  }
-
-  getMergeSelection(tab: string, itemId: string): 'keep' | 'adopt' {
-    const type = tab as SyncDataType;
-    return this.mergeSelections[type]?.[itemId] || 'keep';
-  }
-
-  setMergeSelection(tab: string, itemId: string, value: 'keep' | 'adopt') {
-    const type = tab as SyncDataType;
-    if (!this.mergeSelections[type]) this.mergeSelections[type] = {};
-    this.mergeSelections[type][itemId] = value;
-  }
-
-  getDataTypeLabel(tab: string): string {
-    const map: Record<string, string> = {
-      elders: '老人档案', volunteers: '志愿者', tasks: '送餐任务', exceptionRecords: '异常记录', phoneNotifications: '电话通知'
-    };
-    return map[tab] || tab;
-  }
-
-  getSyncTypeCount(tab: string): number {
-    const t = tab as SyncDataType;
-    const s = this.syncNotification;
-    if (s.conflictSummary) {
-      return s.conflictSummary[t]?.length || 0;
-    } else if (s.pendingRemoteData) {
-      const remoteLen = (s.pendingRemoteData[t] as any[]).length;
-      const baseLen = (this.lastSyncSnapshot[t] as any[]).length;
-      return Math.abs(remoteLen - baseLen);
-    }
-    return 0;
-  }
-
-  getBadgeCount(tab: string): number {
-    if (tab === 'summary') {
-      return this.syncSummaryCounts.total;
-    }
-    return this.getSyncTypeCount(tab);
-  }
-
-  getEditingItems(): EditingStateItem[] {
-    const items: EditingStateItem[] = [];
-    if (this.editingElderId) {
-      const elder = this.elders.find(e => e.id === this.editingElderId);
-      if (elder) {
-        items.push({ type: 'elders', id: this.editingElderId, label: `老人档案 · ${elder.name}` });
-      }
-    }
-    if (this.editingTagId) {
-      const tag = this.mealTags.find(t => t.id === this.editingTagId);
-      if (tag) {
-        items.push({ type: 'mealTag', id: this.editingTagId, label: `餐食标签 · ${tag.name}` });
-      }
-    }
-    if (this.editingNotificationId) {
-      const notif = this.phoneNotifications.find(n => n.id === this.editingNotificationId);
-      if (notif) {
-        const targetName = notif.targetType === 'elder'
-          ? this.elders.find(e => e.id === notif.targetId)?.name
-          : this.volunteers.find(v => v.id === notif.targetId)?.name;
-        items.push({ type: 'phoneNotification', id: this.editingNotificationId, label: `通知备注 · ${targetName || '未知'}` });
-      }
-    }
-    return items;
-  }
-
-  hasEditingItems(): boolean {
-    return this.getEditingItems().length > 0;
-  }
-
-  getEditingConflictItems(): EditingStateItem[] {
-    const editing = this.getEditingItems();
-    const s = this.syncNotification;
-    if (!s.conflictSummary) return [];
-    return editing.filter(ei => {
-      if (ei.type === 'mealTag' || ei.type === 'phoneNotification') return false;
-      return s.conflictSummary![ei.type].some(c => c.id === ei.id);
-    });
-  }
-
-  hasEditingConflicts(): boolean {
-    return this.getEditingConflictItems().length > 0;
-  }
-
-  isItemEditing(type: SyncDataType, id: string): boolean {
-    if (type === 'elders' && this.editingElderId === id) return true;
-    return false;
-  }
-
-  getEditingTypeLabel(type: SyncDataType | 'mealTag' | 'phoneNotification'): string {
-    const labels: Record<string, string> = {
-      elders: '老人档案',
-      volunteers: '志愿者',
-      tasks: '送餐任务',
-      exceptionRecords: '异常记录',
-      mealTag: '餐食标签',
-      phoneNotification: '电话通知'
-    };
-    return labels[type] || type;
-  }
-
-  getEditingSyncTip(): string {
-    const editing = this.getEditingItems();
-    const conflicts = this.getEditingConflictItems();
-    if (conflicts.length > 0) {
-      const names = conflicts.map(c => c.label).join('、');
-      return `注意：正在编辑的「${names}」同时被其他窗口修改`;
-    }
-    if (editing.length > 0) {
-      const names = editing.map(e => e.label).join('、');
-      return `正在编辑：${names}`;
-    }
-    return '';
-  }
-
-  hasEditingConflictInType(type: SyncDataType): boolean {
-    return this.getEditingConflictItems().some(x => x.type === type);
-  }
-  // ===== 多窗口一致性结束 =====
 
   addElder() {
     if (!this.elderForm.name.trim()) return;
     this.elders = [{ id: crypto.randomUUID(), ...this.elderForm }, ...this.elders];
-    this.elderForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5], pauseDates: [], specialMealNote: '' };
+    this.elderForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
     this.save();
   }
 
   addVolunteer() {
     if (!this.volunteerForm.name.trim()) return;
     this.volunteers = [{ id: crypto.randomUUID(), ...this.volunteerForm, capacity: Number(this.volunteerForm.capacity || 1) }, ...this.volunteers];
-    this.volunteerForm = { name: '', phone: '', capacity: 3, area: '', availableDays: [1, 2, 3, 4, 5] };
-    this.save();
-  }
-
-  startEditElder(elder: Elder) {
-    this.editingElderId = elder.id;
-    this.elderEditForm = { ...elder };
-  }
-
-  cancelEditElder() {
-    this.editingElderId = null;
-  }
-
-  saveEditElder() {
-    if (!this.elderEditForm.name.trim() || !this.editingElderId) return;
-    this.elders = this.elders.map((e) => e.id === this.editingElderId ? { ...e, ...this.elderEditForm } : e);
-    this.editingElderId = null;
+    this.volunteerForm = { name: '', phone: '', capacity: 3, area: '' };
     this.save();
   }
 
   generateTasks() {
     const existing = new Set(this.tasks.filter((task) => task.date === this.taskDate).map((task) => task.elderId));
     const created = this.elders
-      .filter((elder) => !existing.has(elder.id) && this.isElderScheduled(elder.id, this.taskDate) && !this.isElderPaused(elder.id, this.taskDate))
-      .map((elder) => ({ id: crypto.randomUUID(), elderId: elder.id, date: this.taskDate, volunteerId: '', status: '待分配' as const, exception: '', isManuallyModified: false, specialMealNote: elder.specialMealNote }));
+      .filter((elder) => !existing.has(elder.id))
+      .map((elder) => ({ id: crypto.randomUUID(), elderId: elder.id, date: this.taskDate, volunteerId: '', status: '待分配' as const, exception: '' }));
     this.tasks = [...created, ...this.tasks];
     this.save();
-    this.generatePhoneNotificationsForDate(this.taskDate);
-  }
-
-  generateWeeklySchedule() {
-    const weekDates = this.getWeekDates(this.weeklyScheduleStart);
-    const generatedTasks: MealTask[] = [];
-    const assignedTasks: AutoAssignEntry[] = [];
-    const failures: ScheduleFailure[] = [];
-    const skippedManualTasks: string[] = [];
-    const takenOverTasks: MealTask[] = [];
-
-    const dailyLoad = new Map<string, Map<string, number>>();
-    for (const date of weekDates) {
-      dailyLoad.set(date, new Map());
-      for (const v of this.volunteers) {
-        dailyLoad.get(date)!.set(v.id, this.tasks.filter((t) => t.date === date && t.volunteerId === v.id).length);
-      }
-    }
-
-    for (const date of weekDates) {
-      const dayOfWeek = this.getDayOfWeek(date);
-      const existingTasksForDate = this.tasks.filter((t) => t.date === date);
-      const existingTaskMap = new Map(existingTasksForDate.map((t) => [t.elderId, t]));
-      const manuallyModifiedElderIds = new Set(existingTasksForDate.filter((t) => t.isManuallyModified).map((t) => t.elderId));
-
-      for (const elder of this.elders) {
-        if (manuallyModifiedElderIds.has(elder.id)) {
-          skippedManualTasks.push(`${elder.name} (${date})`);
-          continue;
-        }
-
-        if (elder.pauseDates.includes(date)) {
-          failures.push({
-            elderId: elder.id,
-            elderName: elder.name,
-            date,
-            reason: 'paused',
-            reasonText: '老人设置了暂停送餐'
-          });
-          continue;
-        }
-
-        if (!elder.deliveryDays.includes(dayOfWeek)) {
-          continue;
-        }
-
-        const existingTask = existingTaskMap.get(elder.id);
-
-        const availableVolunteers = this.volunteers
-          .filter((v) => v.availableDays.includes(dayOfWeek))
-          .filter((v) => {
-            const load = dailyLoad.get(date)!.get(v.id) || 0;
-            return load < v.capacity;
-          })
-          .filter((v) => !v.area.trim() || !elder.address.trim() || elder.address.includes(v.area))
-          .sort((a, b) => {
-            const loadA = dailyLoad.get(date)!.get(a.id) || 0;
-            const loadB = dailyLoad.get(date)!.get(b.id) || 0;
-            const remainA = a.capacity - loadA;
-            const remainB = b.capacity - loadB;
-            if (remainA !== remainB) return remainB - remainA;
-            return loadA - loadB;
-          });
-
-        if (existingTask) {
-          if (existingTask.volunteerId) {
-            takenOverTasks.push(existingTask);
-            const existingVolunteer = this.volunteers.find((v) => v.id === existingTask.volunteerId);
-            if (existingVolunteer) {
-              assignedTasks.push({
-                taskId: existingTask.id,
-                elderId: elder.id,
-                elderName: elder.name,
-                elderAddress: elder.address,
-                volunteerId: existingVolunteer.id,
-                volunteerName: existingVolunteer.name
-              });
-            }
-            continue;
-          }
-
-          if (availableVolunteers.length === 0) {
-            const matchingAreaVolunteers = this.volunteers.filter((v) =>
-              v.availableDays.includes(dayOfWeek) && v.area.trim() && elder.address.trim() && elder.address.includes(v.area)
-            );
-
-            let reason = '';
-            if (matchingAreaVolunteers.length > 0) {
-              const allFull = matchingAreaVolunteers.every((v) => {
-                const load = dailyLoad.get(date)!.get(v.id) || 0;
-                return load >= v.capacity;
-              });
-              reason = allFull
-                ? `片区匹配的志愿者（${matchingAreaVolunteers.map(v => v.name).join('、')}）当日均已满载`
-                : `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
-              failures.push({
-                elderId: elder.id,
-                elderName: elder.name,
-                date,
-                reason: allFull ? 'capacity_full' : 'no_volunteer',
-                reasonText: reason
-              });
-            } else if (!this.volunteers.some((v) => v.availableDays.includes(dayOfWeek))) {
-              reason = `${WEEK_DAYS[dayOfWeek]}无可用志愿者`;
-              failures.push({
-                elderId: elder.id,
-                elderName: elder.name,
-                date,
-                reason: 'no_volunteer',
-                reasonText: reason
-              });
-            } else {
-              reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
-              failures.push({
-                elderId: elder.id,
-                elderName: elder.name,
-                date,
-                reason: 'no_volunteer',
-                reasonText: reason
-              });
-            }
-            continue;
-          }
-
-          const chosen = availableVolunteers[0];
-          existingTask.volunteerId = chosen.id;
-          existingTask.status = '配送中';
-          existingTask.specialMealNote = elder.specialMealNote;
-          takenOverTasks.push(existingTask);
-          assignedTasks.push({
-            taskId: existingTask.id,
-            elderId: elder.id,
-            elderName: elder.name,
-            elderAddress: elder.address,
-            volunteerId: chosen.id,
-            volunteerName: chosen.name
-          });
-
-          const currentLoad = dailyLoad.get(date)!.get(chosen.id) || 0;
-          dailyLoad.get(date)!.set(chosen.id, currentLoad + 1);
-          continue;
-        }
-
-        if (availableVolunteers.length === 0) {
-          const matchingAreaVolunteers = this.volunteers.filter((v) =>
-            v.availableDays.includes(dayOfWeek) && v.area.trim() && elder.address.trim() && elder.address.includes(v.area)
-          );
-
-          let reason = '';
-          if (matchingAreaVolunteers.length > 0) {
-            const allFull = matchingAreaVolunteers.every((v) => {
-              const load = dailyLoad.get(date)!.get(v.id) || 0;
-              return load >= v.capacity;
-            });
-            reason = allFull
-              ? `片区匹配的志愿者（${matchingAreaVolunteers.map(v => v.name).join('、')}）当日均已满载`
-              : `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
-            failures.push({
-              elderId: elder.id,
-              elderName: elder.name,
-              date,
-              reason: allFull ? 'capacity_full' : 'no_volunteer',
-              reasonText: reason
-            });
-          } else if (!this.volunteers.some((v) => v.availableDays.includes(dayOfWeek))) {
-            reason = `${WEEK_DAYS[dayOfWeek]}无可用志愿者`;
-            failures.push({
-              elderId: elder.id,
-              elderName: elder.name,
-              date,
-              reason: 'no_volunteer',
-              reasonText: reason
-            });
-          } else {
-            reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
-            failures.push({
-              elderId: elder.id,
-              elderName: elder.name,
-              date,
-              reason: 'no_volunteer',
-              reasonText: reason
-            });
-          }
-          continue;
-        }
-
-        const chosen = availableVolunteers[0];
-        const newTask: MealTask = {
-          id: crypto.randomUUID(),
-          elderId: elder.id,
-          date,
-          volunteerId: chosen.id,
-          status: '配送中' as const,
-          exception: '',
-          isManuallyModified: false,
-          specialMealNote: elder.specialMealNote
-        };
-        generatedTasks.push(newTask);
-        assignedTasks.push({
-          taskId: newTask.id,
-          elderId: elder.id,
-          elderName: elder.name,
-          elderAddress: elder.address,
-          volunteerId: chosen.id,
-          volunteerName: chosen.name
-        });
-
-        const currentLoad = dailyLoad.get(date)!.get(chosen.id) || 0;
-        dailyLoad.get(date)!.set(chosen.id, currentLoad + 1);
-      }
-    }
-
-    this.tasks = [...generatedTasks, ...this.tasks];
-    this.save();
-
-    for (const date of weekDates) {
-      this.generatePhoneNotificationsForDate(date);
-      if (!this.kanbanSort[date]) {
-        this.kanbanSort[date] = {};
-      }
-      const allAssignedForDate = assignedTasks.filter((a) => {
-        const t = generatedTasks.find((gt) => gt.id === a.taskId) || takenOverTasks.find((tt) => tt.id === a.taskId);
-        return t?.date === date;
-      });
-      for (const entry of allAssignedForDate) {
-        if (!this.kanbanSort[date][entry.volunteerId]) {
-          this.kanbanSort[date][entry.volunteerId] = this.tasks
-            .filter((t) => t.date === date && t.volunteerId === entry.volunteerId)
-            .map((t) => t.id);
-        } else if (!this.kanbanSort[date][entry.volunteerId].includes(entry.taskId)) {
-          this.kanbanSort[date][entry.volunteerId].push(entry.taskId);
-        }
-      }
-      const volunteerIdsForDate = new Set(allAssignedForDate.map(a => a.volunteerId));
-      for (const volunteerId of volunteerIdsForDate) {
-        if (!this.isRouteManuallySorted(date, volunteerId)) {
-          this.sortAndSetKanbanForVolunteer(date, volunteerId, this.tasks, this.elders);
-        }
-      }
-    }
-    this.saveKanbanSort();
-
-    this.weeklyScheduleResult = {
-      weekStart: weekDates[0],
-      weekEnd: weekDates[6],
-      generatedTasks,
-      takenOverTasks,
-      assignedTasks,
-      failures,
-      skippedManualTasks
-    };
-  }
-
-  getWeeklyDayColumns(): WeeklyDayColumn[] {
-    const weekDates = this.getWeekDates(this.weeklyScheduleStart);
-    return weekDates.map((date) => {
-      const dayOfWeek = this.getDayOfWeek(date);
-      return {
-        date,
-        dayName: WEEK_DAYS[dayOfWeek],
-        dayOfWeek,
-        tasks: this.tasks.filter((t) => t.date === date),
-        failures: this.weeklyScheduleResult?.failures.filter((f) => f.date === date) || []
-      };
-    });
-  }
-
-  openWeeklySchedulePanel() {
-    this.showWeeklySchedulePanel = true;
-    this.weeklyScheduleResult = null;
-  }
-
-  closeWeeklySchedulePanel() {
-    this.showWeeklySchedulePanel = false;
-  }
-
-  prevWeek() {
-    const current = new Date(this.weeklyScheduleStart);
-    current.setDate(current.getDate() - 7);
-    this.weeklyScheduleStart = this.getWeekStart(current.toISOString().slice(0, 10));
-    this.weeklyScheduleResult = null;
-  }
-
-  nextWeek() {
-    const current = new Date(this.weeklyScheduleStart);
-    current.setDate(current.getDate() + 7);
-    this.weeklyScheduleStart = this.getWeekStart(current.toISOString().slice(0, 10));
-    this.weeklyScheduleResult = null;
-  }
-
-  goToCurrentWeek() {
-    this.weeklyScheduleStart = this.getWeekStart(today);
-    this.weeklyScheduleResult = null;
-  }
-
-  onWeekStartChange() {
-    this.weeklyScheduleStart = this.getWeekStart(this.weeklyScheduleStart);
-    this.weeklyScheduleResult = null;
-  }
-
-  getVolunteerName(volunteerId: string): string {
-    return this.volunteers.find((v) => v.id === volunteerId)?.name || '未知';
   }
 
   filteredTasks() {
@@ -3044,36 +1216,34 @@ export class App {
   assignTask(id: string, volunteerId: string) {
     const task = this.tasks.find((t) => t.id === id);
     const oldVolunteerId = task?.volunteerId;
-    this.tasks = this.tasks.map((t) => t.id === id ? { ...t, volunteerId, status: volunteerId ? '配送中' : '待分配', isManuallyModified: true } : t);
-    if (!this.kanbanSort[this.taskDate]) this.kanbanSort[this.taskDate] = {};
+    this.tasks = this.tasks.map((t) => t.id === id ? { ...t, volunteerId, status: volunteerId ? '配送中' : '待分配' } : t);
     const dateSort = this.kanbanSort[this.taskDate];
-    if (oldVolunteerId && dateSort[oldVolunteerId]) {
-      dateSort[oldVolunteerId] = dateSort[oldVolunteerId].filter((tid) => tid !== id);
-    }
-    if (volunteerId) {
-      if (!dateSort[volunteerId]) {
-        dateSort[volunteerId] = this.filteredTasks()
-          .filter((t) => t.volunteerId === volunteerId)
-          .map((t) => t.id);
-      } else if (!dateSort[volunteerId].includes(id)) {
-        dateSort[volunteerId].push(id);
+    if (dateSort) {
+      if (oldVolunteerId && dateSort[oldVolunteerId]) {
+        dateSort[oldVolunteerId] = dateSort[oldVolunteerId].filter((tid) => tid !== id);
       }
-      this.markRouteManuallySorted(this.taskDate, volunteerId);
-      this.saveKanbanSort();
+      if (volunteerId) {
+        if (!dateSort[volunteerId]) {
+          dateSort[volunteerId] = this.filteredTasks()
+            .filter((t) => t.volunteerId === volunteerId)
+            .map((t) => t.id);
+        } else if (!dateSort[volunteerId].includes(id)) {
+          dateSort[volunteerId].push(id);
+        }
+        this.saveKanbanSort();
+      }
     }
     this.save();
-    this.generatePhoneNotificationsForDate(this.taskDate);
   }
 
   autoAssignTasks() {
     const dateTasks = this.filteredTasks();
-    const unassigned = dateTasks.filter((t) => !t.volunteerId && t.status === '待分配' && !t.isManuallyModified);
+    const unassigned = dateTasks.filter((t) => !t.volunteerId && t.status === '待分配');
     if (unassigned.length === 0) {
       this.autoAssignResult = { assigned: [], failed: [] };
       return;
     }
 
-    const dayOfWeek = this.getDayOfWeek(this.taskDate);
     const currentLoad = new Map<string, number>();
     for (const v of this.volunteers) {
       currentLoad.set(v.id, this.assignedCount(v.id));
@@ -3090,7 +1260,6 @@ export class App {
       }
 
       const candidates = this.volunteers
-        .filter((v) => v.availableDays.includes(dayOfWeek))
         .filter((v) => {
           const load = currentLoad.get(v.id) || 0;
           if (load >= v.capacity) return false;
@@ -3107,25 +1276,16 @@ export class App {
         });
 
       if (candidates.length === 0) {
-        const dayName = WEEK_DAYS[dayOfWeek];
         const matchingVolunteers = this.volunteers.filter((v) => v.area.trim() && elder.address.trim() && elder.address.includes(v.area));
         let reason = '';
-        const availableVolunteers = this.volunteers.filter((v) => v.availableDays.includes(dayOfWeek));
-        if (availableVolunteers.length === 0) {
-          reason = `${dayName}无可用志愿者`;
-        } else if (matchingVolunteers.length > 0) {
-          const availableMatching = matchingVolunteers.filter((v) => v.availableDays.includes(dayOfWeek));
-          if (availableMatching.length === 0) {
-            reason = `片区匹配的志愿者${dayName}不值班`;
+        if (matchingVolunteers.length > 0) {
+          const fullNames = matchingVolunteers
+            .filter((v) => (currentLoad.get(v.id) || 0) >= v.capacity)
+            .map((v) => v.name);
+          if (fullNames.length === matchingVolunteers.length) {
+            reason = `片区匹配的志愿者（${fullNames.join('、')}）均已满载`;
           } else {
-            const fullNames = availableMatching
-              .filter((v) => (currentLoad.get(v.id) || 0) >= v.capacity)
-              .map((v) => v.name);
-            if (fullNames.length === availableMatching.length) {
-              reason = `片区匹配的志愿者（${fullNames.join('、')}）${dayName}均已满载`;
-            } else {
-              reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
-            }
+            reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
           }
         } else if (!this.volunteers.some((v) => v.area.trim())) {
           reason = '无志愿者配置片区信息';
@@ -3138,7 +1298,7 @@ export class App {
 
       const chosen = candidates[0];
       this.tasks = this.tasks.map((t) =>
-        t.id === task.id ? { ...t, volunteerId: chosen.id, status: '配送中' as const, isManuallyModified: false } : t
+        t.id === task.id ? { ...t, volunteerId: chosen.id, status: '配送中' as const } : t
       );
       currentLoad.set(chosen.id, (currentLoad.get(chosen.id) || 0) + 1);
       assigned.push({
@@ -3151,32 +1311,26 @@ export class App {
       });
     }
 
-    const affectedVolunteerIds = new Set(assigned.map(a => a.volunteerId));
-    if (!this.kanbanSort[this.taskDate]) this.kanbanSort[this.taskDate] = {};
     const dateSort = this.kanbanSort[this.taskDate];
-    for (const entry of assigned) {
-      if (!dateSort[entry.volunteerId]) {
-        dateSort[entry.volunteerId] = this.filteredTasks()
-          .filter((t) => t.volunteerId === entry.volunteerId)
-          .map((t) => t.id);
-      } else if (!dateSort[entry.volunteerId].includes(entry.taskId)) {
-        dateSort[entry.volunteerId].push(entry.taskId);
+    if (dateSort) {
+      for (const entry of assigned) {
+        if (!dateSort[entry.volunteerId]) {
+          dateSort[entry.volunteerId] = this.filteredTasks()
+            .filter((t) => t.volunteerId === entry.volunteerId)
+            .map((t) => t.id);
+        } else if (!dateSort[entry.volunteerId].includes(entry.taskId)) {
+          dateSort[entry.volunteerId].push(entry.taskId);
+        }
       }
+      this.saveKanbanSort();
     }
-    for (const volunteerId of affectedVolunteerIds) {
-      if (!this.isRouteManuallySorted(this.taskDate, volunteerId)) {
-        this.sortAndSetKanbanForVolunteer(this.taskDate, volunteerId, this.tasks, this.elders);
-      }
-    }
-    this.saveKanbanSort();
 
     this.autoAssignResult = { assigned, failed };
     this.save();
-    this.generatePhoneNotificationsForDate(this.taskDate);
   }
 
   setStatus(id: string, status: MealTask['status']) {
-    this.tasks = this.tasks.map((task) => task.id === id ? { ...task, status, exception: status === '异常' ? task.exception : '', isManuallyModified: true } : task);
+    this.tasks = this.tasks.map((task) => task.id === id ? { ...task, status, exception: status === '异常' ? task.exception : '' } : task);
     this.save();
   }
 
@@ -3190,8 +1344,7 @@ export class App {
       description: task.exception || '',
       handler: '',
       status: '待处理',
-      result: '',
-      source: '手动登记'
+      result: ''
     };
     this.exceptionPanelTab = 'form';
     this.exceptionPanelVisible = true;
@@ -3213,7 +1366,6 @@ export class App {
       elderId: task.elderId,
       date: task.date,
       ...this.exceptionForm,
-      source: '手动登记',
       createdAt: timeStr,
       updatedAt: timeStr
     };
@@ -3278,9 +1430,6 @@ export class App {
     if (this.exceptionListElderId) {
       records = records.filter((r) => r.elderId === this.exceptionListElderId);
     }
-    if (this.exceptionListSource !== '全部') {
-      records = records.filter((r) => r.source === this.exceptionListSource);
-    }
     return records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
@@ -3291,9 +1440,6 @@ export class App {
     }
     if (this.exceptionHistoryElderId) {
       records = records.filter((r) => r.elderId === this.exceptionHistoryElderId);
-    }
-    if (this.exceptionHistorySource !== '全部') {
-      records = records.filter((r) => r.source === this.exceptionHistorySource);
     }
     return records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
@@ -3316,21 +1462,6 @@ export class App {
     if (status === '已解决') return '#4a9f6d';
     if (status === '处理中') return '#5a8fd9';
     return '#c75454';
-  }
-
-  sourceColor(source: ExceptionSource | undefined): string {
-    if (!source) return '#8a9783';
-    switch (source) {
-      case '备餐缺餐': return '#d78b63';
-      case '配送异常': return '#c75454';
-      case '未接通': return '#d9a84a';
-      case '手动登记': return '#5a8fd9';
-      default: return '#8a9783';
-    }
-  }
-
-  sourceLabel(source: ExceptionSource | undefined): string {
-    return source || '未知';
   }
 
   exceptionFormElderName(): string {
@@ -3402,173 +1533,31 @@ export class App {
     const target = idx + direction;
     if (target < 0 || target >= list.length) return;
     [list[idx], list[target]] = [list[target], list[idx]];
-    this.markRouteManuallySorted(this.taskDate, volunteerId);
     this.saveKanbanSort();
   }
 
   private saveKanbanSort() {
     localStorage.setItem('zfl-4-kanban-sort', JSON.stringify(this.kanbanSort));
-    localStorage.setItem('zfl-4-manually-sorted-routes', JSON.stringify(this.manuallySortedRoutes));
   }
 
   private loadKanbanSort() {
     const raw = localStorage.getItem('zfl-4-kanban-sort');
     if (raw) this.kanbanSort = JSON.parse(raw);
-    const rawManual = localStorage.getItem('zfl-4-manually-sorted-routes');
-    if (rawManual) {
-      try {
-        this.manuallySortedRoutes = JSON.parse(rawManual);
-      } catch {
-        this.manuallySortedRoutes = {};
-      }
-    }
-  }
-
-  private isRouteManuallySorted(date: string, volunteerId: string): boolean {
-    return !!this.manuallySortedRoutes[date]?.[volunteerId];
-  }
-
-  private markRouteManuallySorted(date: string, volunteerId: string) {
-    if (!this.manuallySortedRoutes[date]) this.manuallySortedRoutes[date] = {};
-    this.manuallySortedRoutes[date][volunteerId] = true;
-  }
-
-  private unmarkRouteManuallySorted(date: string, volunteerId: string) {
-    if (this.manuallySortedRoutes[date]) {
-      delete this.manuallySortedRoutes[date][volunteerId];
-    }
-  }
-
-  private calcAddressSimilarity(addr1: string, addr2: string): number {
-    if (!addr1 || !addr2) return 0;
-    const a = addr1.trim();
-    const b = addr2.trim();
-    if (a === b) return 1.0;
-    if (a.includes(b) || b.includes(a)) return 0.85;
-    const setA = new Set<string>();
-    const setB = new Set<string>();
-    const minLen = 2;
-    for (let i = 0; i <= a.length - minLen; i++) {
-      setA.add(a.slice(i, i + minLen));
-    }
-    for (let i = 0; i <= b.length - minLen; i++) {
-      setB.add(b.slice(i, i + minLen));
-    }
-    let intersection = 0;
-    for (const gram of setA) {
-      if (setB.has(gram)) intersection++;
-    }
-    const union = setA.size + setB.size - intersection;
-    const bigramScore = union === 0 ? 0 : intersection / union;
-    const digitRegex = /\d+[号院小区楼栋单元楼层室]?/g;
-    const digitsA = a.match(digitRegex) || [];
-    const digitsB = b.match(digitRegex) || [];
-    let digitScore = 0;
-    if (digitsA.length > 0 && digitsB.length > 0) {
-      const minDigitLen = Math.min(digitsA.length, digitsB.length);
-      let matchedPrefix = 0;
-      for (let i = 0; i < minDigitLen; i++) {
-        if (digitsA[i] === digitsB[i]) matchedPrefix++;
-        else break;
-      }
-      digitScore = matchedPrefix / Math.max(digitsA.length, digitsB.length);
-    }
-    return bigramScore * 0.6 + digitScore * 0.4;
-  }
-
-  private sortTaskIdsByRouteProximity(taskIds: string[], tasks: MealTask[], elders: Elder[]): string[] {
-    if (taskIds.length <= 2) return [...taskIds];
-    const elderById = new Map(elders.map(e => [e.id, e]));
-    const taskElderMap = new Map<string, string>();
-    for (const t of tasks) {
-      taskElderMap.set(t.id, t.elderId);
-    }
-    const taskIdArr = [...taskIds];
-    const remaining = new Set(taskIdArr);
-    const result: string[] = [];
-    let startId = taskIdArr[0];
-    let minStartLen = Infinity;
-    for (const tid of taskIdArr) {
-      const eid = taskElderMap.get(tid);
-      const elder = eid ? elderById.get(eid) : undefined;
-      const addr = elder?.address || '';
-      if (addr.length < minStartLen) {
-        minStartLen = addr.length;
-        startId = tid;
-      }
-    }
-    result.push(startId);
-    remaining.delete(startId);
-    while (remaining.size > 0) {
-      const lastId = result[result.length - 1];
-      const lastElderId = taskElderMap.get(lastId);
-      const lastElder = lastElderId ? elderById.get(lastElderId) : undefined;
-      const lastAddr = lastElder?.address || '';
-      let bestId: string | null = null;
-      let bestScore = -1;
-      for (const tid of remaining) {
-        const eid = taskElderMap.get(tid);
-        const elder = eid ? elderById.get(eid) : undefined;
-        const addr = elder?.address || '';
-        const score = this.calcAddressSimilarity(lastAddr, addr);
-        if (score > bestScore) {
-          bestScore = score;
-          bestId = tid;
-        }
-      }
-      if (bestId === null) break;
-      result.push(bestId);
-      remaining.delete(bestId);
-    }
-    for (const tid of taskIdArr) {
-      if (!result.includes(tid)) result.push(tid);
-    }
-    return result;
-  }
-
-  private sortAndSetKanbanForVolunteer(date: string, volunteerId: string, allTasks: MealTask[], elders: Elder[]) {
-    const vTasks = allTasks.filter(t => t.date === date && t.volunteerId === volunteerId);
-    if (vTasks.length === 0) {
-      if (this.kanbanSort[date]?.[volunteerId]) {
-        delete this.kanbanSort[date][volunteerId];
-      }
-      return;
-    }
-    const sortedIds = this.sortTaskIdsByRouteProximity(vTasks.map(t => t.id), allTasks, elders);
-    if (!this.kanbanSort[date]) this.kanbanSort[date] = {};
-    this.kanbanSort[date][volunteerId] = sortedIds;
   }
 
   private load() {
     const elders = localStorage.getItem('zfl-4-elders');
     const volunteers = localStorage.getItem('zfl-4-volunteers');
     const tasks = localStorage.getItem('zfl-4-tasks');
-    if (elders) this.elders = JSON.parse(elders).map((e: Elder) => ({
-      ...e,
-      mealTags: e.mealTags || [],
-      deliveryDays: e.deliveryDays || [1, 2, 3, 4, 5],
-      pauseDates: e.pauseDates || [],
-      specialMealNote: e.specialMealNote || ''
-    }));
-    if (volunteers) this.volunteers = JSON.parse(volunteers).map((v: Volunteer) => ({
-      ...v,
-      availableDays: v.availableDays || [1, 2, 3, 4, 5]
-    }));
-    if (tasks) this.tasks = JSON.parse(tasks).map((t: MealTask) => ({
-      ...t,
-      isManuallyModified: t.isManuallyModified || false,
-      specialMealNote: t.specialMealNote || ''
-    }));
+    if (elders) this.elders = JSON.parse(elders).map((e: Elder) => ({ ...e, mealTags: e.mealTags || [] }));
+    if (volunteers) this.volunteers = JSON.parse(volunteers);
+    if (tasks) this.tasks = JSON.parse(tasks);
   }
 
   private save() {
     localStorage.setItem('zfl-4-elders', JSON.stringify(this.elders));
     localStorage.setItem('zfl-4-volunteers', JSON.stringify(this.volunteers));
     localStorage.setItem('zfl-4-tasks', JSON.stringify(this.tasks));
-    this.bumpVersion('elders');
-    this.bumpVersion('volunteers');
-    this.bumpVersion('tasks');
-    this.updateSyncSnapshot();
   }
 
   selectElder(id: string) {
@@ -3686,6 +1675,18 @@ export class App {
     }
   }
 
+  startEditElder(elder: Elder) {
+    this.editingElderId = elder.id;
+    this.elderEditForm = {
+      name: elder.name,
+      preference: elder.preference,
+      mealTags: [...(elder.mealTags || [])],
+      address: elder.address,
+      contact: elder.contact,
+      note: elder.note,
+    };
+  }
+
   toggleElderEditTag(tagId: string) {
     const tags = this.elderEditForm.mealTags;
     if (tags.includes(tagId)) {
@@ -3695,16 +1696,18 @@ export class App {
     }
   }
 
-  removeEditPauseDate(date: string) {
-    this.elderEditForm.pauseDates = this.elderEditForm.pauseDates.filter((d) => d !== date);
+  saveEditElder() {
+    if (!this.editingElderId || !this.elderEditForm.name.trim()) return;
+    this.elders = this.elders.map((e) =>
+      e.id === this.editingElderId ? { ...e, ...this.elderEditForm } : e
+    );
+    this.cancelEditElder();
+    this.save();
   }
 
-  addEditPauseDate(input: HTMLInputElement) {
-    const date = input.value;
-    if (date && !this.elderEditForm.pauseDates.includes(date)) {
-      this.elderEditForm.pauseDates = [...this.elderEditForm.pauseDates, date].sort();
-      input.value = '';
-    }
+  cancelEditElder() {
+    this.editingElderId = null;
+    this.elderEditForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
   }
 
   elderMealTags(elderId: string): MealTag[] {
@@ -3749,24 +1752,11 @@ export class App {
 
   private saveExceptions() {
     localStorage.setItem('zfl-4-exceptions', JSON.stringify(this.exceptionRecords));
-    this.bumpVersion('exceptionRecords');
-    this.updateSyncSnapshot();
   }
 
   private loadExceptions() {
     const raw = localStorage.getItem('zfl-4-exceptions');
-    if (raw) {
-      this.exceptionRecords = JSON.parse(raw);
-      let migrated = false;
-      this.exceptionRecords = this.exceptionRecords.map(r => {
-        if (!r.source) {
-          migrated = true;
-          return { ...r, source: inferExceptionSource(r) };
-        }
-        return r;
-      });
-      if (migrated) this.saveExceptions();
-    }
+    if (raw) this.exceptionRecords = JSON.parse(raw);
   }
 
   private saveVisits() {
@@ -3776,176 +1766,6 @@ export class App {
   private loadVisits() {
     const raw = localStorage.getItem('zfl-4-visits');
     if (raw) this.visitRecords = JSON.parse(raw);
-  }
-
-  private savePhoneNotifications() {
-    localStorage.setItem('zfl-4-phone-notifications', JSON.stringify(this.phoneNotifications));
-    this.bumpVersion('phoneNotifications');
-    this.updateSyncSnapshot();
-  }
-
-  private loadPhoneNotifications() {
-    const raw = localStorage.getItem('zfl-4-phone-notifications');
-    if (raw) {
-      this.phoneNotifications = JSON.parse(raw);
-      let migrated = false;
-      this.phoneNotifications = this.phoneNotifications.map(n => {
-        if (!n.source) {
-          migrated = true;
-          return { ...n, source: inferNotificationSource(n) };
-        }
-        return n;
-      });
-      if (migrated) this.savePhoneNotifications();
-    }
-  }
-
-  private extractPhoneNumber(contact: string): string {
-    const match = contact.match(/1[3-9]\d{9}/);
-    return match ? match[0] : contact;
-  }
-
-  generatePhoneNotificationsForDate(date: string) {
-    const dateTasks = this.tasks.filter((t) => t.date === date);
-    const dateNotifications = this.phoneNotifications.filter((n) => n.date === date);
-    const now = new Date();
-    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const newNotifications: PhoneNotification[] = [];
-    const notificationsToKeep: string[] = [];
-
-    for (const task of dateTasks) {
-      const elder = this.elders.find((e) => e.id === task.elderId);
-      if (elder) {
-        const elderNotif = dateNotifications.find((n) => n.taskId === task.id && n.targetType === 'elder');
-        if (elderNotif) {
-          notificationsToKeep.push(elderNotif.id);
-        } else {
-          newNotifications.push({
-            id: crypto.randomUUID(),
-            date,
-            targetType: 'elder',
-            targetId: elder.id,
-            phone: this.extractPhoneNumber(elder.contact),
-            taskId: task.id,
-            notificationStatus: '未通知',
-            remark: '',
-            source: '手动登记',
-            updatedAt: timeStr
-          });
-        }
-      }
-
-      const volNotif = dateNotifications.find((n) => n.taskId === task.id && n.targetType === 'volunteer');
-      if (task.volunteerId) {
-        const volunteer = this.volunteers.find((v) => v.id === task.volunteerId);
-        if (volunteer) {
-          if (volNotif && volNotif.targetId === task.volunteerId) {
-            notificationsToKeep.push(volNotif.id);
-          } else {
-            newNotifications.push({
-              id: crypto.randomUUID(),
-              date,
-              targetType: 'volunteer',
-              targetId: volunteer.id,
-              phone: volunteer.phone,
-              taskId: task.id,
-              notificationStatus: '未通知',
-              remark: '',
-              source: '手动登记',
-              updatedAt: timeStr
-            });
-          }
-        }
-      }
-    }
-
-    const otherDateNotifications = this.phoneNotifications.filter((n) => n.date !== date);
-    const keptDateNotifications = dateNotifications.filter((n) => notificationsToKeep.includes(n.id));
-    this.phoneNotifications = [...newNotifications, ...keptDateNotifications, ...otherDateNotifications];
-    if (newNotifications.length > 0 || keptDateNotifications.length !== dateNotifications.length) {
-      this.savePhoneNotifications();
-    }
-  }
-
-  phoneNotificationsForDate(): PhoneNotification[] {
-    return this.phoneNotifications
-      .filter((n) => n.date === this.taskDate)
-      .filter((n) => {
-        if (this.phoneNotificationTab === 'all') return true;
-        return n.targetType === this.phoneNotificationTab;
-      })
-      .filter((n) => {
-        if (this.phoneNotificationSource === '全部') return true;
-        return n.source === this.phoneNotificationSource;
-      })
-      .sort((a, b) => {
-        const statusOrder = { '未通知': 0, '稍后再拨': 1, '未接通': 2, '已通知': 3 };
-        if (statusOrder[a.notificationStatus] !== statusOrder[b.notificationStatus]) {
-          return statusOrder[a.notificationStatus] - statusOrder[b.notificationStatus];
-        }
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      });
-  }
-
-  phoneNotificationTargetName(n: PhoneNotification): string {
-    if (n.targetType === 'elder') {
-      return this.elders.find((e) => e.id === n.targetId)?.name || '未知老人';
-    }
-    return this.volunteers.find((v) => v.id === n.targetId)?.name || '未知志愿者';
-  }
-
-  phoneNotificationTaskStatus(n: PhoneNotification): string {
-    return this.tasks.find((t) => t.id === n.taskId)?.status || '';
-  }
-
-  phoneNotificationTargetLabel(n: PhoneNotification): string {
-    return n.targetType === 'elder' ? '老人' : '志愿者';
-  }
-
-  setNotificationStatus(id: string, status: NotificationStatus) {
-    const now = new Date();
-    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    this.phoneNotifications = this.phoneNotifications.map((n) =>
-      n.id === id ? { ...n, notificationStatus: status, updatedAt: timeStr } : n
-    );
-    this.savePhoneNotifications();
-  }
-
-  startEditNotificationRemark(id: string) {
-    const n = this.phoneNotifications.find((x) => x.id === id);
-    this.editingNotificationId = id;
-    this.editingNotificationRemark = n?.remark || '';
-  }
-
-  saveNotificationRemark(id: string) {
-    const now = new Date();
-    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    this.phoneNotifications = this.phoneNotifications.map((n) =>
-      n.id === id ? { ...n, remark: this.editingNotificationRemark, updatedAt: timeStr } : n
-    );
-    this.editingNotificationId = null;
-    this.editingNotificationRemark = '';
-    this.savePhoneNotifications();
-  }
-
-  cancelEditNotificationRemark() {
-    this.editingNotificationId = null;
-    this.editingNotificationRemark = '';
-  }
-
-  notificationCountByStatus(status: NotificationStatus): number {
-    return this.phoneNotifications.filter((n) => n.date === this.taskDate && n.notificationStatus === status).length;
-  }
-
-  notificationStatusColor(status: NotificationStatus): string {
-    if (status === '已通知') return '#4a9f6d';
-    if (status === '未接通') return '#c75454';
-    if (status === '稍后再拨') return '#d9a84a';
-    return '#8a9783';
-  }
-
-  get phoneNotificationsForCurrentDateCount(): number {
-    return this.phoneNotifications.filter((n) => n.date === this.taskDate).length;
   }
 
   openImportExportPanel() {
@@ -3976,11 +1796,7 @@ export class App {
       mealTags: [...this.mealTags],
       exceptionRecords: [...this.exceptionRecords],
       visitRecords: [...this.visitRecords],
-      phoneNotifications: [...this.phoneNotifications],
-      kanbanSort: { ...this.kanbanSort },
-      manuallySortedRoutes: JSON.parse(JSON.stringify(this.manuallySortedRoutes)),
-      weeklyScheduleStart: this.weeklyScheduleStart,
-      mealPrepData: this.mealPrepService.exportStorageData()
+      kanbanSort: { ...this.kanbanSort }
     };
 
     const jsonStr = JSON.stringify(backup, null, 2);
@@ -4056,8 +1872,7 @@ export class App {
     } else {
       const ELDER_FIELDS: [string, string][] = [
         ['id', 'string'], ['name', 'string'], ['preference', 'string'],
-        ['mealTags', 'array'], ['address', 'string'], ['contact', 'string'], ['note', 'string'],
-        ['deliveryDays', 'array'], ['pauseDates', 'array'], ['specialMealNote', 'string']
+        ['mealTags', 'array'], ['address', 'string'], ['contact', 'string'], ['note', 'string']
       ];
       for (let i = 0; i < data.elders.length; i++) {
         const elder = data.elders[i];
@@ -4065,9 +1880,6 @@ export class App {
           errors.push(`老人[${i}]: 不是有效的对象`);
           continue;
         }
-        if (!elder.deliveryDays) elder.deliveryDays = [1, 2, 3, 4, 5];
-        if (!elder.pauseDates) elder.pauseDates = [];
-        if (!elder.specialMealNote) elder.specialMealNote = '';
         for (const [field, type] of ELDER_FIELDS) {
           if (!(field in elder)) {
             errors.push(`老人[${i}]: 缺少 ${field} 字段`);
@@ -4085,7 +1897,7 @@ export class App {
     } else {
       const VOLUNTEER_FIELDS: [string, string][] = [
         ['id', 'string'], ['name', 'string'], ['phone', 'string'],
-        ['capacity', 'number'], ['area', 'string'], ['availableDays', 'array']
+        ['capacity', 'number'], ['area', 'string']
       ];
       for (let i = 0; i < data.volunteers.length; i++) {
         const vol = data.volunteers[i];
@@ -4093,7 +1905,6 @@ export class App {
           errors.push(`志愿者[${i}]: 不是有效的对象`);
           continue;
         }
-        if (!vol.availableDays) vol.availableDays = [1, 2, 3, 4, 5];
         for (const [field, type] of VOLUNTEER_FIELDS) {
           if (!(field in vol)) {
             errors.push(`志愿者[${i}]: 缺少 ${field} 字段`);
@@ -4101,8 +1912,6 @@ export class App {
             errors.push(`志愿者[${i}]: ${field} 应为字符串`);
           } else if (type === 'number' && typeof vol[field] !== 'number') {
             errors.push(`志愿者[${i}]: ${field} 应为数字`);
-          } else if (type === 'array' && !Array.isArray(vol[field])) {
-            errors.push(`志愿者[${i}]: ${field} 应为数组`);
           }
         }
       }
@@ -4113,8 +1922,7 @@ export class App {
     } else {
       const TASK_FIELDS: [string, string][] = [
         ['id', 'string'], ['elderId', 'string'], ['date', 'string'],
-        ['volunteerId', 'string'], ['status', 'string'], ['exception', 'string'],
-        ['isManuallyModified', 'boolean'], ['specialMealNote', 'string']
+        ['volunteerId', 'string'], ['status', 'string'], ['exception', 'string']
       ];
       const VALID_STATUSES = ['待分配', '配送中', '已送达', '异常'];
       for (let i = 0; i < data.tasks.length; i++) {
@@ -4123,15 +1931,11 @@ export class App {
           errors.push(`任务[${i}]: 不是有效的对象`);
           continue;
         }
-        if (task.isManuallyModified === undefined) task.isManuallyModified = false;
-        if (!task.specialMealNote) task.specialMealNote = '';
         for (const [field, type] of TASK_FIELDS) {
           if (!(field in task)) {
             errors.push(`任务[${i}]: 缺少 ${field} 字段`);
           } else if (type === 'string' && typeof task[field] !== 'string') {
             errors.push(`任务[${i}]: ${field} 应为字符串`);
-          } else if (type === 'boolean' && typeof task[field] !== 'boolean') {
-            errors.push(`任务[${i}]: ${field} 应为布尔值`);
           }
         }
         if ('status' in task && typeof task.status === 'string' && !VALID_STATUSES.includes(task.status)) {
@@ -4177,14 +1981,12 @@ export class App {
         const VALID_CATEGORIES = ['无人应答', '地址错误', '老人拒收', '餐食问题', '配送延误', '老人身体不适', '其他'];
         const VALID_SEVERITIES = ['一般', '较重', '紧急'];
         const VALID_EXC_STATUSES = ['待处理', '处理中', '已解决'];
-        const VALID_SOURCES: ExceptionSource[] = ['备餐缺餐', '配送异常', '未接通', '手动登记'];
         for (let i = 0; i < data.exceptionRecords.length; i++) {
           const exc = data.exceptionRecords[i];
           if (!exc || typeof exc !== 'object') {
             errors.push(`异常记录[${i}]: 不是有效的对象`);
             continue;
           }
-          if (!exc.source) exc.source = inferExceptionSource(exc);
           for (const [field, type] of EXC_FIELDS) {
             if (!(field in exc)) {
               errors.push(`异常记录[${i}]: 缺少 ${field} 字段`);
@@ -4200,9 +2002,6 @@ export class App {
           }
           if ('status' in exc && typeof exc.status === 'string' && !VALID_EXC_STATUSES.includes(exc.status)) {
             errors.push(`异常记录[${i}]: status 值"${exc.status}"无效`);
-          }
-          if ('source' in exc && typeof exc.source === 'string' && !VALID_SOURCES.includes(exc.source)) {
-            errors.push(`异常记录[${i}]: source 值"${exc.source}"无效`);
           }
         }
       }
@@ -4238,45 +2037,6 @@ export class App {
       }
     }
 
-    if (data.phoneNotifications !== undefined) {
-      if (!Array.isArray(data.phoneNotifications)) {
-        errors.push('phoneNotifications 字段格式不正确（必须为数组）');
-      } else {
-        const PN_FIELDS: [string, string][] = [
-          ['id', 'string'], ['date', 'string'], ['targetType', 'string'],
-          ['targetId', 'string'], ['phone', 'string'], ['taskId', 'string'],
-          ['notificationStatus', 'string'], ['remark', 'string'], ['updatedAt', 'string']
-        ];
-        const VALID_TARGET_TYPES = ['elder', 'volunteer'];
-        const VALID_STATUSES = ['未通知', '已通知', '未接通', '稍后再拨'];
-        const VALID_SOURCES: ExceptionSource[] = ['备餐缺餐', '配送异常', '未接通', '手动登记'];
-        for (let i = 0; i < data.phoneNotifications.length; i++) {
-          const pn = data.phoneNotifications[i];
-          if (!pn || typeof pn !== 'object') {
-            errors.push(`电话通知[${i}]: 不是有效的对象`);
-            continue;
-          }
-          if (!pn.source) pn.source = inferNotificationSource(pn);
-          for (const [field, type] of PN_FIELDS) {
-            if (!(field in pn)) {
-              errors.push(`电话通知[${i}]: 缺少 ${field} 字段`);
-            } else if (type === 'string' && typeof pn[field] !== 'string') {
-              errors.push(`电话通知[${i}]: ${field} 应为字符串`);
-            }
-          }
-          if ('targetType' in pn && typeof pn.targetType === 'string' && !VALID_TARGET_TYPES.includes(pn.targetType)) {
-            errors.push(`电话通知[${i}]: targetType 值"${pn.targetType}"无效`);
-          }
-          if ('notificationStatus' in pn && typeof pn.notificationStatus === 'string' && !VALID_STATUSES.includes(pn.notificationStatus)) {
-            errors.push(`电话通知[${i}]: notificationStatus 值"${pn.notificationStatus}"无效`);
-          }
-          if ('source' in pn && typeof pn.source === 'string' && !VALID_SOURCES.includes(pn.source)) {
-            errors.push(`电话通知[${i}]: source 值"${pn.source}"无效`);
-          }
-        }
-      }
-    }
-
     if (errors.length > 0) {
       this.importError = {
         type: 'validation',
@@ -4295,15 +2055,11 @@ export class App {
       mealTags: data.mealTags || [],
       exceptionRecords: data.exceptionRecords || [],
       visitRecords: data.visitRecords || [],
-      phoneNotifications: data.phoneNotifications || [],
-      kanbanSort: data.kanbanSort || {},
-      manuallySortedRoutes: data.manuallySortedRoutes || {},
-      mealPrepData: data.mealPrepData || undefined
+      kanbanSort: data.kanbanSort || {}
     };
 
     const totalCount = backup.elders.length + backup.volunteers.length + backup.tasks.length
-      + backup.mealTags.length + backup.exceptionRecords.length + backup.visitRecords.length
-      + backup.phoneNotifications.length;
+      + backup.mealTags.length + backup.exceptionRecords.length + backup.visitRecords.length;
 
     if (totalCount === 0) {
       this.importError = {
@@ -4325,7 +2081,6 @@ export class App {
     const tagIdMap = new Map(this.mealTags.map(t => [t.id, t]));
     const exceptionIdMap = new Map(this.exceptionRecords.map(r => [r.id, r]));
     const visitIdMap = new Map(this.visitRecords.map(r => [r.id, r]));
-    const phoneNotificationIdMap = new Map(this.phoneNotifications.map(r => [r.id, r]));
 
     const classify = <T extends { id: string }>(items: T[], existingMap: Map<string, T>): ImportPreviewItem<T>[] => {
       return items.map(item => {
@@ -4344,8 +2099,7 @@ export class App {
       tasks: classify(backup.tasks, taskIdMap),
       mealTags: classify(backup.mealTags, tagIdMap),
       exceptionRecords: classify(backup.exceptionRecords, exceptionIdMap),
-      visitRecords: classify(backup.visitRecords, visitIdMap),
-      phoneNotifications: classify(backup.phoneNotifications, phoneNotificationIdMap)
+      visitRecords: classify(backup.visitRecords, visitIdMap)
     };
   }
 
@@ -4361,40 +2115,9 @@ export class App {
       volunteers: { total: p.volunteers.length, new: this.countImportItemsByStatus(p.volunteers, 'new'), duplicate: this.countImportItemsByStatus(p.volunteers, 'duplicate'), overwrite: this.countImportItemsByStatus(p.volunteers, 'overwrite') },
       tasks: { total: p.tasks.length, new: this.countImportItemsByStatus(p.tasks, 'new'), duplicate: this.countImportItemsByStatus(p.tasks, 'duplicate'), overwrite: this.countImportItemsByStatus(p.tasks, 'overwrite') },
       mealTags: { total: p.mealTags.length, new: this.countImportItemsByStatus(p.mealTags, 'new'), duplicate: this.countImportItemsByStatus(p.mealTags, 'duplicate'), overwrite: this.countImportItemsByStatus(p.mealTags, 'overwrite') },
-      exceptionRecords: { 
-        total: p.exceptionRecords.length, 
-        new: this.countImportItemsByStatus(p.exceptionRecords, 'new'), 
-        duplicate: this.countImportItemsByStatus(p.exceptionRecords, 'duplicate'), 
-        overwrite: this.countImportItemsByStatus(p.exceptionRecords, 'overwrite'),
-        bySource: this.countBySource(p.exceptionRecords, 'exception')
-      },
+      exceptionRecords: { total: p.exceptionRecords.length, new: this.countImportItemsByStatus(p.exceptionRecords, 'new'), duplicate: this.countImportItemsByStatus(p.exceptionRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.exceptionRecords, 'overwrite') },
       visitRecords: { total: p.visitRecords.length, new: this.countImportItemsByStatus(p.visitRecords, 'new'), duplicate: this.countImportItemsByStatus(p.visitRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.visitRecords, 'overwrite') },
-      phoneNotifications: { 
-        total: p.phoneNotifications.length, 
-        new: this.countImportItemsByStatus(p.phoneNotifications, 'new'), 
-        duplicate: this.countImportItemsByStatus(p.phoneNotifications, 'duplicate'), 
-        overwrite: this.countImportItemsByStatus(p.phoneNotifications, 'overwrite'),
-        bySource: this.countBySource(p.phoneNotifications, 'notification')
-      },
     };
-  }
-
-  countBySource(items: any[], type: 'exception' | 'notification'): Record<ExceptionSource, number> {
-    const result: Record<string, number> = {
-      '备餐缺餐': 0,
-      '配送异常': 0,
-      '未接通': 0,
-      '手动登记': 0
-    };
-    for (const item of items) {
-      const source = item.item?.source || item.data?.source || item.source || '手动登记';
-      if (result[source] !== undefined) {
-        result[source]++;
-      } else {
-        result['手动登记']++;
-      }
-    }
-    return result as Record<ExceptionSource, number>;
   }
 
   private isValidElder(e: any): boolean {
@@ -4427,9 +2150,8 @@ export class App {
   }
 
   private isValidExceptionRecord(r: any): boolean {
-    if (!r || typeof r !== 'object') return false;
-    if (!r.source) r.source = inferExceptionSource(r);
-    return typeof r.id === 'string' && typeof r.taskId === 'string'
+    return r && typeof r === 'object'
+      && typeof r.id === 'string' && typeof r.taskId === 'string'
       && typeof r.elderId === 'string' && typeof r.date === 'string'
       && typeof r.category === 'string' && typeof r.severity === 'string'
       && typeof r.description === 'string' && typeof r.handler === 'string'
@@ -4443,16 +2165,6 @@ export class App {
       && typeof r.visitDate === 'string' && typeof r.visitMethod === 'string'
       && typeof r.healthFeedback === 'string' && typeof r.mealFeedback === 'string'
       && typeof r.nextAttention === 'string' && typeof r.createdAt === 'string';
-  }
-
-  private isValidPhoneNotification(r: any): boolean {
-    if (!r || typeof r !== 'object') return false;
-    if (!r.source) r.source = inferNotificationSource(r);
-    return typeof r.id === 'string' && typeof r.date === 'string'
-      && typeof r.targetType === 'string' && typeof r.targetId === 'string'
-      && typeof r.phone === 'string' && typeof r.taskId === 'string'
-      && typeof r.notificationStatus === 'string' && typeof r.remark === 'string'
-      && typeof r.updatedAt === 'string';
   }
 
   confirmImport() {
@@ -4478,34 +2190,6 @@ export class App {
     }
     if (backup.visitRecords.length > 0 && (!Array.isArray(backup.visitRecords) || backup.visitRecords.some((r: any) => !this.isValidVisitRecord(r)))) {
       integrityErrors.push('回访记录数据不完整，存在缺失字段的记录');
-    }
-    if (backup.phoneNotifications.length > 0 && (!Array.isArray(backup.phoneNotifications) || backup.phoneNotifications.some((r: any) => !this.isValidPhoneNotification(r)))) {
-      integrityErrors.push('电话通知记录数据不完整，存在缺失字段的记录');
-    }
-
-    if (backup.mealPrepData !== undefined && backup.mealPrepData !== null) {
-      if (typeof backup.mealPrepData !== 'object') {
-        integrityErrors.push('备餐数据格式不正确');
-      } else {
-        for (const dateKey of Object.keys(backup.mealPrepData)) {
-          const dayData = (backup.mealPrepData as any)[dateKey];
-          if (typeof dayData !== 'object') {
-            integrityErrors.push(`备餐数据[${dateKey}]格式不正确`);
-            break;
-          }
-          for (const taskId of Object.keys(dayData)) {
-            const item = dayData[taskId];
-            if (!item || typeof item !== 'object'
-                || typeof item.status !== 'string'
-                || typeof item.missingNote !== 'string'
-                || typeof item.exceptionRecorded !== 'boolean'
-                || typeof item.notificationAdded !== 'boolean') {
-              integrityErrors.push(`备餐数据[${dateKey}][${taskId}]字段不完整`);
-              break;
-            }
-          }
-        }
-      }
     }
 
     if (integrityErrors.length > 0) {
@@ -4533,7 +2217,6 @@ export class App {
     this.mealTags = mergeById(this.mealTags, backup.mealTags);
     this.exceptionRecords = mergeById(this.exceptionRecords, backup.exceptionRecords);
     this.visitRecords = mergeById(this.visitRecords, backup.visitRecords);
-    this.phoneNotifications = mergeById(this.phoneNotifications, backup.phoneNotifications);
 
     if (backup.kanbanSort && typeof backup.kanbanSort === 'object') {
       for (const date of Object.keys(backup.kanbanSort)) {
@@ -4549,34 +2232,11 @@ export class App {
       }
     }
 
-    if (backup.manuallySortedRoutes && typeof backup.manuallySortedRoutes === 'object') {
-      for (const date of Object.keys(backup.manuallySortedRoutes)) {
-        if (!this.manuallySortedRoutes[date]) {
-          this.manuallySortedRoutes[date] = { ...backup.manuallySortedRoutes[date] };
-        } else {
-          const existing = this.manuallySortedRoutes[date];
-          const incoming = backup.manuallySortedRoutes[date];
-          for (const volId of Object.keys(incoming)) {
-            if (incoming[volId]) existing[volId] = true;
-          }
-        }
-      }
-    }
-
-    if (backup.weeklyScheduleStart && typeof backup.weeklyScheduleStart === 'string') {
-      this.weeklyScheduleStart = backup.weeklyScheduleStart;
-    }
-
-    if (backup.mealPrepData && typeof backup.mealPrepData === 'object') {
-      this.mealPrepService.importStorageData(backup.mealPrepData as PrepStorageData, true);
-    }
-
     this.save();
     this.saveKanbanSort();
     this.saveMealTags();
     this.saveExceptions();
     this.saveVisits();
-    this.savePhoneNotifications();
 
     this.importSuccess = true;
     this.importPreview = null;
@@ -4588,127 +2248,5 @@ export class App {
     this.importError = null;
     this.importedData = null;
     this.importSuccess = false;
-  }
-
-  // ===== 备餐模块事件处理 =====
-  onPrepExceptionCreated(prepExc: PrepExceptionRecord) {
-    const record: ExceptionRecord = { ...prepExc };
-    this.exceptionRecords = [record, ...this.exceptionRecords];
-    this.saveExceptions();
-  }
-
-  onPrepNotificationCreated(prepNotif: PrepPhoneNotification) {
-    const notif: PhoneNotification = { ...prepNotif };
-    this.phoneNotifications = [notif, ...this.phoneNotifications];
-    this.savePhoneNotifications();
-  }
-
-  onPrepTaskUpdated(update: { taskId: string; status: MealTask['status']; exception: string }) {
-    this.tasks = this.tasks.map((t) =>
-      t.id === update.taskId
-        ? { ...t, status: update.status, exception: update.exception, isManuallyModified: true }
-        : t
-    );
-    this.save();
-  }
-
-  openVolunteerDelivery() {
-    this.selectedDeliveryVolunteerId = '';
-    this.appViewMode = 'delivery';
-  }
-
-  closeVolunteerDelivery() {
-    this.appViewMode = 'schedule';
-    this.selectedDeliveryVolunteerId = '';
-  }
-
-  onDeliveryStatusUpdated(update: {
-    taskUpdated?: { taskId: string; status: MealTask['status']; exception: string; deliveryStatus?: '待配送' | '配送中' | '已送达' | '异常' | '未接通' };
-    exceptionCreated?: ExceptionRecord;
-    notificationCreated?: PhoneNotification;
-  }) {
-    const isUnreachable = update.taskUpdated?.deliveryStatus === '未接通'
-      || !!update.taskUpdated?.exception?.includes('未接通');
-
-    if (update.taskUpdated) {
-      this.tasks = this.tasks.map((t) =>
-        t.id === update.taskUpdated!.taskId
-          ? { ...t, status: update.taskUpdated!.status, exception: update.taskUpdated!.exception, isManuallyModified: true }
-          : t
-      );
-      this.save();
-    }
-    if (update.exceptionCreated) {
-      const existingIdx = this.exceptionRecords.findIndex((e) => e.taskId === update.exceptionCreated!.taskId && e.date === update.exceptionCreated!.date);
-      if (existingIdx === -1) {
-        this.exceptionRecords = [update.exceptionCreated, ...this.exceptionRecords];
-        this.saveExceptions();
-      } else if (isUnreachable) {
-        this.exceptionRecords = this.exceptionRecords.map((e) =>
-          e.taskId === update.exceptionCreated!.taskId && e.date === update.exceptionCreated!.date
-            ? { ...e, category: '无人应答' as ExceptionCategory, description: update.exceptionCreated!.description, source: update.exceptionCreated!.source, updatedAt: update.exceptionCreated!.updatedAt }
-            : e
-        );
-        this.saveExceptions();
-      }
-    } else if (isUnreachable && update.taskUpdated) {
-      const taskId = update.taskUpdated.taskId;
-      const taskDate = this.tasks.find(t => t.id === taskId)?.date;
-      if (taskDate) {
-        const existingIdx = this.exceptionRecords.findIndex((e) => e.taskId === taskId && e.date === taskDate);
-        if (existingIdx !== -1) {
-          const now = new Date();
-          const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-          this.exceptionRecords = this.exceptionRecords.map((e) =>
-            e.taskId === taskId && e.date === taskDate
-              ? { ...e, category: '无人应答' as ExceptionCategory, description: `志愿者配送上门未接通：${update.taskUpdated!.exception}`, source: '未接通' as ExceptionSource, updatedAt: timeStr }
-              : e
-          );
-          this.saveExceptions();
-        }
-      }
-    }
-    if (update.notificationCreated) {
-      const existingIdx = this.phoneNotifications.findIndex((n) =>
-        n.taskId === update.notificationCreated!.taskId
-        && n.date === update.notificationCreated!.date
-        && n.targetType === update.notificationCreated!.targetType
-      );
-      if (existingIdx === -1) {
-        this.phoneNotifications = [update.notificationCreated, ...this.phoneNotifications];
-        this.savePhoneNotifications();
-      } else if (isUnreachable) {
-        this.phoneNotifications = this.phoneNotifications.map((n) =>
-          n.taskId === update.notificationCreated!.taskId
-            && n.date === update.notificationCreated!.date
-            && n.targetType === update.notificationCreated!.targetType
-            ? { ...n, notificationStatus: '未接通' as NotificationStatus, remark: update.notificationCreated!.remark, source: update.notificationCreated!.source, updatedAt: update.notificationCreated!.updatedAt }
-            : n
-        );
-        this.savePhoneNotifications();
-      }
-    } else if (isUnreachable && update.taskUpdated) {
-      const taskId = update.taskUpdated.taskId;
-      const taskDate = this.tasks.find(t => t.id === taskId)?.date;
-      if (taskDate) {
-        const existingIdx = this.phoneNotifications.findIndex((n) => n.taskId === taskId && n.date === taskDate && n.targetType === 'elder');
-        if (existingIdx !== -1) {
-          const now = new Date();
-          const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-          this.phoneNotifications = this.phoneNotifications.map((n) =>
-            n.taskId === taskId && n.date === taskDate && n.targetType === 'elder'
-              ? {
-                  ...n,
-                  notificationStatus: '未接通' as NotificationStatus,
-                  remark: `配送未接通通知：${update.taskUpdated!.exception || '电话无人接听，需再次联系'}`,
-                  source: '未接通' as ExceptionSource,
-                  updatedAt: timeStr
-                }
-              : n
-          );
-          this.savePhoneNotifications();
-        }
-      }
-    }
   }
 }

@@ -5,11 +5,16 @@ import {
   PrepBatch,
   DailyPrepSummary,
   ElderRef,
+  VolunteerRef,
   LS_PREP_DATA_KEY,
   PREP_STATUSES,
   TagBreakdownStat,
   PausedTagStat,
   PausedSummary,
+  KitchenPrintViewData,
+  PrintGroup,
+  PrintItem,
+  PrintGroupType,
 } from './meal-prep.types';
 
 export type MealTag = {
@@ -29,6 +34,15 @@ export type Elder = {
   deliveryDays: number[];
   pauseDates: string[];
   specialMealNote: string;
+};
+
+export type Volunteer = {
+  id: string;
+  name: string;
+  phone: string;
+  capacity: number;
+  area: string;
+  availableDays: number[];
 };
 
 export type MealTask = {
@@ -160,10 +174,12 @@ export class MealPrepService {
     date: string,
     tasks: MealTask[],
     elders: Elder[],
-    mealTags: MealTag[]
+    mealTags: MealTag[],
+    volunteers: Volunteer[] = [],
   ): DailyPrepSummary {
     const elderMap = new Map(elders.map(e => [e.id, e]));
     const tagMap = new Map(mealTags.map(t => [t.id, t]));
+    const volunteerMap = new Map(volunteers.map(v => [v.id, v]));
     const dateTasks = tasks.filter(t => t.date === date);
     const dateTaskElderIds = new Set(dateTasks.map(t => t.elderId));
 
@@ -180,6 +196,14 @@ export class MealPrepService {
         contact: elder.contact,
       };
 
+      const volunteerRaw = volunteerMap.get(task.volunteerId);
+      const volunteerRef: VolunteerRef | undefined = volunteerRaw ? {
+        id: volunteerRaw.id,
+        name: volunteerRaw.name,
+        phone: volunteerRaw.phone,
+        area: volunteerRaw.area,
+      } : undefined;
+
       return {
         id: crypto.randomUUID() as string,
         taskId: task.id,
@@ -191,6 +215,7 @@ export class MealPrepService {
         missingNote: stored.missingNote,
         exceptionRecorded: stored.exceptionRecorded,
         notificationAdded: stored.notificationAdded,
+        volunteer: volunteerRef,
       } as PrepItem;
     }).filter((item): item is PrepItem => item !== null);
 
@@ -592,5 +617,146 @@ export class MealPrepService {
       case '缺餐异常': return '#c75454';
       default: return '#8a9783';
     }
+  }
+
+  generateKitchenPrintViewData(
+    summary: DailyPrepSummary,
+    mealTags: MealTag[],
+  ): KitchenPrintViewData {
+    const tagMap = new Map(mealTags.map(t => [t.id, t]));
+    const now = new Date();
+    const generatedAt = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const allItems = summary.batches.flatMap(b => b.items);
+    const activeItems = allItems.filter(i => !i.isPaused);
+    const pausedItems = allItems.filter(i => i.isPaused);
+    const missingItems = activeItems.filter(i => i.status === '缺餐异常');
+    const specialItems = activeItems.filter(i => i.specialMealNote && i.specialMealNote.trim());
+
+    const toPrintItem = (item: PrepItem): PrintItem => {
+      const tags = item.mealTagIds
+        .map(tid => tagMap.get(tid))
+        .filter((t): t is MealTag => !!t)
+        .map(t => ({ id: t.id, name: t.name, color: t.color }));
+
+      return {
+        id: item.id,
+        elderName: item.elder.name,
+        address: item.elder.address,
+        contact: item.elder.contact,
+        mealTags: tags,
+        specialMealNote: item.specialMealNote,
+        isPaused: item.isPaused,
+        isMissing: item.status === '缺餐异常',
+        missingNote: item.missingNote,
+        volunteerName: item.volunteer?.name || '',
+        volunteerPhone: item.volunteer?.phone || '',
+        volunteerArea: item.volunteer?.area || '',
+        status: item.status,
+      };
+    };
+
+    const groups: PrintGroup[] = [];
+
+    const tagGroups = new Map<string, PrepItem[]>();
+    const standardItems: PrepItem[] = [];
+
+    for (const item of activeItems) {
+      if (item.specialMealNote && item.specialMealNote.trim()) continue;
+      if (item.mealTagIds.length === 0) {
+        standardItems.push(item);
+      } else {
+        const primaryTag = item.mealTagIds[0];
+        if (!tagGroups.has(primaryTag)) {
+          tagGroups.set(primaryTag, []);
+        }
+        tagGroups.get(primaryTag)!.push(item);
+      }
+    }
+
+    for (const [tagId, items] of tagGroups.entries()) {
+      const tag = tagMap.get(tagId);
+      if (!tag || items.length === 0) continue;
+      groups.push({
+        groupKey: `tag-${tagId}`,
+        groupLabel: tag.name,
+        groupType: 'tag',
+        tagId,
+        color: tag.color,
+        items: items.map(toPrintItem),
+        totalCount: items.length,
+      });
+    }
+
+    groups.sort((a, b) => {
+      if (a.groupType === 'tag' && b.groupType === 'tag') {
+        return b.totalCount - a.totalCount;
+      }
+      return 0;
+    });
+
+    if (standardItems.length > 0) {
+      groups.push({
+        groupKey: 'standard',
+        groupLabel: '标准餐（无特殊标签）',
+        groupType: 'all',
+        color: '#5a8fd9',
+        items: standardItems.map(toPrintItem),
+        totalCount: standardItems.length,
+      });
+    }
+
+    let specialGroup: PrintGroup | undefined;
+    if (specialItems.length > 0) {
+      specialGroup = {
+        groupKey: 'special',
+        groupLabel: '特殊餐食备注',
+        groupType: 'special',
+        color: '#b36a2e',
+        items: specialItems.map(toPrintItem),
+        totalCount: specialItems.length,
+      };
+      groups.push(specialGroup);
+    }
+
+    let pausedGroup: PrintGroup | undefined;
+    if (pausedItems.length > 0) {
+      pausedGroup = {
+        groupKey: 'paused',
+        groupLabel: '暂停送餐',
+        groupType: 'paused',
+        color: '#8a9783',
+        items: pausedItems.map(toPrintItem),
+        totalCount: pausedItems.length,
+      };
+      groups.push(pausedGroup);
+    }
+
+    let missingGroup: PrintGroup | undefined;
+    if (missingItems.length > 0) {
+      missingGroup = {
+        groupKey: 'missing',
+        groupLabel: '缺餐异常',
+        groupType: 'missing',
+        color: '#c75454',
+        items: missingItems.map(toPrintItem),
+        totalCount: missingItems.length,
+      };
+      groups.push(missingGroup);
+    }
+
+    return {
+      date: summary.date,
+      generatedAt,
+      totalMeals: activeItems.length + pausedItems.length,
+      totalActive: activeItems.length,
+      totalPaused: pausedItems.length,
+      totalMissing: missingItems.length,
+      totalSpecial: specialItems.length,
+      groups,
+      missingGroup,
+      pausedGroup,
+      specialGroup,
+    };
   }
 }

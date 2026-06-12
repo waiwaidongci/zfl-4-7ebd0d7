@@ -7,20 +7,23 @@ import {
   PrepBatch,
   DailyPrepSummary,
   PREP_STATUSES,
+  KitchenPrintViewData,
 } from './meal-prep.types';
 import {
   MealPrepService,
   MealTag,
   Elder,
   MealTask,
+  Volunteer,
   ExceptionRecord,
   PhoneNotification,
 } from './meal-prep.service';
+import { KitchenPrintComponent } from './kitchen-print.component';
 
 @Component({
   selector: 'app-meal-prep',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, KitchenPrintComponent],
   templateUrl: './meal-prep.component.html',
   styleUrls: ['./meal-prep.component.css'],
 })
@@ -29,6 +32,7 @@ export class MealPrepComponent implements OnInit, OnChanges {
   @Input() tasks: MealTask[] = [];
   @Input() elders: Elder[] = [];
   @Input() mealTags: MealTag[] = [];
+  @Input() volunteers: Volunteer[] = [];
 
   @Output() exceptionCreated = new EventEmitter<ExceptionRecord>();
   @Output() notificationCreated = new EventEmitter<PhoneNotification>();
@@ -39,6 +43,9 @@ export class MealPrepComponent implements OnInit, OnChanges {
   editingMissingNote: string = '';
   PREP_STATUSES = PREP_STATUSES;
 
+  printViewVisible = false;
+  printViewData: KitchenPrintViewData | null = null;
+
   constructor(private prepService: MealPrepService) {}
 
   ngOnInit() {
@@ -46,7 +53,7 @@ export class MealPrepComponent implements OnInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['date'] || changes['tasks'] || changes['elders'] || changes['mealTags']) {
+    if (changes['date'] || changes['tasks'] || changes['elders'] || changes['mealTags'] || changes['volunteers']) {
       this.refresh();
     }
   }
@@ -58,7 +65,40 @@ export class MealPrepComponent implements OnInit, OnChanges {
       this.tasks,
       this.elders,
       this.mealTags,
+      this.volunteers,
     );
+  }
+
+  openPrintView() {
+    if (!this.summary) return;
+    this.printViewData = this.prepService.generateKitchenPrintViewData(
+      this.summary,
+      this.mealTags,
+    );
+    this.printViewVisible = true;
+  }
+
+  closePrintView() {
+    this.printViewVisible = false;
+    this.printViewData = null;
+  }
+
+  triggerPrint() {
+    setTimeout(() => {
+      window.print();
+    }, 100);
+  }
+
+  onPrintDateChange(newDate: string) {
+    if (!newDate || newDate === this.date) return;
+    this.date = newDate;
+    this.refresh();
+    if (this.summary) {
+      this.printViewData = this.prepService.generateKitchenPrintViewData(
+        this.summary,
+        this.mealTags,
+      );
+    }
   }
 
   getItemTagObjs(item: PrepItem): MealTag[] {
