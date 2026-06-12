@@ -203,6 +203,38 @@ type ImportError = {
   details?: string[];
 };
 
+type SimulationMode = 'off' | 'active';
+
+type DaySimulationStats = {
+  date: string;
+  totalTasks: number;
+  assignedCount: number;
+  unassignedCount: number;
+  pausedCount: number;
+  specialMealCount: number;
+  volunteerLoad: Array<{
+    volunteerId: string;
+    volunteerName: string;
+    assigned: number;
+    capacity: number;
+    area: string;
+  }>;
+  unassignedReasons: AutoAssignFailure[];
+  routeOrder: KanbanGroup[];
+  tagBreakdown: Array<{ tagId: string; tagName: string; count: number; color: string }>;
+  pausedElders: Array<{ elderId: string; elderName: string; address: string; contact: string }>;
+};
+
+type SimulationData = {
+  startDate: string;
+  endDate: string;
+  dates: string[];
+  tasks: MealTask[];
+  kanbanSort: KanbanSortMap;
+  autoAssignResults: Record<string, AutoAssignResult>;
+  dayStats: Record<string, DaySimulationStats>;
+};
+
 @Component({
   selector: 'app-root',
   imports: [CommonModule, FormsModule, MealPrepComponent, VolunteerDeliveryComponent],
@@ -338,13 +370,78 @@ type ImportError = {
           </form>
         </aside>
 
+        <section class="panel simulation-panel" *ngIf="simulationMode === 'active'">
+          <div class="simulation-header">
+            <div class="simulation-title">
+              <span class="sim-badge">模拟模式</span>
+              <h2>多日排班模拟</h2>
+              <span class="sim-date-range">{{ simulationData?.startDate }} 至 {{ simulationData?.endDate }} ({{ getSimulationDatesCount() }}天)</span>
+            </div>
+            <div class="simulation-actions">
+              <button type="button" class="ghost sm" (click)="openSimulationPanel()">📊 查看详情</button>
+              <button type="button" class="auto-assign-btn sm" (click)="autoAssignSimulationTasks()">🔄 自动分配</button>
+              <button type="button" class="sm submit-btn" (click)="submitSimulation()">✓ 提交方案</button>
+              <button type="button" class="ghost sm cancel-btn" (click)="cancelSimulation()">✕ 取消模拟</button>
+            </div>
+          </div>
+          <div class="simulation-day-tabs">
+            <button
+              type="button"
+              class="sim-day-tab"
+              *ngFor="let date of simulationData?.dates"
+              [class.active]="simulationViewDate === date"
+              (click)="setSimulationViewDate(date)"
+            >
+              {{ date }}
+              <span class="sim-day-count">
+                {{ getSimulationDayStats(date)?.assignedCount || 0 }}/{{ getSimulationDayStats(date)?.totalTasks || 0 }}
+              </span>
+            </button>
+          </div>
+          <div class="simulation-summary">
+            <div class="sim-summary-item">
+              <strong>{{ getCurrentSimulationStats()?.totalTasks || 0 }}</strong>
+              <span>总任务数</span>
+            </div>
+            <div class="sim-summary-item ok">
+              <strong>{{ getCurrentSimulationStats()?.assignedCount || 0 }}</strong>
+              <span>已分配</span>
+            </div>
+            <div class="sim-summary-item warn">
+              <strong>{{ getCurrentSimulationStats()?.unassignedCount || 0 }}</strong>
+              <span>未分配</span>
+            </div>
+            <div class="sim-summary-item muted">
+              <strong>{{ getCurrentSimulationStats()?.pausedCount || 0 }}</strong>
+              <span>暂停送餐</span>
+            </div>
+            <div class="sim-summary-item special">
+              <strong>{{ getCurrentSimulationStats()?.specialMealCount || 0 }}</strong>
+              <span>特殊餐食</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" *ngIf="simulationMode === 'off'">
+          <div class="toolbar">
+            <h2>排班模拟</h2>
+            <div class="sim-setup">
+              <input type="date" [(ngModel)]="simulationStartDate" />
+              <span class="sim-date-sep">至</span>
+              <input type="date" [(ngModel)]="simulationEndDate" />
+              <button type="button" class="auto-assign-btn" (click)="startSimulation()">开始模拟</button>
+            </div>
+          </div>
+          <p class="muted sim-desc">在模拟模式下，您可以先生成多日排班方案进行预览和调整，确认无误后再提交写入正式数据。模拟期间的所有操作都不会影响现有排班数据。</p>
+        </section>
+
         <section class="panel">
           <div class="toolbar">
-            <h2>每日送餐任务</h2>
+            <h2>{{ simulationMode === 'active' ? simulationViewDate + ' 模拟任务' : '每日送餐任务' }}</h2>
             <div>
-              <input type="date" [(ngModel)]="taskDate" />
-              <button type="button" (click)="generateTasks()">生成当日任务</button>
-              <button type="button" class="auto-assign-btn" (click)="autoAssignTasks()">自动分配</button>
+              <input type="date" [(ngModel)]="taskDate" *ngIf="simulationMode === 'off'" />
+              <button type="button" (click)="generateTasks()" *ngIf="simulationMode === 'off'">生成当日任务</button>
+              <button type="button" class="auto-assign-btn" (click)="autoAssignTasks()" *ngIf="simulationMode === 'off'">自动分配</button>
             </div>
           </div>
 
@@ -1183,6 +1280,189 @@ type ImportError = {
         </div>
       </div>
 
+      <div class="modal-overlay" *ngIf="simulationPanelVisible" (click)="closeSimulationPanel()">
+        <div class="modal-panel simulation-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>排班模拟详情</h2>
+              <p class="muted">{{ simulationData?.startDate }} 至 {{ simulationData?.endDate }} · 共 {{ getSimulationDatesCount() }} 天</p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeSimulationPanel()">关闭</button>
+          </div>
+
+          <div class="modal-tabs">
+            <button type="button" [class.active-tab]="simulationDetailTab === 'overview'" (click)="simulationDetailTab = 'overview'">📊 总览</button>
+            <button type="button" [class.active-tab]="simulationDetailTab === 'load'" (click)="simulationDetailTab = 'load'">💪 志愿者负载</button>
+            <button type="button" [class.active-tab]="simulationDetailTab === 'unassigned'" (click)="simulationDetailTab = 'unassigned'">❌ 未分配原因</button>
+            <button type="button" [class.active-tab]="simulationDetailTab === 'paused'" (click)="simulationDetailTab = 'paused'">⏸️ 暂停影响</button>
+            <button type="button" [class.active-tab]="simulationDetailTab === 'special'" (click)="simulationDetailTab = 'special'">🍽️ 特殊餐食</button>
+            <button type="button" [class.active-tab]="simulationDetailTab === 'route'" (click)="simulationDetailTab = 'route'">🗺️ 路线顺序</button>
+          </div>
+
+          <div class="sim-date-selector">
+            <span class="muted">选择日期：</span>
+            <select [(ngModel)]="simulationViewDate" (ngModelChange)="setSimulationViewDate(simulationViewDate)">
+              <option *ngFor="let date of simulationData?.dates" [value]="date">{{ date }}</option>
+            </select>
+          </div>
+
+          <div class="modal-body">
+            <div *ngIf="simulationDetailTab === 'overview'" class="sim-overview">
+              <div class="sim-stat-grid">
+                <div class="sim-stat-card">
+                  <div class="sim-stat-icon">📋</div>
+                  <div class="sim-stat-info">
+                    <strong>{{ getCurrentSimulationStats()?.totalTasks || 0 }}</strong>
+                    <span>总任务数</span>
+                  </div>
+                </div>
+                <div class="sim-stat-card ok">
+                  <div class="sim-stat-icon">✅</div>
+                  <div class="sim-stat-info">
+                    <strong>{{ getCurrentSimulationStats()?.assignedCount || 0 }}</strong>
+                    <span>已分配</span>
+                  </div>
+                </div>
+                <div class="sim-stat-card warn">
+                  <div class="sim-stat-icon">⚠️</div>
+                  <div class="sim-stat-info">
+                    <strong>{{ getCurrentSimulationStats()?.unassignedCount || 0 }}</strong>
+                    <span>未分配</span>
+                  </div>
+                </div>
+                <div class="sim-stat-card muted">
+                  <div class="sim-stat-icon">⏸️</div>
+                  <div class="sim-stat-info">
+                    <strong>{{ getCurrentSimulationStats()?.pausedCount || 0 }}</strong>
+                    <span>暂停送餐</span>
+                  </div>
+                </div>
+                <div class="sim-stat-card special">
+                  <div class="sim-stat-icon">🍽️</div>
+                  <div class="sim-stat-info">
+                    <strong>{{ getCurrentSimulationStats()?.specialMealCount || 0 }}</strong>
+                    <span>特殊餐食</span>
+                  </div>
+                </div>
+                <div class="sim-stat-card">
+                  <div class="sim-stat-icon">👥</div>
+                  <div class="sim-stat-info">
+                    <strong>{{ getActiveVolunteerCount(getCurrentSimulationStats()) }}</strong>
+                    <span>参与志愿者</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sim-section">
+                <h3>餐食标签分布</h3>
+                <div class="sim-tag-list">
+                  <div class="sim-tag-item" *ngFor="let tag of getCurrentSimulationStats()?.tagBreakdown">
+                    <span class="tag-chip" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.tagName }}</span>
+                    <strong>{{ tag.count }}份</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div *ngIf="simulationDetailTab === 'load'" class="sim-load">
+              <h3>志愿者负载情况</h3>
+              <div class="sim-load-list">
+                <div class="sim-load-item" *ngFor="let v of getCurrentSimulationStats()?.volunteerLoad">
+                  <div class="sim-load-header">
+                    <strong>{{ v.volunteerName }}</strong>
+                    <span [class.overloaded]="v.assigned > v.capacity">{{ v.assigned }}/{{ v.capacity }}单</span>
+                  </div>
+                  <div class="load-bar-bg">
+                    <div
+                      class="load-bar-fill"
+                      [style.width.%]="safeLoadPercent(v.assigned, v.capacity)"
+                      [class.full]="v.assigned >= v.capacity"
+                      [class.near]="v.assigned >= v.capacity * 0.75 && v.assigned < v.capacity"
+                    ></div>
+                  </div>
+                  <small class="load-area">{{ v.area }}</small>
+                </div>
+              </div>
+            </div>
+
+            <div *ngIf="simulationDetailTab === 'unassigned'" class="sim-unassigned">
+              <h3>未分配原因</h3>
+              <div class="sim-unassigned-list">
+                <div class="sim-unassigned-item" *ngFor="let item of getCurrentSimulationStats()?.unassignedReasons">
+                  <div class="sim-unassigned-elder">
+                    <strong>{{ item.elderName }}</strong>
+                    <small>{{ item.elderAddress }}</small>
+                  </div>
+                  <div class="sim-unassigned-reason">{{ item.reason }}</div>
+                </div>
+                <p class="muted center" *ngIf="!getCurrentSimulationStats()?.unassignedReasons?.length">当日无未分配任务</p>
+              </div>
+            </div>
+
+            <div *ngIf="simulationDetailTab === 'paused'" class="sim-paused">
+              <h3>暂停送餐影响</h3>
+              <div class="sim-paused-summary">
+                <p>当日共有 <strong>{{ getCurrentSimulationStats()?.pausedCount || 0 }}</strong> 位老人暂停送餐</p>
+              </div>
+              <div class="sim-paused-list">
+                <div class="sim-paused-item" *ngFor="let elder of getCurrentSimulationStats()?.pausedElders">
+                  <div>
+                    <strong>{{ elder.elderName }}</strong>
+                    <small>{{ elder.address }}</small>
+                  </div>
+                  <span class="sim-paused-contact">📞 {{ elder.contact }}</span>
+                </div>
+              </div>
+              <p class="muted center" *ngIf="!getCurrentSimulationStats()?.pausedElders?.length">当日无暂停送餐的老人</p>
+            </div>
+
+            <div *ngIf="simulationDetailTab === 'special'" class="sim-special">
+              <h3>特殊餐食分布</h3>
+              <p class="muted">当日共有 <strong>{{ getCurrentSimulationStats()?.specialMealCount || 0 }}</strong> 份特殊餐食</p>
+              <div class="sim-special-list">
+                <div class="sim-special-item" *ngFor="let task of getSimulationTasksForDate(simulationViewDate)">
+                  <ng-container *ngIf="task.specialMealNote || elderSpecialNote(task.elderId)">
+                    <div>
+                      <strong>{{ elderName(task.elderId) }}</strong>
+                      <small>{{ elderAddress(task.elderId) }}</small>
+                    </div>
+                    <div class="sim-special-note">{{ task.specialMealNote || elderSpecialNote(task.elderId) }}</div>
+                  </ng-container>
+                </div>
+              </div>
+            </div>
+
+            <div *ngIf="simulationDetailTab === 'route'" class="sim-route">
+              <h3>配送路线顺序</h3>
+              <div class="sim-route-grid">
+                <div class="sim-route-column" *ngFor="let group of getCurrentSimulationStats()?.routeOrder">
+                  <div class="sim-route-header">
+                    <strong>{{ group.volunteer.name }}</strong>
+                    <span>{{ group.tasks.length }}单 · {{ group.volunteer.area }}</span>
+                  </div>
+                  <div class="sim-route-list">
+                    <div class="sim-route-item" *ngFor="let task of group.tasks; let i = index">
+                      <span class="sim-route-order">{{ i + 1 }}</span>
+                      <div class="sim-route-info">
+                        <strong>{{ elderName(task.elderId) }}</strong>
+                        <small>{{ elderAddress(task.elderId) }}</small>
+                      </div>
+                    </div>
+                    <p class="muted" *ngIf="group.tasks.length === 0">暂无任务</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sim-modal-footer">
+            <button type="button" class="ghost" (click)="closeSimulationPanel()">关闭</button>
+            <button type="button" class="auto-assign-btn" (click)="autoAssignSimulationTasks(); closeSimulationPanel()">重新自动分配</button>
+            <button type="button" class="submit-btn" (click)="submitSimulation()">提交方案</button>
+          </div>
+        </div>
+      </div>
+
       <div class="sync-toast" *ngIf="syncToastVisible" [class.toast-warn]="lastSyncType === 'warn'" [class.toast-error]="lastSyncType === 'error'">
         <span>{{ lastSyncMessage }}</span>
       </div>
@@ -1755,6 +2035,110 @@ type ImportError = {
       .diff-choice { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; }
       .conflict-groups, .conflict-content { border-right: none; border-bottom: 1px solid #e2e7da; }
     }
+
+    .simulation-panel { border-color: #d4c56b; background: #fffdf5; }
+    .simulation-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+    .simulation-title { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .simulation-title h2 { margin: 0; }
+    .sim-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; background: #d4c56b; color: #5a4f1a; font-size: 12px; font-weight: 600; }
+    .sim-date-range { color: #7a6d2e; font-size: 14px; }
+    .simulation-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .submit-btn { background: #4a9f6d; }
+    .submit-btn:hover { background: #3a8f5d; }
+    .cancel-btn { color: #c75454 !important; }
+
+    .simulation-day-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 14px; border-bottom: 1px solid #ede4c4; }
+    .sim-day-tab { padding: 8px 14px; border: 1px solid #e5dcab; border-radius: 8px; background: #fff; cursor: pointer; white-space: nowrap; font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .sim-day-tab:hover { background: #faf6e3; }
+    .sim-day-tab.active { background: #d4c56b; border-color: #c4b55b; color: #3d3510; font-weight: 600; }
+    .sim-day-count { font-size: 11px; opacity: 0.8; }
+
+    .simulation-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+    .sim-summary-item { text-align: center; padding: 12px 8px; border-radius: 8px; background: #fff; border: 1px solid #ede4c4; }
+    .sim-summary-item strong { display: block; font-size: 24px; color: #3d3510; }
+    .sim-summary-item span { font-size: 12px; color: #7a6d2e; }
+    .sim-summary-item.ok strong { color: #4a9f6d; }
+    .sim-summary-item.warn strong { color: #d9a84a; }
+    .sim-summary-item.muted strong { color: #8a9783; }
+    .sim-summary-item.special strong { color: #b36a2e; }
+
+    .sim-setup { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .sim-setup input { width: auto; min-width: 140px; }
+    .sim-date-sep { color: #65715f; }
+    .sim-desc { margin: 8px 0 0; font-size: 13px; }
+
+    .simulation-modal { max-width: 900px; }
+    .sim-date-selector { padding: 10px 22px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #e8ede1; }
+    .sim-date-selector select { width: auto; min-width: 180px; }
+
+    .sim-overview, .sim-load, .sim-unassigned, .sim-paused, .sim-special, .sim-route { padding: 6px 0; }
+    .sim-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .sim-stat-card { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 10px; background: #f7f8f4; border: 1px solid #e2e7da; }
+    .sim-stat-icon { font-size: 28px; }
+    .sim-stat-info strong { display: block; font-size: 22px; color: #242923; }
+    .sim-stat-info span { font-size: 13px; color: #65715f; }
+    .sim-stat-card.ok .sim-stat-info strong { color: #4a9f6d; }
+    .sim-stat-card.warn .sim-stat-info strong { color: #d9a84a; }
+    .sim-stat-card.muted .sim-stat-info strong { color: #8a9783; }
+    .sim-stat-card.special .sim-stat-info strong { color: #b36a2e; }
+
+    .sim-section { margin-top: 16px; }
+    .sim-section h3 { margin: 0 0 10px; font-size: 15px; color: #315448; }
+
+    .sim-tag-list { display: flex; flex-wrap: wrap; gap: 10px; }
+    .sim-tag-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #fff; border: 1px solid #e2e7da; border-radius: 20px; }
+    .sim-tag-item strong { font-size: 13px; color: #3d4a38; }
+
+    .sim-load h3, .sim-unassigned h3, .sim-paused h3, .sim-special h3, .sim-route h3 { margin: 0 0 14px; font-size: 16px; color: #315448; }
+
+    .sim-load-list { display: flex; flex-direction: column; gap: 10px; }
+    .sim-load-item { padding: 12px; background: #f7f8f4; border-radius: 8px; border: 1px solid #e2e7da; }
+    .sim-load-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .sim-load-header strong { font-size: 14px; }
+    .sim-load-header span { font-size: 13px; color: #65715f; }
+    .sim-load-header span.overloaded { color: #c75454; font-weight: 600; }
+
+    .sim-unassigned-list { display: flex; flex-direction: column; gap: 8px; }
+    .sim-unassigned-item { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 12px; background: #fff7ef; border: 1px solid #f0d9c4; border-radius: 8px; }
+    .sim-unassigned-elder strong { font-size: 14px; display: block; }
+    .sim-unassigned-elder small { color: #65715f; }
+    .sim-unassigned-reason { font-size: 13px; color: #c75454; text-align: right; flex-shrink: 0; max-width: 50%; }
+
+    .sim-paused-summary { padding: 12px; background: #f0f2ed; border-radius: 8px; margin-bottom: 12px; }
+    .sim-paused-summary p { margin: 0; font-size: 14px; }
+    .sim-paused-list { display: flex; flex-direction: column; gap: 8px; }
+    .sim-paused-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #f7f8f4; border: 1px solid #e2e7da; border-radius: 8px; }
+    .sim-paused-item strong { font-size: 14px; display: block; }
+    .sim-paused-item small { color: #65715f; }
+    .sim-paused-contact { font-size: 13px; color: #5a8fd9; }
+
+    .sim-special-list { display: flex; flex-direction: column; gap: 8px; }
+    .sim-special-item { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 12px; background: #fdf5ec; border: 1px solid #f3e0c9; border-radius: 8px; }
+    .sim-special-item strong { font-size: 14px; display: block; }
+    .sim-special-item small { color: #65715f; }
+    .sim-special-note { font-size: 13px; color: #b36a2e; text-align: right; max-width: 60%; }
+
+    .sim-route-grid { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; }
+    .sim-route-column { min-width: 220px; flex: 1; background: #f7f8f4; border: 1px solid #e2e7da; border-radius: 8px; padding: 12px; }
+    .sim-route-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #e2e7da; }
+    .sim-route-header strong { font-size: 14px; }
+    .sim-route-header span { font-size: 12px; color: #65715f; }
+    .sim-route-list { display: flex; flex-direction: column; gap: 6px; }
+    .sim-route-item { display: flex; gap: 8px; align-items: flex-start; padding: 8px; background: #fff; border-radius: 6px; border: 1px solid #e2e7da; }
+    .sim-route-order { flex-shrink: 0; width: 24px; height: 24px; line-height: 24px; text-align: center; background: #5a8fd9; color: #fff; border-radius: 50%; font-size: 12px; font-weight: 600; }
+    .sim-route-info strong { font-size: 13px; display: block; }
+    .sim-route-info small { font-size: 11px; color: #65715f; }
+
+    .sim-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid #e8ede1; }
+
+    .center { text-align: center; }
+
+    @media (max-width: 900px) {
+      .simulation-summary { grid-template-columns: repeat(2, 1fr); }
+      .sim-stat-grid { grid-template-columns: repeat(2, 1fr); }
+      .simulation-header { flex-direction: column; }
+      .simulation-actions { width: 100%; }
+    }
   `],
 })
 export class App implements AfterViewChecked, OnInit {
@@ -1902,6 +2286,14 @@ export class App implements AfterViewChecked, OnInit {
   };
 
   autoAssignResult: AutoAssignResult | null = null;
+
+  simulationMode: SimulationMode = 'off';
+  simulationData: SimulationData | null = null;
+  simulationStartDate = today;
+  simulationEndDate = today;
+  simulationViewDate = today;
+  simulationPanelVisible = false;
+  simulationDetailTab: 'overview' | 'load' | 'unassigned' | 'paused' | 'special' | 'route' = 'overview';
 
   exceptionRecords: ExceptionRecord[] = [];
   exceptionPanelVisible = false;
@@ -2220,6 +2612,366 @@ export class App implements AfterViewChecked, OnInit {
     this.save();
   }
 
+  private generateDateRange(start: string, end: string): string[] {
+    const dates: string[] = [];
+    const current = new Date(start);
+    const endDate = new Date(end);
+    while (current <= endDate) {
+      dates.push(current.toISOString().slice(0, 10));
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  }
+
+  startSimulation() {
+    if (this.simulationStartDate > this.simulationEndDate) {
+      this.showSyncToast('开始日期不能晚于结束日期', 'error');
+      return;
+    }
+    const dates = this.generateDateRange(this.simulationStartDate, this.simulationEndDate);
+    if (dates.length === 0) {
+      this.showSyncToast('请选择有效的日期范围', 'error');
+      return;
+    }
+    this.simulationData = {
+      startDate: this.simulationStartDate,
+      endDate: this.simulationEndDate,
+      dates,
+      tasks: [],
+      kanbanSort: {},
+      autoAssignResults: {},
+      dayStats: {},
+    };
+    this.simulationViewDate = dates[0];
+    this.simulationMode = 'active';
+    this.generateSimulationTasks();
+    this.showSyncToast(`已进入模拟模式，共 ${dates.length} 天`, 'info');
+  }
+
+  private generateSimulationTasks() {
+    if (!this.simulationData) return;
+    const allTasks: MealTask[] = [];
+    for (const date of this.simulationData.dates) {
+      const dayOfWeek = new Date(date).getDay() || 7;
+      const dayElders = this.elders.filter((e) => e.deliveryDays.includes(dayOfWeek));
+      const existingTaskIds = new Set(
+        this.tasks.filter((t) => t.date === date).map((t) => t.elderId)
+      );
+      const created = dayElders
+        .filter((elder) => !existingTaskIds.has(elder.id))
+        .map((elder) => ({
+          id: `sim-${date}-${elder.id}`,
+          elderId: elder.id,
+          date,
+          volunteerId: '',
+          status: '待分配' as const,
+          exception: '',
+          isManuallyModified: false,
+          specialMealNote: elder.specialMealNote || '',
+        }));
+      const existingTasks = this.tasks
+        .filter((t) => t.date === date)
+        .map((t) => ({ ...t, id: `sim-${t.id}` }));
+      allTasks.push(...existingTasks, ...created);
+    }
+    this.simulationData.tasks = allTasks;
+    this.computeAllSimulationStats();
+  }
+
+  autoAssignSimulationTasks() {
+    if (!this.simulationData) return;
+    for (const date of this.simulationData.dates) {
+      this.autoAssignSimulationForDate(date);
+    }
+    this.computeAllSimulationStats();
+    this.showSyncToast('模拟自动分配完成', 'info');
+  }
+
+  private autoAssignSimulationForDate(date: string) {
+    if (!this.simulationData) return;
+    const dateTasks = this.simulationData.tasks.filter((t) => t.date === date);
+    const unassigned = dateTasks.filter((t) => !t.volunteerId && t.status === '待分配');
+    if (unassigned.length === 0) {
+      this.simulationData.autoAssignResults[date] = { assigned: [], failed: [] };
+      return;
+    }
+    const currentLoad = new Map<string, number>();
+    for (const v of this.volunteers) {
+      const assigned = dateTasks.filter((t) => t.volunteerId === v.id).length;
+      currentLoad.set(v.id, assigned);
+    }
+    const assigned: AutoAssignEntry[] = [];
+    const failed: AutoAssignFailure[] = [];
+    for (const task of unassigned) {
+      const elder = this.elders.find((e) => e.id === task.elderId);
+      if (!elder) {
+        failed.push({ taskId: task.id, elderId: task.elderId, elderName: '未知老人', elderAddress: '', reason: '老人档案不存在' });
+        continue;
+      }
+      const isPaused = elder.pauseDates?.includes(date);
+      if (isPaused) {
+        failed.push({ taskId: task.id, elderId: elder.id, elderName: elder.name, elderAddress: elder.address, reason: '当日暂停送餐' });
+        continue;
+      }
+      const candidates = this.volunteers
+        .filter((v) => {
+          const load = currentLoad.get(v.id) || 0;
+          if (load >= v.capacity) return false;
+          if (!v.area.trim() || !elder.address.trim()) return false;
+          return elder.address.includes(v.area);
+        })
+        .sort((a, b) => {
+          const loadA = currentLoad.get(a.id) || 0;
+          const loadB = currentLoad.get(b.id) || 0;
+          const remainA = a.capacity - loadA;
+          const remainB = b.capacity - loadB;
+          if (remainA !== remainB) return remainB - remainA;
+          return loadA - loadB;
+        });
+      if (candidates.length === 0) {
+        const matchingVolunteers = this.volunteers.filter((v) => v.area.trim() && elder.address.trim() && elder.address.includes(v.area));
+        let reason = '';
+        if (matchingVolunteers.length > 0) {
+          const fullNames = matchingVolunteers
+            .filter((v) => (currentLoad.get(v.id) || 0) >= v.capacity)
+            .map((v) => v.name);
+          if (fullNames.length === matchingVolunteers.length) {
+            reason = `片区匹配的志愿者（${fullNames.join('、')}）均已满载`;
+          } else {
+            reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
+          }
+        } else if (!this.volunteers.some((v) => v.area.trim())) {
+          reason = '无志愿者配置片区信息';
+        } else {
+          reason = `地址"${elder.address}"无法匹配任何志愿者的熟悉片区`;
+        }
+        failed.push({ taskId: task.id, elderId: elder.id, elderName: elder.name, elderAddress: elder.address, reason });
+        continue;
+      }
+      const chosen = candidates[0];
+      this.simulationData.tasks = this.simulationData.tasks.map((t) =>
+        t.id === task.id ? { ...t, volunteerId: chosen.id, status: '配送中' as const } : t
+      );
+      currentLoad.set(chosen.id, (currentLoad.get(chosen.id) || 0) + 1);
+      assigned.push({
+        taskId: task.id,
+        elderId: elder.id,
+        elderName: elder.name,
+        elderAddress: elder.address,
+        volunteerId: chosen.id,
+        volunteerName: chosen.name,
+      });
+    }
+    if (!this.simulationData.kanbanSort[date]) {
+      this.simulationData.kanbanSort[date] = {};
+    }
+    const dateSort = this.simulationData.kanbanSort[date];
+    for (const entry of assigned) {
+      if (!dateSort[entry.volunteerId]) {
+        dateSort[entry.volunteerId] = this.simulationData.tasks
+          .filter((t) => t.date === date && t.volunteerId === entry.volunteerId)
+          .map((t) => t.id);
+      } else if (!dateSort[entry.volunteerId].includes(entry.taskId)) {
+        dateSort[entry.volunteerId].push(entry.taskId);
+      }
+    }
+    this.simulationData.autoAssignResults[date] = { assigned, failed };
+  }
+
+  private computeAllSimulationStats() {
+    if (!this.simulationData) return;
+    for (const date of this.simulationData.dates) {
+      this.simulationData.dayStats[date] = this.computeDaySimulationStats(date);
+    }
+  }
+
+  private computeDaySimulationStats(date: string): DaySimulationStats {
+    if (!this.simulationData) {
+      return {
+        date,
+        totalTasks: 0,
+        assignedCount: 0,
+        unassignedCount: 0,
+        pausedCount: 0,
+        specialMealCount: 0,
+        volunteerLoad: [],
+        unassignedReasons: [],
+        routeOrder: [],
+        tagBreakdown: [],
+        pausedElders: [],
+      };
+    }
+    const dateTasks = this.simulationData.tasks.filter((t) => t.date === date);
+    const elderMap = new Map(this.elders.map((e) => [e.id, e]));
+    const tagMap = new Map(this.mealTags.map((t) => [t.id, t]));
+    const pausedEldersList: Array<{ elderId: string; elderName: string; address: string; contact: string }> = [];
+    let pausedCount = 0;
+    let specialMealCount = 0;
+    const tagCounts = new Map<string, number>();
+    for (const task of dateTasks) {
+      const elder = elderMap.get(task.elderId);
+      if (!elder) continue;
+      const isPaused = elder.pauseDates?.includes(date);
+      if (isPaused) {
+        pausedCount++;
+        pausedEldersList.push({
+          elderId: elder.id,
+          elderName: elder.name,
+          address: elder.address,
+          contact: elder.contact,
+        });
+      }
+      if (task.specialMealNote || elder.specialMealNote) {
+        specialMealCount++;
+      }
+      for (const tagId of elder.mealTags || []) {
+        tagCounts.set(tagId, (tagCounts.get(tagId) || 0) + 1);
+      }
+    }
+    const tagBreakdown: Array<{ tagId: string; tagName: string; count: number; color: string }> = [];
+    for (const [tagId, count] of tagCounts.entries()) {
+      const tag = tagMap.get(tagId);
+      if (tag) {
+        tagBreakdown.push({ tagId, tagName: tag.name, count, color: tag.color });
+      }
+    }
+    tagBreakdown.sort((a, b) => b.count - a.count);
+    const volunteerLoad: Array<{
+      volunteerId: string;
+      volunteerName: string;
+      assigned: number;
+      capacity: number;
+      area: string;
+    }> = this.volunteers.map((v) => ({
+      volunteerId: v.id,
+      volunteerName: v.name,
+      assigned: dateTasks.filter((t) => t.volunteerId === v.id).length,
+      capacity: v.capacity,
+      area: v.area,
+    }));
+    const autoAssignResult = this.simulationData.autoAssignResults[date];
+    const unassignedReasons = autoAssignResult?.failed || [];
+    const dateSort = this.simulationData.kanbanSort[date] || {};
+    const routeOrder: KanbanGroup[] = this.volunteers.map((volunteer) => {
+      let vTasks = dateTasks.filter((t) => t.volunteerId === volunteer.id);
+      const order = dateSort[volunteer.id];
+      if (order && order.length) {
+        const orderIndex = new Map(order.map((id, i) => [id, i]));
+        vTasks = [...vTasks].sort((a, b) => {
+          const ai = orderIndex.has(a.id) ? orderIndex.get(a.id)! : order.length;
+          const bi = orderIndex.has(b.id) ? orderIndex.get(b.id)! : order.length;
+          return ai - bi;
+        });
+      }
+      return { volunteer, tasks: vTasks };
+    });
+    const assignedCount = dateTasks.filter((t) => t.volunteerId).length;
+    const unassignedCount = dateTasks.filter((t) => !t.volunteerId).length - pausedCount;
+    return {
+      date,
+      totalTasks: dateTasks.length,
+      assignedCount,
+      unassignedCount: Math.max(0, unassignedCount),
+      pausedCount,
+      specialMealCount,
+      volunteerLoad,
+      unassignedReasons,
+      routeOrder,
+      tagBreakdown,
+      pausedElders: pausedEldersList,
+    };
+  }
+
+  getSimulationDayStats(date: string): DaySimulationStats | null {
+    return this.simulationData?.dayStats?.[date] || null;
+  }
+
+  getCurrentSimulationStats(): DaySimulationStats | null {
+    return this.getSimulationDayStats(this.simulationViewDate);
+  }
+
+  submitSimulation() {
+    if (!this.simulationData) return;
+    if (!confirm(`确认提交模拟排班方案？\n\n日期范围：${this.simulationData.startDate} 至 ${this.simulationData.endDate}\n共 ${this.simulationData.dates.length} 天\n\n提交后将写入正式任务、看板排序和备餐清单。`)) {
+      return;
+    }
+    const newTasks: MealTask[] = [];
+    const existingTaskMap = new Map(this.tasks.map((t) => [`${t.date}-${t.elderId}`, t]));
+    for (const simTask of this.simulationData.tasks) {
+      const key = `${simTask.date}-${simTask.elderId}`;
+      const existing = existingTaskMap.get(key);
+      if (existing) {
+        existing.volunteerId = simTask.volunteerId;
+        existing.status = simTask.volunteerId ? '配送中' : '待分配';
+        existing.isManuallyModified = true;
+      } else {
+        const realTask: MealTask = {
+          id: crypto.randomUUID(),
+          elderId: simTask.elderId,
+          date: simTask.date,
+          volunteerId: simTask.volunteerId,
+          status: simTask.volunteerId ? '配送中' : '待分配',
+          exception: '',
+          isManuallyModified: false,
+          specialMealNote: simTask.specialMealNote,
+        };
+        newTasks.push(realTask);
+      }
+    }
+    this.tasks = [...this.tasks, ...newTasks];
+    for (const date of this.simulationData.dates) {
+      if (!this.kanbanSort[date]) {
+        this.kanbanSort[date] = {};
+      }
+      const simDateSort = this.simulationData.kanbanSort[date];
+      if (simDateSort) {
+        for (const volId of Object.keys(simDateSort)) {
+          const realIds = simDateSort[volId].map((simId) => {
+            const simTask = this.simulationData!.tasks.find((t) => t.id === simId);
+            if (!simTask) return simId;
+            const key = `${simTask.date}-${simTask.elderId}`;
+            const existing = existingTaskMap.get(key);
+            return existing?.id || this.tasks.find((t) => t.date === simTask.date && t.elderId === simTask.elderId)?.id || simId;
+          }).filter((id) => id);
+          this.kanbanSort[date][volId] = realIds;
+        }
+      }
+    }
+    this.save();
+    this.saveKanbanSort();
+    this.cancelSimulation(false);
+    this.showSyncToast('模拟排班已提交，正式数据已更新', 'info');
+  }
+
+  cancelSimulation(showConfirm: boolean = true) {
+    if (showConfirm && !confirm('确认取消模拟排班？所有模拟数据将被清除，不会影响正式数据。')) {
+      return;
+    }
+    this.simulationMode = 'off';
+    this.simulationData = null;
+    this.simulationPanelVisible = false;
+    if (showConfirm) {
+      this.showSyncToast('已退出模拟模式', 'info');
+    }
+  }
+
+  openSimulationPanel() {
+    this.simulationDetailTab = 'overview';
+    this.simulationPanelVisible = true;
+  }
+
+  closeSimulationPanel() {
+    this.simulationPanelVisible = false;
+  }
+
+  setSimulationViewDate(date: string) {
+    this.simulationViewDate = date;
+  }
+
+  getSimulationTasksForDate(date: string): MealTask[] {
+    return this.simulationData?.tasks.filter((t) => t.date === date) || [];
+  }
+
   setStatus(id: string, status: MealTask['status']) {
     this.tasks = this.tasks.map((task) => task.id === id ? { ...task, status, exception: status === '异常' ? task.exception : '' } : task);
     this.save();
@@ -2384,6 +3136,24 @@ export class App implements AfterViewChecked, OnInit {
 
   elderPreference(id: string) {
     return this.elders.find((elder) => elder.id === id)?.preference || '';
+  }
+
+  elderSpecialNote(id: string) {
+    return this.elders.find((elder) => elder.id === id)?.specialMealNote || '';
+  }
+
+  safeLoadPercent(assigned: number, capacity: number): number {
+    if (capacity <= 0) return 0;
+    return Math.min((assigned / capacity) * 100, 100);
+  }
+
+  getActiveVolunteerCount(stats: DaySimulationStats | null): number {
+    if (!stats || !stats.volunteerLoad) return 0;
+    return stats.volunteerLoad.filter(v => v.assigned > 0).length;
+  }
+
+  getSimulationDatesCount(): number {
+    return this.simulationData?.dates?.length || 0;
   }
 
   kanbanGroups(): KanbanGroup[] {
