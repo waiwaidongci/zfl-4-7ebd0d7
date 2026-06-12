@@ -2454,6 +2454,24 @@ export class App implements AfterViewChecked, OnInit {
     );
   }
 
+  private buildPhoneNotification(task: MealTask, elder: Elder, remark: string, source: ExceptionSource): PhoneNotification {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const match = elder.contact.match(/1[3-9]\d{9}/);
+    return {
+      id: crypto.randomUUID(),
+      date: task.date,
+      targetType: 'elder',
+      targetId: elder.id,
+      phone: match ? match[0] : elder.contact,
+      taskId: task.id,
+      notificationStatus: '未通知',
+      remark,
+      source,
+      updatedAt: timeStr,
+    };
+  }
+
   private isCallbackDuplicate(notificationId: string, status: string): boolean {
     return this.callbackTasks.some(c =>
       c.notificationId === notificationId && c.status !== '已完成' && c.status !== '已取消'
@@ -2484,7 +2502,34 @@ export class App implements AfterViewChecked, OnInit {
   }
 
   filteredTasks() {
-    return this.tasks.filter((task) => task.date === this.taskDate);
+    return this.currentScheduleTasks();
+  }
+
+  private currentScheduleDate(): string {
+    return this.simulationMode === 'active' ? this.simulationViewDate : this.taskDate;
+  }
+
+  private currentScheduleTasks(): MealTask[] {
+    const date = this.currentScheduleDate();
+    if (this.simulationMode === 'active') {
+      return this.simulationData?.tasks.filter((task) => task.date === date) || [];
+    }
+    return this.tasks.filter((task) => task.date === date);
+  }
+
+  private currentKanbanSort(): Record<string, string[]> {
+    const date = this.currentScheduleDate();
+    if (this.simulationMode === 'active') {
+      if (!this.simulationData) return {};
+      if (!this.simulationData.kanbanSort[date]) {
+        this.simulationData.kanbanSort[date] = {};
+      }
+      return this.simulationData.kanbanSort[date];
+    }
+    if (!this.kanbanSort[date]) {
+      this.kanbanSort[date] = {};
+    }
+    return this.kanbanSort[date];
   }
 
   todayTasks() {
@@ -2497,25 +2542,33 @@ export class App implements AfterViewChecked, OnInit {
   }
 
   assignTask(id: string, volunteerId: string) {
-    const task = this.tasks.find((t) => t.id === id);
+    const task = this.currentScheduleTasks().find((t) => t.id === id);
     const oldVolunteerId = task?.volunteerId;
-    this.tasks = this.tasks.map((t) => t.id === id ? { ...t, volunteerId, status: volunteerId ? '配送中' : '待分配' } : t);
-    const dateSort = this.kanbanSort[this.taskDate];
-    if (dateSort) {
-      if (oldVolunteerId && dateSort[oldVolunteerId]) {
-        dateSort[oldVolunteerId] = dateSort[oldVolunteerId].filter((tid) => tid !== id);
-      }
-      if (volunteerId) {
-        if (!dateSort[volunteerId]) {
-          dateSort[volunteerId] = this.filteredTasks()
-            .filter((t) => t.volunteerId === volunteerId)
-            .map((t) => t.id);
-        } else if (!dateSort[volunteerId].includes(id)) {
-          dateSort[volunteerId].push(id);
-        }
-        this.saveKanbanSort();
+    if (this.simulationMode === 'active' && this.simulationData) {
+      this.simulationData.tasks = this.simulationData.tasks.map((t) =>
+        t.id === id ? { ...t, volunteerId, status: volunteerId ? '配送中' : '待分配' } : t
+      );
+    } else {
+      this.tasks = this.tasks.map((t) => t.id === id ? { ...t, volunteerId, status: volunteerId ? '配送中' : '待分配' } : t);
+    }
+    const dateSort = this.currentKanbanSort();
+    if (oldVolunteerId && dateSort[oldVolunteerId]) {
+      dateSort[oldVolunteerId] = dateSort[oldVolunteerId].filter((tid) => tid !== id);
+    }
+    if (volunteerId) {
+      if (!dateSort[volunteerId]) {
+        dateSort[volunteerId] = this.filteredTasks()
+          .filter((t) => t.volunteerId === volunteerId)
+          .map((t) => t.id);
+      } else if (!dateSort[volunteerId].includes(id)) {
+        dateSort[volunteerId].push(id);
       }
     }
+    if (this.simulationMode === 'active') {
+      this.computeAllSimulationStats();
+      return;
+    }
+    this.saveKanbanSort();
     this.save();
   }
 
@@ -2897,6 +2950,7 @@ export class App implements AfterViewChecked, OnInit {
     }
     const newTasks: MealTask[] = [];
     const existingTaskMap = new Map(this.tasks.map((t) => [`${t.date}-${t.elderId}`, t]));
+    const submittedTasks: MealTask[] = [];
     for (const simTask of this.simulationData.tasks) {
       const key = `${simTask.date}-${simTask.elderId}`;
       const existing = existingTaskMap.get(key);
@@ -2904,6 +2958,7 @@ export class App implements AfterViewChecked, OnInit {
         existing.volunteerId = simTask.volunteerId;
         existing.status = simTask.volunteerId ? '配送中' : '待分配';
         existing.isManuallyModified = true;
+        submittedTasks.push(existing);
       } else {
         const realTask: MealTask = {
           id: crypto.randomUUID(),
@@ -2916,6 +2971,7 @@ export class App implements AfterViewChecked, OnInit {
           specialMealNote: simTask.specialMealNote,
         };
         newTasks.push(realTask);
+        submittedTasks.push(realTask);
       }
     }
     this.tasks = [...this.tasks, ...newTasks];
@@ -2936,6 +2992,24 @@ export class App implements AfterViewChecked, OnInit {
           this.kanbanSort[date][volId] = realIds;
         }
       }
+    }
+    const createdNotifications: PhoneNotification[] = [];
+    for (const task of submittedTasks) {
+      const elder = this.elders.find((e) => e.id === task.elderId);
+      if (!elder || elder.pauseDates?.includes(task.date)) continue;
+      if (this.isNotificationDuplicate(task.id, '手动登记', elder.id)) continue;
+      const volunteer = this.volunteers.find((v) => v.id === task.volunteerId);
+      const assignText = volunteer ? `，由${volunteer.name}配送` : '，暂未分配志愿者';
+      createdNotifications.push(this.buildPhoneNotification(
+        task,
+        elder,
+        `排班提交通知：${task.date}送餐任务已生成${assignText}`,
+        '手动登记',
+      ));
+    }
+    if (createdNotifications.length > 0) {
+      this.phoneNotifications = [...createdNotifications, ...this.phoneNotifications];
+      this.savePhoneNotifications();
     }
     this.save();
     this.saveKanbanSort();
@@ -2973,6 +3047,13 @@ export class App implements AfterViewChecked, OnInit {
   }
 
   setStatus(id: string, status: MealTask['status']) {
+    if (this.simulationMode === 'active' && this.simulationData) {
+      this.simulationData.tasks = this.simulationData.tasks.map((task) =>
+        task.id === id ? { ...task, status, exception: status === '异常' ? task.exception : '' } : task
+      );
+      this.computeAllSimulationStats();
+      return;
+    }
     this.tasks = this.tasks.map((task) => task.id === id ? { ...task, status, exception: status === '异常' ? task.exception : '' } : task);
     this.save();
   }
@@ -3158,7 +3239,7 @@ export class App implements AfterViewChecked, OnInit {
 
   kanbanGroups(): KanbanGroup[] {
     const dateTasks = this.filteredTasks();
-    const dateSort = this.kanbanSort[this.taskDate] || {};
+    const dateSort = this.currentKanbanSort();
     return this.volunteers.map((volunteer) => {
       let vTasks = dateTasks.filter((t) => t.volunteerId === volunteer.id);
       const order = dateSort[volunteer.id];
@@ -3179,8 +3260,7 @@ export class App implements AfterViewChecked, OnInit {
   }
 
   moveTask(volunteerId: string, taskId: string, direction: -1 | 1) {
-    if (!this.kanbanSort[this.taskDate]) this.kanbanSort[this.taskDate] = {};
-    const dateSort = this.kanbanSort[this.taskDate];
+    const dateSort = this.currentKanbanSort();
     if (!dateSort[volunteerId]) {
       dateSort[volunteerId] = this.filteredTasks()
         .filter((t) => t.volunteerId === volunteerId)
@@ -3195,6 +3275,10 @@ export class App implements AfterViewChecked, OnInit {
     const target = idx + direction;
     if (target < 0 || target >= list.length) return;
     [list[idx], list[target]] = [list[target], list[idx]];
+    if (this.simulationMode === 'active') {
+      this.computeAllSimulationStats();
+      return;
+    }
     this.saveKanbanSort();
   }
 
