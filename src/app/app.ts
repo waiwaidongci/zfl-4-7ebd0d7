@@ -3035,8 +3035,17 @@ export class App implements AfterViewChecked, OnInit {
       this.phoneNotifications = mergeById(this.phoneNotifications, backup.phoneNotifications);
       this.callbackTasks = mergeById(this.callbackTasks, backup.callbackTasks);
       if (backup.kanbanSort) this.kanbanSort = mergeKanbanSort(backup.kanbanSort);
-      if (backup.prepData) this.mealPrepService.importStorageData(backup.prepData, true);
-      if (backup.deliveryData) this.volunteerDeliveryService.importStorageData(backup.deliveryData, true);
+
+      if (backup.prepData) {
+        const current = this.mealPrepService.exportStorageData();
+        const merged = this.mergeNestedDateTask(current, backup.prepData);
+        this.mealPrepService.importStorageData(merged, false);
+      }
+      if (backup.deliveryData) {
+        const current = this.volunteerDeliveryService.exportStorageData();
+        const merged = this.mergeNestedDateTask(current, backup.deliveryData);
+        this.volunteerDeliveryService.importStorageData(merged, false);
+      }
       this.exceptionRecords = this.sync.deduplicateArray(
         this.exceptionRecords,
         (r) => this.sync.buildDedupKeyForException({ taskId: r.taskId, source: r.source, category: r.category })
@@ -3716,6 +3725,23 @@ export class App implements AfterViewChecked, OnInit {
     return String(v);
   }
 
+  private mergeNestedDateTask<T extends Record<string, any>>(
+    existing: Record<string, Record<string, T>>,
+    incoming: Record<string, Record<string, T>>,
+  ): Record<string, Record<string, T>> {
+    const result: Record<string, Record<string, T>> = JSON.parse(JSON.stringify(existing || {}));
+    if (!incoming || typeof incoming !== 'object') return result;
+    for (const date of Object.keys(incoming)) {
+      if (!result[date]) result[date] = {};
+      for (const taskId of Object.keys(incoming[date])) {
+        if (!(taskId in result[date])) {
+          result[date][taskId] = JSON.parse(JSON.stringify(incoming[date][taskId]));
+        }
+      }
+    }
+    return result;
+  }
+
   private applyBackupDataWithoutConflict(
     backup: BackupData,
     mergeById: <T extends { id: string }>(existing: T[], incoming: T[]) => T[],
@@ -3747,10 +3773,14 @@ export class App implements AfterViewChecked, OnInit {
       this.kanbanSort = mergeKanbanSort(backup.kanbanSort);
     }
     if (backup.prepData) {
-      this.mealPrepService.importStorageData(backup.prepData, true);
+      const current = this.mealPrepService.exportStorageData();
+      const merged = this.mergeNestedDateTask(current, backup.prepData);
+      this.mealPrepService.importStorageData(merged, false);
     }
     if (backup.deliveryData) {
-      this.volunteerDeliveryService.importStorageData(backup.deliveryData, true);
+      const current = this.volunteerDeliveryService.exportStorageData();
+      const merged = this.mergeNestedDateTask(current, backup.deliveryData);
+      this.volunteerDeliveryService.importStorageData(merged, false);
     }
 
     this.save();
