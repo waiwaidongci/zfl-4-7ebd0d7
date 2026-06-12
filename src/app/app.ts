@@ -92,6 +92,23 @@ type PhoneNotification = {
   updatedAt: string;
 };
 
+type CallbackTask = {
+  id: string;
+  notificationId: string;
+  taskId: string;
+  elderId: string;
+  date: string;
+  phone: string;
+  nextCallbackTime: string;
+  handler: string;
+  status: '待回拨' | '回拨中' | '已完成' | '已取消';
+  result: string;
+  callbackCount: number;
+  remark: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const today = new Date().toISOString().slice(0, 10);
 
 const PRESET_TAGS: MealTag[] = [
@@ -145,6 +162,8 @@ type BackupData = {
   mealTags: MealTag[];
   exceptionRecords: ExceptionRecord[];
   visitRecords: VisitRecord[];
+  phoneNotifications: PhoneNotification[];
+  callbackTasks: CallbackTask[];
   kanbanSort: KanbanSortMap;
 };
 
@@ -160,6 +179,8 @@ type ImportPreview = {
   mealTags: ImportPreviewItem<MealTag>[];
   exceptionRecords: ImportPreviewItem<ExceptionRecord>[];
   visitRecords: ImportPreviewItem<VisitRecord>[];
+  phoneNotifications: ImportPreviewItem<PhoneNotification>[];
+  callbackTasks: ImportPreviewItem<CallbackTask>[];
 };
 
 type ImportError = {
@@ -428,6 +449,39 @@ type ImportError = {
                 <div class="load-bar-fill" [style.width.%]="(assignedCount(volunteer.id) / volunteer.capacity) * 100" [class.full]="assignedCount(volunteer.id) >= volunteer.capacity" [class.near]="assignedCount(volunteer.id) >= volunteer.capacity * 0.75 && assignedCount(volunteer.id) < volunteer.capacity"></div>
               </div>
               <small class="load-area">{{ volunteer.area }}</small>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="toolbar" style="margin-bottom:12px">
+              <h2>☎️ 电话通知 & 回拨</h2>
+              <button type="button" class="ghost sm" (click)="openPhoneNotificationPanel()">管理</button>
+            </div>
+            <div class="phone-status-row">
+              <div class="phone-status-item"><strong>{{ phoneNotifications.filter(n => n.notificationStatus === '未通知').length }}</strong><span>待通知</span></div>
+              <div class="phone-status-item"><strong>{{ phoneNotifications.filter(n => n.notificationStatus === '未接通' || n.notificationStatus === '稍后再拨').length }}</strong><span>需回拨</span></div>
+              <div class="phone-status-item"><strong>{{ getPendingCallbackCount() }}</strong><span>回拨中</span></div>
+            </div>
+            <div class="phone-callback-list">
+              <div class="phone-callback-item" *ngFor="let cb of callbackTasks.filter(t => t.status === '待回拨' || t.status === '回拨中').slice(0, 3)">
+                <div class="cb-item-header">
+                  <strong>{{ elderName(cb.elderId) }}</strong>
+                  <span class="cb-status-tag" [style.color]="cb.status === '待回拨' ? '#d9a84a' : '#5a8fd9'" [style.borderColor]="cb.status === '待回拨' ? '#d9a84a' : '#5a8fd9'">{{ cb.status }}</span>
+                </div>
+                <div class="cb-item-meta">
+                  <span>📞 {{ cb.phone }}</span>
+                  <span *ngIf="cb.handler">👤 {{ cb.handler }}</span>
+                </div>
+                <div class="cb-item-time">
+                  <span>⏰ {{ cb.nextCallbackTime | date:'yyyy-MM-dd HH:mm' }}</span>
+                </div>
+                <div class="cb-item-actions">
+                  <button type="button" class="ghost sm" (click)="editCallbackTask(cb.id)">详情</button>
+                  <button type="button" class="sm" style="background:#4a9f6d" *ngIf="cb.status === '待回拨'" (click)="updateCallbackStatus(cb.id, '回拨中')">开始回拨</button>
+                  <button type="button" class="sm" *ngIf="cb.status === '回拨中'" (click)="editCallbackTask(cb.id)">完成回拨</button>
+                </div>
+              </div>
+              <p class="muted center" *ngIf="callbackTasks.filter(t => t.status === '待回拨' || t.status === '回拨中').length === 0">暂无待处理回拨任务</p>
             </div>
           </section>
         </aside>
@@ -768,6 +822,188 @@ type ImportError = {
         </div>
       </div>
 
+      <div class="modal-overlay" *ngIf="phoneNotificationPanelVisible" (click)="closePhoneNotificationPanel()">
+        <div class="modal-panel phone-notif-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>☎️ 电话通知与回拨管理</h2>
+              <p class="muted">管理电话通知清单及回拨任务跟踪</p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closePhoneNotificationPanel()">关闭</button>
+          </div>
+
+          <div class="modal-tabs">
+            <button type="button" [class.active-tab]="phoneNotificationTab === 'list'" (click)="phoneNotificationTab = 'list'">
+              📋 通知清单
+              <span class="badge" *ngIf="phoneNotifications.length > 0">{{ phoneNotifications.length }}</span>
+            </button>
+            <button type="button" [class.active-tab]="phoneNotificationTab === 'callback'" (click)="phoneNotificationTab = 'callback'">
+              🔄 回拨任务
+              <span class="badge" *ngIf="getPendingCallbackCount() > 0">{{ getPendingCallbackCount() }}</span>
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <div *ngIf="phoneNotificationTab === 'list'" class="phone-notif-list">
+              <div class="exc-filter-bar">
+                <select [(ngModel)]="phoneNotificationFilter">
+                  <option value="全部">全部状态</option>
+                  <option value="未通知">未通知</option>
+                  <option value="已通知">已通知</option>
+                  <option value="未接通">未接通</option>
+                  <option value="稍后再拨">稍后再拨</option>
+                </select>
+                <input type="date" [(ngModel)]="taskDate" placeholder="日期筛选" (change)="''" />
+              </div>
+
+              <div class="phone-notif-items">
+                <div class="phone-notif-item" *ngFor="let notif of filteredPhoneNotifications()">
+                  <div class="phone-notif-header">
+                    <div>
+                      <strong>{{ getNotificationElderName(notif) }}</strong>
+                      <span class="phone-notif-date">{{ notif.date }}</span>
+                    </div>
+                    <div class="phone-notif-tags">
+                      <span class="notif-source-tag">{{ notif.source }}</span>
+                      <span class="notif-status-tag" [style.color]="notifStatusColor(notif.notificationStatus)" [style.borderColor]="notifStatusColor(notif.notificationStatus)">{{ notif.notificationStatus }}</span>
+                    </div>
+                  </div>
+                  <div class="phone-notif-meta">
+                    <span>📞 {{ notif.phone }}</span>
+                  </div>
+                  <p class="phone-notif-remark">{{ notif.remark }}</p>
+                  <div class="phone-notif-callback-info" *ngIf="getTaskCallbacks(notif.taskId).length > 0">
+                    <span class="cb-count">🔄 回拨记录：{{ getTaskCallbacks(notif.taskId).length }} 次</span>
+                    <span class="cb-latest" *ngIf="getTaskCallbacks(notif.taskId)[0]">
+                      最近：{{ getTaskCallbacks(notif.taskId)[0].nextCallbackTime | date:'MM-dd HH:mm' }}
+                      · {{ getTaskCallbacks(notif.taskId)[0].status }}
+                    </span>
+                  </div>
+                  <div class="phone-notif-actions">
+                    <button type="button" class="ghost sm" *ngIf="notif.notificationStatus !== '已通知'" (click)="updateNotificationStatus(notif.id, '已通知')">标记已通知</button>
+                    <button type="button" class="ghost sm" *ngIf="notif.notificationStatus === '未通知'" (click)="updateNotificationStatus(notif.id, '未接通')">未接通</button>
+                    <button type="button" class="sm" style="background:#5a8fd9" (click)="openCallbackForm(notif)">
+                      {{ getTaskCallbacks(notif.taskId).some(t => t.status !== '已完成' && t.status !== '已取消') ? '查看回拨' : '设置回拨' }}
+                    </button>
+                  </div>
+                  <small class="created-at">更新于 {{ notif.updatedAt }}</small>
+                </div>
+                <p class="muted center" *ngIf="filteredPhoneNotifications().length === 0">暂无电话通知记录</p>
+              </div>
+            </div>
+
+            <div *ngIf="phoneNotificationTab === 'callback'" class="callback-task-list">
+              <div class="callback-filter-bar">
+                <select [(ngModel)]="callbackFilterStatus">
+                  <option value="全部">全部状态</option>
+                  <option value="待回拨">待回拨</option>
+                  <option value="回拨中">回拨中</option>
+                  <option value="已完成">已完成</option>
+                  <option value="已取消">已取消</option>
+                </select>
+              </div>
+
+              <div class="callback-items">
+                <div class="callback-item" *ngFor="let cb of filteredCallbackTasks()">
+                  <div class="callback-item-header">
+                    <div>
+                      <strong>{{ elderName(cb.elderId) }}</strong>
+                      <span class="cb-date">{{ cb.date }}</span>
+                    </div>
+                    <span class="cb-status-badge" [style.background]="cbStatusBgColor(cb.status)" [style.color]="cb.status === '已完成' ? '#fff' : '#315448'">
+                      {{ cb.status }}
+                    </span>
+                  </div>
+                  <div class="callback-item-meta">
+                    <span>📞 {{ cb.phone }}</span>
+                    <span *ngIf="cb.handler">👤 {{ cb.handler }}</span>
+                    <span>🔢 回拨{{ cb.callbackCount }}次</span>
+                  </div>
+                  <div class="callback-item-time">
+                    <span>⏰ 下次回拨：{{ cb.nextCallbackTime | date:'yyyy-MM-dd HH:mm' }}</span>
+                  </div>
+                  <div class="callback-item-result" *ngIf="cb.result">
+                    <label>处理结果：</label>
+                    <span>{{ cb.result }}</span>
+                  </div>
+                  <p class="callback-item-remark" *ngIf="cb.remark">
+                    <label>备注：</label>
+                    <span>{{ cb.remark }}</span>
+                  </p>
+                  <div class="callback-item-actions">
+                    <button type="button" class="ghost sm" (click)="editCallbackTask(cb.id)">编辑</button>
+                    <button type="button" class="sm" style="background:#4a9f6d" *ngIf="cb.status === '待回拨'" (click)="updateCallbackStatus(cb.id, '回拨中')">开始回拨</button>
+                    <button type="button" class="sm" *ngIf="cb.status === '回拨中'" (click)="editCallbackTask(cb.id)">完成回拨</button>
+                    <button type="button" class="ghost sm tag-del" (click)="deleteCallbackTask(cb.id)">删除</button>
+                  </div>
+                  <small class="created-at">更新于 {{ cb.updatedAt }}</small>
+                </div>
+                <p class="muted center" *ngIf="filteredCallbackTasks().length === 0">暂无回拨任务</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" *ngIf="callbackFormVisible" (click)="closeCallbackForm()">
+        <div class="modal-panel callback-form-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>{{ editingCallbackId ? '编辑回拨任务' : '设置回拨任务' }}</h2>
+              <p class="muted" *ngIf="selectedNotificationForCallback">
+                {{ getNotificationElderName(selectedNotificationForCallback) }} · {{ selectedNotificationForCallback.phone }}
+              </p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeCallbackForm()">关闭</button>
+          </div>
+          <div class="modal-body">
+            <form class="callback-form" (ngSubmit)="submitCallbackTask()">
+              <div class="form-row">
+                <label>下次回拨时间</label>
+                <input type="datetime-local" name="nextCallbackTime" [(ngModel)]="callbackForm.nextCallbackTime" required />
+              </div>
+              <div class="form-row">
+                <label>负责人</label>
+                <input name="handler" [(ngModel)]="callbackForm.handler" placeholder="请输入负责人姓名" />
+              </div>
+              <div class="form-row">
+                <label>回拨状态</label>
+                <div class="method-group">
+                  <label class="method-item">
+                    <input type="radio" name="cbStatus" [(ngModel)]="callbackForm.status" value="待回拨" />
+                    <span>待回拨</span>
+                  </label>
+                  <label class="method-item">
+                    <input type="radio" name="cbStatus" [(ngModel)]="callbackForm.status" value="回拨中" />
+                    <span>回拨中</span>
+                  </label>
+                  <label class="method-item">
+                    <input type="radio" name="cbStatus" [(ngModel)]="callbackForm.status" value="已完成" />
+                    <span>已完成</span>
+                  </label>
+                  <label class="method-item">
+                    <input type="radio" name="cbStatus" [(ngModel)]="callbackForm.status" value="已取消" />
+                    <span>已取消</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-row" *ngIf="callbackForm.status === '已完成'">
+                <label>处理结果</label>
+                <textarea name="cbResult" [(ngModel)]="callbackForm.result" rows="3" placeholder="请填写回拨结果..."></textarea>
+              </div>
+              <div class="form-row">
+                <label>备注</label>
+                <textarea name="cbRemark" [(ngModel)]="callbackForm.remark" rows="2" placeholder="备注信息..."></textarea>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="ghost" (click)="closeCallbackForm()">取消</button>
+                <button type="submit">{{ editingCallbackId ? '保存修改' : '创建回拨' }}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
       <div class="modal-overlay" *ngIf="importExportPanelVisible" (click)="closeImportExportPanel()">
         <div class="modal-panel import-export-modal" (click)="$event.stopPropagation()">
           <div class="modal-header">
@@ -795,6 +1031,8 @@ type ImportError = {
                   <li><strong>{{ mealTags.length }}</strong> 个餐食标签</li>
                   <li><strong>{{ exceptionRecords.length }}</strong> 条异常记录</li>
                   <li><strong>{{ visitRecords.length }}</strong> 条回访记录</li>
+                  <li><strong>{{ phoneNotifications.length }}</strong> 条电话通知</li>
+                  <li><strong>{{ callbackTasks.length }}</strong> 条回拨任务</li>
                 </ul>
               </div>
               <button type="button" class="export-btn" (click)="exportData()">📥 导出备份文件</button>
@@ -894,6 +1132,24 @@ type ImportError = {
                       <span class="stat new">+{{ importPreviewSummary.visitRecords.new }}</span>
                       <span class="stat overwrite">~{{ importPreviewSummary.visitRecords.overwrite }}</span>
                       <span class="stat duplicate">={{ importPreviewSummary.visitRecords.duplicate }}</span>
+                    </div>
+                  </div>
+
+                  <div class="preview-card" *ngIf="importPreviewSummary.phoneNotifications.total > 0">
+                    <h4>📞 电话通知</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.phoneNotifications.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.phoneNotifications.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.phoneNotifications.duplicate }}</span>
+                    </div>
+                  </div>
+
+                  <div class="preview-card" *ngIf="importPreviewSummary.callbackTasks.total > 0">
+                    <h4>🔄 回拨任务</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.callbackTasks.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.callbackTasks.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.callbackTasks.duplicate }}</span>
                     </div>
                   </div>
                 </div>
@@ -1164,6 +1420,58 @@ type ImportError = {
       .export-list { grid-template-columns: 1fr; }
       .preview-cards { grid-template-columns: 1fr 1fr; }
     }
+
+    .phone-status-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .phone-status-item { text-align: center; border: 1px solid #e2e7da; border-radius: 8px; padding: 10px 6px; background: #fbfcf9; }
+    .phone-status-item strong { display: block; font-size: 20px; margin-bottom: 2px; color: #315448; }
+    .phone-status-item span { font-size: 12px; color: #65715f; }
+
+    .phone-callback-list { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; }
+    .phone-callback-item { border: 1px solid #e0e6d8; border-radius: 8px; padding: 10px 12px; background: #fbfcf9; }
+    .cb-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .cb-item-header strong { font-size: 14px; }
+    .cb-status-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; border: 1px solid; }
+    .cb-item-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: #65715f; margin-bottom: 4px; }
+    .cb-item-time { font-size: 12px; color: #b36a2e; margin-bottom: 8px; }
+    .cb-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    .phone-notif-modal { max-width: 720px; }
+    .phone-notif-list, .callback-task-list { display: flex; flex-direction: column; gap: 12px; }
+    .phone-notif-items, .callback-items { display: flex; flex-direction: column; gap: 12px; }
+    .phone-notif-item, .callback-item { border: 1px solid #e0e6d8; border-radius: 10px; padding: 14px 16px; background: #fbfcf9; }
+    .phone-notif-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #e0e6d8; }
+    .phone-notif-header strong { font-size: 15px; margin-right: 8px; }
+    .phone-notif-date { font-size: 12px; color: #65715f; margin-left: 6px; }
+    .phone-notif-tags { display: flex; gap: 6px; align-items: center; }
+    .notif-source-tag { display: inline-block; padding: 2px 8px; background: #f0f5fc; color: #5a8fd9; border: 1px solid #c4d9f0; border-radius: 10px; font-size: 11px; font-weight: 500; }
+    .notif-status-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; border: 1px solid; }
+    .phone-notif-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 13px; color: #65715f; }
+    .phone-notif-remark { margin: 0 0 8px; font-size: 13px; line-height: 1.6; color: #3d4a38; padding: 8px 10px; background: #fff; border-radius: 6px; border: 1px solid #edf0e8; }
+    .phone-notif-callback-info { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; padding: 6px 10px; background: #fdf3e0; border-radius: 6px; font-size: 12px; }
+    .cb-count { color: #b36a2e; font-weight: 500; }
+    .cb-latest { color: #8a6a2a; }
+    .phone-notif-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    .callback-filter-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+    .callback-filter-bar select { flex: 1; min-width: 120px; padding: 8px 10px; font-size: 13px; }
+    .callback-item-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #e0e6d8; }
+    .callback-item-header strong { font-size: 15px; margin-right: 8px; }
+    .cb-date { font-size: 12px; color: #65715f; margin-left: 6px; }
+    .cb-status-badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .callback-item-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; font-size: 13px; color: #65715f; }
+    .callback-item-time { font-size: 13px; color: #b36a2e; margin-bottom: 8px; font-weight: 500; }
+    .callback-item-result { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; padding: 8px 10px; background: #e8f3ec; border-radius: 6px; margin-bottom: 6px; }
+    .callback-item-result label { font-weight: 600; color: #3d4a38; white-space: nowrap; }
+    .callback-item-result span { color: #4a5a45; line-height: 1.5; }
+    .callback-item-remark { margin: 0 0 8px; font-size: 13px; color: #65715f; }
+    .callback-item-remark label { font-weight: 600; color: #5a6b53; }
+    .callback-item-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+
+    .callback-form-modal { max-width: 520px; }
+    .callback-form { display: flex; flex-direction: column; gap: 16px; }
+
+    .callback-filter-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .callback-filter-bar select { flex: 1; min-width: 120px; padding: 8px 10px; font-size: 13px; }
   `],
 })
 export class App implements AfterViewChecked {
@@ -1186,6 +1494,7 @@ export class App implements AfterViewChecked {
 
   tasks: MealTask[] = [];
   phoneNotifications: PhoneNotification[] = [];
+  callbackTasks: CallbackTask[] = [];
   taskDate = today;
   kanbanSort: KanbanSortMap = {};
   elderForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5, 6, 7], pauseDates: [], specialMealNote: '' };
@@ -1242,6 +1551,22 @@ export class App implements AfterViewChecked {
   exceptionHistoryElderId = '';
   exceptionHistoryDate = '';
 
+  phoneNotificationPanelVisible = false;
+  phoneNotificationTab: 'list' | 'callback' = 'list';
+  phoneNotificationFilter: '全部' | '未通知' | '已通知' | '未接通' | '稍后再拨' = '全部';
+  callbackFilterStatus: '全部' | '待回拨' | '回拨中' | '已完成' | '已取消' = '全部';
+
+  callbackFormVisible = false;
+  editingCallbackId: string | null = null;
+  callbackForm: Omit<CallbackTask, 'id' | 'notificationId' | 'taskId' | 'elderId' | 'date' | 'phone' | 'callbackCount' | 'createdAt' | 'updatedAt'> = {
+    nextCallbackTime: '',
+    handler: '',
+    status: '待回拨',
+    result: '',
+    remark: ''
+  };
+  selectedNotificationForCallback: PhoneNotification | null = null;
+
   importExportPanelVisible = false;
   importTab: 'export' | 'import' = 'export';
   importPreview: ImportPreview | null = null;
@@ -1266,6 +1591,7 @@ export class App implements AfterViewChecked {
     this.loadMealTags();
     this.loadExceptions();
     this.loadPhoneNotifications();
+    this.loadCallbackTasks();
     if (this.tasks.length === 0) this.generateTasks();
   }
 
@@ -1299,8 +1625,12 @@ export class App implements AfterViewChecked {
   onPrepNotificationCreated(notif: PrepPhoneNotification) {
     const exists = this.phoneNotifications.some(n => n.id === notif.id || n.taskId === notif.taskId);
     if (!exists) {
-      this.phoneNotifications = [notif as unknown as PhoneNotification, ...this.phoneNotifications];
+      const newNotif = notif as unknown as PhoneNotification;
+      this.phoneNotifications = [newNotif, ...this.phoneNotifications];
       this.savePhoneNotifications();
+      if (newNotif.notificationStatus === '未接通' || newNotif.notificationStatus === '稍后再拨' || newNotif.notificationStatus === '未通知') {
+        this.createAutoCallbackTask(newNotif, 2);
+      }
     }
   }
 
@@ -1332,8 +1662,12 @@ export class App implements AfterViewChecked {
     if (data.notificationCreated) {
       const exists = this.phoneNotifications.some(n => n.id === data.notificationCreated.id);
       if (!exists) {
-        this.phoneNotifications = [data.notificationCreated, ...this.phoneNotifications];
+        const newNotif = data.notificationCreated;
+        this.phoneNotifications = [newNotif, ...this.phoneNotifications];
         this.savePhoneNotifications();
+        if (newNotif.notificationStatus === '未接通' || newNotif.notificationStatus === '稍后再拨' || newNotif.notificationStatus === '未通知') {
+          this.createAutoCallbackTask(newNotif, 1);
+        }
       }
     }
   }
@@ -1941,6 +2275,265 @@ export class App implements AfterViewChecked {
     if (raw) this.phoneNotifications = JSON.parse(raw);
   }
 
+  private saveCallbackTasks() {
+    localStorage.setItem('zfl-4-callback-tasks', JSON.stringify(this.callbackTasks));
+  }
+
+  private loadCallbackTasks() {
+    const raw = localStorage.getItem('zfl-4-callback-tasks');
+    if (raw) this.callbackTasks = JSON.parse(raw);
+  }
+
+  openPhoneNotificationPanel() {
+    this.phoneNotificationPanelVisible = true;
+    this.phoneNotificationTab = 'list';
+  }
+
+  closePhoneNotificationPanel() {
+    this.phoneNotificationPanelVisible = false;
+    this.callbackFormVisible = false;
+    this.editingCallbackId = null;
+    this.selectedNotificationForCallback = null;
+  }
+
+  filteredPhoneNotifications(): PhoneNotification[] {
+    let notifications = [...this.phoneNotifications];
+    if (this.phoneNotificationFilter !== '全部') {
+      notifications = notifications.filter(n => n.notificationStatus === this.phoneNotificationFilter);
+    }
+    return notifications.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
+  getNotificationElderName(notification: PhoneNotification): string {
+    if (notification.targetType === 'elder') {
+      return this.elders.find(e => e.id === notification.targetId)?.name || '未知老人';
+    }
+    return this.volunteers.find(v => v.id === notification.targetId)?.name || '未知志愿者';
+  }
+
+  updateNotificationStatus(notificationId: string, status: PhoneNotification['notificationStatus'], remark?: string) {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.phoneNotifications = this.phoneNotifications.map(n =>
+      n.id === notificationId ? { ...n, notificationStatus: status, remark: remark ?? n.remark, updatedAt: timeStr } : n
+    );
+    this.savePhoneNotifications();
+  }
+
+  openCallbackForm(notification: PhoneNotification) {
+    this.selectedNotificationForCallback = notification;
+    this.editingCallbackId = null;
+    const now = new Date();
+    now.setHours(now.getHours() + 1);
+    const defaultTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.callbackForm = {
+      nextCallbackTime: defaultTime,
+      handler: '',
+      status: '待回拨',
+      result: '',
+      remark: ''
+    };
+    this.callbackFormVisible = true;
+  }
+
+  editCallbackTask(callbackId: string) {
+    const task = this.callbackTasks.find(t => t.id === callbackId);
+    if (!task) return;
+    this.editingCallbackId = callbackId;
+    const notification = this.phoneNotifications.find(n => n.id === task.notificationId);
+    this.selectedNotificationForCallback = notification || null;
+    this.callbackForm = {
+      nextCallbackTime: task.nextCallbackTime,
+      handler: task.handler,
+      status: task.status,
+      result: task.result,
+      remark: task.remark
+    };
+    this.callbackFormVisible = true;
+  }
+
+  closeCallbackForm() {
+    this.callbackFormVisible = false;
+    this.editingCallbackId = null;
+    this.selectedNotificationForCallback = null;
+  }
+
+  submitCallbackTask() {
+    if (!this.selectedNotificationForCallback) return;
+    if (!this.callbackForm.nextCallbackTime) return;
+
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    if (this.editingCallbackId) {
+      this.callbackTasks = this.callbackTasks.map(t =>
+        t.id === this.editingCallbackId ? {
+          ...t,
+          ...this.callbackForm,
+          updatedAt: timeStr
+        } : t
+      );
+
+      const task = this.callbackTasks.find(t => t.id === this.editingCallbackId);
+      if (task && task.status === '已完成') {
+        this.completeCallbackTask(task.id);
+      }
+    } else {
+      const newTask: CallbackTask = {
+        id: crypto.randomUUID(),
+        notificationId: this.selectedNotificationForCallback.id,
+        taskId: this.selectedNotificationForCallback.taskId,
+        elderId: this.selectedNotificationForCallback.targetId,
+        date: this.selectedNotificationForCallback.date,
+        phone: this.selectedNotificationForCallback.phone,
+        ...this.callbackForm,
+        callbackCount: 0,
+        createdAt: timeStr,
+        updatedAt: timeStr
+      };
+      this.callbackTasks = [newTask, ...this.callbackTasks];
+    }
+
+    this.saveCallbackTasks();
+    this.closeCallbackForm();
+  }
+
+  completeCallbackTask(taskId: string) {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const task = this.callbackTasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    this.callbackTasks = this.callbackTasks.map(t =>
+      t.id === taskId ? {
+        ...t,
+        status: '已完成',
+        callbackCount: t.callbackCount + 1,
+        updatedAt: timeStr
+      } : t
+    );
+
+    this.phoneNotifications = this.phoneNotifications.map(n =>
+      n.id === task.notificationId ? {
+        ...n,
+        notificationStatus: '已通知',
+        updatedAt: timeStr
+      } : n
+    );
+    this.savePhoneNotifications();
+
+    const relatedException = this.exceptionRecords.find(e => e.taskId === task.taskId && e.status !== '已解决');
+    if (relatedException && task.result) {
+      this.exceptionRecords = this.exceptionRecords.map(e =>
+        e.id === relatedException.id ? {
+          ...e,
+          result: task.result,
+          updatedAt: timeStr
+        } : e
+      );
+      this.saveExceptions();
+    }
+
+    this.saveCallbackTasks();
+  }
+
+  updateCallbackStatus(taskId: string, status: CallbackTask['status']) {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    this.callbackTasks = this.callbackTasks.map(t =>
+      t.id === taskId ? { ...t, status, updatedAt: timeStr } : t
+    );
+
+    if (status === '已完成') {
+      const task = this.callbackTasks.find(t => t.id === taskId);
+      if (task) {
+        this.phoneNotifications = this.phoneNotifications.map(n =>
+          n.id === task.notificationId ? { ...n, notificationStatus: '已通知', updatedAt: timeStr } : n
+        );
+        this.savePhoneNotifications();
+      }
+    }
+
+    this.saveCallbackTasks();
+  }
+
+  deleteCallbackTask(taskId: string) {
+    if (!confirm('确认删除此回拨任务？')) return;
+    this.callbackTasks = this.callbackTasks.filter(t => t.id !== taskId);
+    this.saveCallbackTasks();
+  }
+
+  getPendingCallbackCount(): number {
+    return this.callbackTasks.filter(t => t.status === '待回拨' || t.status === '回拨中').length;
+  }
+
+  getTaskCallbacks(taskId: string): CallbackTask[] {
+    return this.callbackTasks
+      .filter(t => t.taskId === taskId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  createAutoCallbackTask(notification: PhoneNotification, defaultDelayHours: number = 1) {
+    const existing = this.callbackTasks.some(
+      t => t.notificationId === notification.id && t.status !== '已完成' && t.status !== '已取消'
+    );
+    if (existing) return;
+
+    const now = new Date();
+    now.setHours(now.getHours() + defaultDelayHours);
+    const nextTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const newTask: CallbackTask = {
+      id: crypto.randomUUID(),
+      notificationId: notification.id,
+      taskId: notification.taskId,
+      elderId: notification.targetId,
+      date: notification.date,
+      phone: notification.phone,
+      nextCallbackTime: nextTime,
+      handler: '',
+      status: '待回拨',
+      result: '',
+      callbackCount: 0,
+      remark: '系统自动生成回拨任务',
+      createdAt: timeStr,
+      updatedAt: timeStr
+    };
+    this.callbackTasks = [newTask, ...this.callbackTasks];
+    this.saveCallbackTasks();
+  }
+
+  notifStatusColor(status: PhoneNotification['notificationStatus']): string {
+    switch (status) {
+      case '已通知': return '#4a9f6d';
+      case '未接通': return '#c75454';
+      case '稍后再拨': return '#d9a84a';
+      case '未通知': return '#8a9783';
+      default: return '#8a9783';
+    }
+  }
+
+  cbStatusBgColor(status: CallbackTask['status']): string {
+    switch (status) {
+      case '已完成': return '#4a9f6d';
+      case '回拨中': return '#5a8fd9';
+      case '待回拨': return '#d9a84a';
+      case '已取消': return '#8a9783';
+      default: return '#8a9783';
+    }
+  }
+
+  filteredCallbackTasks(): CallbackTask[] {
+    let tasks = [...this.callbackTasks];
+    if (this.callbackFilterStatus !== '全部') {
+      tasks = tasks.filter(t => t.status === this.callbackFilterStatus);
+    }
+    return tasks.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
   openImportExportPanel() {
     this.importExportPanelVisible = true;
     this.importTab = 'export';
@@ -1969,6 +2562,8 @@ export class App implements AfterViewChecked {
       mealTags: [...this.mealTags],
       exceptionRecords: [...this.exceptionRecords],
       visitRecords: [...this.visitRecords],
+      phoneNotifications: [...this.phoneNotifications],
+      callbackTasks: [...this.callbackTasks],
       kanbanSort: { ...this.kanbanSort }
     };
 
@@ -2228,11 +2823,14 @@ export class App implements AfterViewChecked {
       mealTags: data.mealTags || [],
       exceptionRecords: data.exceptionRecords || [],
       visitRecords: data.visitRecords || [],
+      phoneNotifications: data.phoneNotifications || [],
+      callbackTasks: data.callbackTasks || [],
       kanbanSort: data.kanbanSort || {}
     };
 
     const totalCount = backup.elders.length + backup.volunteers.length + backup.tasks.length
-      + backup.mealTags.length + backup.exceptionRecords.length + backup.visitRecords.length;
+      + backup.mealTags.length + backup.exceptionRecords.length + backup.visitRecords.length
+      + backup.phoneNotifications.length + backup.callbackTasks.length;
 
     if (totalCount === 0) {
       this.importError = {
@@ -2254,6 +2852,8 @@ export class App implements AfterViewChecked {
     const tagIdMap = new Map(this.mealTags.map(t => [t.id, t]));
     const exceptionIdMap = new Map(this.exceptionRecords.map(r => [r.id, r]));
     const visitIdMap = new Map(this.visitRecords.map(r => [r.id, r]));
+    const notificationIdMap = new Map(this.phoneNotifications.map(n => [n.id, n]));
+    const callbackIdMap = new Map(this.callbackTasks.map(c => [c.id, c]));
 
     const classify = <T extends { id: string }>(items: T[], existingMap: Map<string, T>): ImportPreviewItem<T>[] => {
       return items.map(item => {
@@ -2272,7 +2872,9 @@ export class App implements AfterViewChecked {
       tasks: classify(backup.tasks, taskIdMap),
       mealTags: classify(backup.mealTags, tagIdMap),
       exceptionRecords: classify(backup.exceptionRecords, exceptionIdMap),
-      visitRecords: classify(backup.visitRecords, visitIdMap)
+      visitRecords: classify(backup.visitRecords, visitIdMap),
+      phoneNotifications: classify(backup.phoneNotifications, notificationIdMap),
+      callbackTasks: classify(backup.callbackTasks, callbackIdMap)
     };
   }
 
@@ -2290,6 +2892,8 @@ export class App implements AfterViewChecked {
       mealTags: { total: p.mealTags.length, new: this.countImportItemsByStatus(p.mealTags, 'new'), duplicate: this.countImportItemsByStatus(p.mealTags, 'duplicate'), overwrite: this.countImportItemsByStatus(p.mealTags, 'overwrite') },
       exceptionRecords: { total: p.exceptionRecords.length, new: this.countImportItemsByStatus(p.exceptionRecords, 'new'), duplicate: this.countImportItemsByStatus(p.exceptionRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.exceptionRecords, 'overwrite') },
       visitRecords: { total: p.visitRecords.length, new: this.countImportItemsByStatus(p.visitRecords, 'new'), duplicate: this.countImportItemsByStatus(p.visitRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.visitRecords, 'overwrite') },
+      phoneNotifications: { total: p.phoneNotifications.length, new: this.countImportItemsByStatus(p.phoneNotifications, 'new'), duplicate: this.countImportItemsByStatus(p.phoneNotifications, 'duplicate'), overwrite: this.countImportItemsByStatus(p.phoneNotifications, 'overwrite') },
+      callbackTasks: { total: p.callbackTasks.length, new: this.countImportItemsByStatus(p.callbackTasks, 'new'), duplicate: this.countImportItemsByStatus(p.callbackTasks, 'duplicate'), overwrite: this.countImportItemsByStatus(p.callbackTasks, 'overwrite') },
     };
   }
 
@@ -2340,6 +2944,26 @@ export class App implements AfterViewChecked {
       && typeof r.nextAttention === 'string' && typeof r.createdAt === 'string';
   }
 
+  private isValidPhoneNotification(n: any): boolean {
+    return n && typeof n === 'object'
+      && typeof n.id === 'string' && typeof n.date === 'string'
+      && typeof n.targetType === 'string' && typeof n.targetId === 'string'
+      && typeof n.phone === 'string' && typeof n.taskId === 'string'
+      && typeof n.notificationStatus === 'string' && typeof n.remark === 'string'
+      && typeof n.source === 'string' && typeof n.updatedAt === 'string';
+  }
+
+  private isValidCallbackTask(c: any): boolean {
+    return c && typeof c === 'object'
+      && typeof c.id === 'string' && typeof c.notificationId === 'string'
+      && typeof c.taskId === 'string' && typeof c.elderId === 'string'
+      && typeof c.date === 'string' && typeof c.phone === 'string'
+      && typeof c.nextCallbackTime === 'string' && typeof c.handler === 'string'
+      && typeof c.status === 'string' && typeof c.result === 'string'
+      && typeof c.callbackCount === 'number' && typeof c.remark === 'string'
+      && typeof c.createdAt === 'string' && typeof c.updatedAt === 'string';
+  }
+
   confirmImport() {
     if (!this.importedData || !this.importPreview) return;
 
@@ -2363,6 +2987,12 @@ export class App implements AfterViewChecked {
     }
     if (backup.visitRecords.length > 0 && (!Array.isArray(backup.visitRecords) || backup.visitRecords.some((r: any) => !this.isValidVisitRecord(r)))) {
       integrityErrors.push('回访记录数据不完整，存在缺失字段的记录');
+    }
+    if (backup.phoneNotifications.length > 0 && (!Array.isArray(backup.phoneNotifications) || backup.phoneNotifications.some((n: any) => !this.isValidPhoneNotification(n)))) {
+      integrityErrors.push('电话通知数据不完整，存在缺失字段的记录');
+    }
+    if (backup.callbackTasks.length > 0 && (!Array.isArray(backup.callbackTasks) || backup.callbackTasks.some((c: any) => !this.isValidCallbackTask(c)))) {
+      integrityErrors.push('回拨任务数据不完整，存在缺失字段的记录');
     }
 
     if (integrityErrors.length > 0) {
@@ -2390,6 +3020,8 @@ export class App implements AfterViewChecked {
     this.mealTags = mergeById(this.mealTags, backup.mealTags);
     this.exceptionRecords = mergeById(this.exceptionRecords, backup.exceptionRecords);
     this.visitRecords = mergeById(this.visitRecords, backup.visitRecords);
+    this.phoneNotifications = mergeById(this.phoneNotifications, backup.phoneNotifications);
+    this.callbackTasks = mergeById(this.callbackTasks, backup.callbackTasks);
 
     if (backup.kanbanSort && typeof backup.kanbanSort === 'object') {
       for (const date of Object.keys(backup.kanbanSort)) {
@@ -2410,6 +3042,8 @@ export class App implements AfterViewChecked {
     this.saveMealTags();
     this.saveExceptions();
     this.saveVisits();
+    this.savePhoneNotifications();
+    this.saveCallbackTasks();
 
     this.importSuccess = true;
     this.importPreview = null;
