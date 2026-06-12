@@ -1,8 +1,18 @@
 import { CommonModule } from '@angular/common';
-import { Component, ViewChild, ElementRef, AfterViewChecked, ChangeDetectorRef } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewChecked, ChangeDetectorRef, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MealPrepComponent } from './meal-prep/meal-prep.component';
 import { VolunteerDeliveryComponent } from './volunteer-delivery/volunteer-delivery.component';
+import { MealPrepService } from './meal-prep/meal-prep.service';
+import { VolunteerDeliveryService } from './volunteer-delivery/volunteer-delivery.service';
+import {
+  SYNC_INSTANCE,
+  SyncDataType,
+  SyncConflictGroup,
+  RecordConflict,
+  FieldConflict,
+  ConflictResolution,
+} from './sync.service';
 import {
   ExceptionRecord as PrepExceptionRecord,
   PhoneNotification as PrepPhoneNotification,
@@ -52,6 +62,7 @@ type MealTask = {
 type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收' | '餐食问题' | '配送延误' | '老人身体不适' | '其他';
 type ExceptionSeverity = '一般' | '较重' | '紧急';
 type ExceptionStatus = '待处理' | '处理中' | '已解决';
+type ExceptionSource = '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
 
 type ExceptionRecord = {
   id: string;
@@ -64,6 +75,7 @@ type ExceptionRecord = {
   handler: string;
   status: ExceptionStatus;
   result: string;
+  source: ExceptionSource;
   createdAt: string;
   updatedAt: string;
 };
@@ -165,6 +177,8 @@ type BackupData = {
   phoneNotifications: PhoneNotification[];
   callbackTasks: CallbackTask[];
   kanbanSort: KanbanSortMap;
+  prepData?: any;
+  deliveryData?: any;
 };
 
 type ImportPreviewItem<T> = {
@@ -1168,6 +1182,153 @@ type ImportError = {
           </div>
         </div>
       </div>
+
+      <div class="sync-toast" *ngIf="syncToastVisible" [class.toast-warn]="lastSyncType === 'warn'" [class.toast-error]="lastSyncType === 'error'">
+        <span>{{ lastSyncMessage }}</span>
+      </div>
+
+      <div class="conflict-modal-backdrop" *ngIf="conflictPanelVisible" (click)="dismissConflictPanel()">
+        <div class="conflict-modal" (click)="$event.stopPropagation()">
+          <header class="conflict-modal-header">
+            <div>
+              <h2>⚠️ 数据冲突检测</h2>
+              <p class="conflict-subtitle">
+                检测到 {{ totalConflictsCount }} 个数据冲突，请处理
+                <span *ngIf="isImportConflictResolutionMode">（当前为导入数据恢复模式）</span>
+              </p>
+            </div>
+            <button type="button" class="close-btn" (click)="dismissConflictPanel()">✕</button>
+          </header>
+
+          <div class="conflict-body">
+            <aside class="conflict-groups">
+              <h3>数据类型</h3>
+              <ul>
+                <li
+                  *ngFor="let g of activeConflictGroups; let i = index"
+                  [class.active]="i === selectedConflictGroupIndex"
+                  (click)="selectConflictGroup(i)"
+                >
+                  <span>{{ g.typeLabel }}</span>
+                  <strong class="badge">{{ g.conflicts.length }}</strong>
+                </li>
+              </ul>
+
+              <div class="global-resolution-bar">
+                <button type="button" class="ghost" (click)="keepAllLocal()">📌 全部保留本地</button>
+                <button type="button" class="ghost" (click)="adoptAllRemote()">🔄 全部采用新数据</button>
+              </div>
+            </aside>
+
+            <section class="conflict-content" *ngIf="currentConflictGroup">
+              <div class="conflict-type-header">
+                <h3>{{ currentConflictGroup.typeLabel }} · 批量策略</h3>
+                <div class="resolution-switch">
+                  <label>
+                    <input type="radio" [name]="'grp-'+selectedConflictGroupIndex"
+                      [checked]="currentConflictGroup.defaultResolution === 'keep-local'"
+                      (change)="setGroupDefaultResolution(selectedConflictGroupIndex, 'keep-local')" />
+                    <span>保留本窗口</span>
+                  </label>
+                  <label>
+                    <input type="radio" [name]="'grp-'+selectedConflictGroupIndex"
+                      [checked]="currentConflictGroup.defaultResolution === 'adopt-remote'"
+                      (change)="setGroupDefaultResolution(selectedConflictGroupIndex, 'adopt-remote')" />
+                    <span>采用新数据</span>
+                  </label>
+                  <label>
+                    <input type="radio" [name]="'grp-'+selectedConflictGroupIndex"
+                      [checked]="currentConflictGroup.defaultResolution === 'field-level'"
+                      (change)="setGroupDefaultResolution(selectedConflictGroupIndex, 'field-level')" />
+                    <span>按字段选择</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="conflict-record-list">
+                <ul>
+                  <li
+                    *ngFor="let rc of currentConflictsForGroup"
+                    [class.active]="rc.recordId === selectedConflictRecordId"
+                    (click)="selectConflictRecord(rc.recordId)"
+                  >
+                    <div class="rc-row">
+                      <strong>{{ rc.recordLabel }}</strong>
+                      <span class="rc-resolution rc-{{ rc.resolution }}">
+                        {{ rc.resolution === 'keep-local' ? '保留本地' : rc.resolution === 'adopt-remote' ? '采用新数据' : '按字段' }}
+                      </span>
+                    </div>
+                    <small>{{ rc.fieldConflicts.length }} 个字段有差异</small>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="conflict-field-detail" *ngIf="selectedRecordConflict">
+              <div class="selected-record-header">
+                <h3>{{ selectedRecordConflict.recordLabel }}</h3>
+                <div class="record-resolution-switch">
+                  <label>
+                    <input type="radio" [name]="'rec-'+selectedRecordConflict.recordId"
+                      [checked]="selectedRecordConflict.resolution === 'keep-local'"
+                      (change)="setRecordResolution(selectedRecordConflict.recordId, 'keep-local')" />
+                    <span>保留本窗口</span>
+                  </label>
+                  <label>
+                    <input type="radio" [name]="'rec-'+selectedRecordConflict.recordId"
+                      [checked]="selectedRecordConflict.resolution === 'adopt-remote'"
+                      (change)="setRecordResolution(selectedRecordConflict.recordId, 'adopt-remote')" />
+                    <span>采用新数据</span>
+                  </label>
+                  <label>
+                    <input type="radio" [name]="'rec-'+selectedRecordConflict.recordId"
+                      [checked]="selectedRecordConflict.resolution === 'field-level'"
+                      (change)="setRecordResolution(selectedRecordConflict.recordId, 'field-level')" />
+                    <span>按字段选择</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="field-diff-table">
+                <div class="diff-row diff-header">
+                  <span class="diff-field">字段</span>
+                  <span class="diff-local">本窗口值</span>
+                  <span class="diff-remote">新数据值</span>
+                  <span class="diff-choice" *ngIf="selectedRecordConflict.resolution === 'field-level'">选择</span>
+                </div>
+                <div class="diff-row" *ngFor="let fc of selectedRecordConflict.fieldConflicts">
+                  <span class="diff-field"><strong>{{ fc.field }}</strong></span>
+                  <span class="diff-local" [class.chosen]="selectedRecordConflict.resolution === 'keep-local' || (selectedRecordConflict.resolution === 'field-level' && selectedRecordConflict.fieldResolutions?.[fc.field] === 'local')">
+                    <code>{{ stringify(fc.localValue) }}</code>
+                  </span>
+                  <span class="diff-remote" [class.chosen]="selectedRecordConflict.resolution === 'adopt-remote' || (selectedRecordConflict.resolution === 'field-level' && selectedRecordConflict.fieldResolutions?.[fc.field] === 'remote')">
+                    <code>{{ stringify(fc.remoteValue) }}</code>
+                  </span>
+                  <span class="diff-choice" *ngIf="selectedRecordConflict.resolution === 'field-level'">
+                    <label>
+                      <input type="radio" [name]="'field-'+fc.field"
+                        [checked]="selectedRecordConflict.fieldResolutions?.[fc.field] !== 'remote'"
+                        (change)="setFieldChoice(selectedRecordConflict.recordId, fc.field, 'local')" />
+                      <span>本地</span>
+                    </label>
+                    <label>
+                      <input type="radio" [name]="'field-'+fc.field"
+                        [checked]="selectedRecordConflict.fieldResolutions?.[fc.field] === 'remote'"
+                        (change)="setFieldChoice(selectedRecordConflict.recordId, fc.field, 'remote')" />
+                      <span>新数据</span>
+                    </label>
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <footer class="conflict-modal-footer">
+            <button type="button" class="ghost" (click)="dismissConflictPanel()">暂不处理</button>
+            <button type="button" class="confirm-btn" (click)="applyAllConflicts()">✅ 应用所有选择并合并</button>
+          </footer>
+        </div>
+      </div>
     </main>
   `,
   styles: [`
@@ -1472,10 +1633,220 @@ type ImportError = {
 
     .callback-filter-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
     .callback-filter-bar select { flex: 1; min-width: 120px; padding: 8px 10px; font-size: 13px; }
+
+    .sync-toast {
+      position: fixed; top: 20px; right: 20px; z-index: 9999;
+      padding: 12px 18px; border-radius: 8px; background: #2c5144; color: white;
+      box-shadow: 0 8px 24px rgba(0,0,0,.18); display: flex; align-items: center; gap: 10px;
+      animation: toast-in .25s ease-out;
+    }
+    .sync-toast.toast-warn { background: #8a5a1d; }
+    .sync-toast.toast-error { background: #8a3a3a; }
+    @keyframes toast-in { from { transform: translateY(-8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    .conflict-modal-backdrop {
+      position: fixed; inset: 0; background: rgba(20,25,20,.6);
+      z-index: 9000; display: flex; align-items: center; justify-content: center;
+      padding: 30px;
+    }
+    .conflict-modal {
+      background: white; border-radius: 12px; width: 100%; max-width: 1200px;
+      max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,.25);
+    }
+    .conflict-modal-header {
+      padding: 20px 28px; border-bottom: 1px solid #e2e7da; display: flex; justify-content: space-between; align-items: start; gap: 16px;
+      background: linear-gradient(135deg, #fff8ed, #f4f7f0);
+    }
+    .conflict-modal-header h2 { margin: 0 0 4px; font-size: 22px; color: #3d4a38; }
+    .conflict-subtitle { margin: 0; color: #65715f; font-size: 13px; }
+    .close-btn {
+      background: none; border: none; font-size: 22px; color: #65715f; cursor: pointer;
+      width: 32px; height: 32px; border-radius: 6px;
+    }
+    .close-btn:hover { background: #e2e7da; }
+
+    .conflict-body {
+      display: grid; grid-template-columns: 220px 320px 1fr; flex: 1; min-height: 0; overflow: hidden;
+    }
+    .conflict-groups {
+      border-right: 1px solid #e2e7da; padding: 16px; background: #f9faf6; overflow-y: auto;
+    }
+    .conflict-groups h3 { margin: 0 0 12px; font-size: 13px; color: #65715f; text-transform: uppercase; letter-spacing: .5px; }
+    .conflict-groups ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+    .conflict-groups li {
+      display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 6px;
+      cursor: pointer; font-size: 14px; color: #3d4a38;
+    }
+    .conflict-groups li:hover { background: #e8ede1; }
+    .conflict-groups li.active { background: #2c5144; color: white; }
+    .badge {
+      background: #c75454; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+    }
+    .conflict-groups li.active .badge { background: #ff6b6b; }
+
+    .global-resolution-bar { margin-top: 18px; padding-top: 16px; border-top: 1px solid #e2e7da; display: flex; flex-direction: column; gap: 6px; }
+    .global-resolution-bar button { width: 100%; font-size: 12px; padding: 8px 10px; }
+
+    .conflict-content, .conflict-field-detail { padding: 18px; overflow-y: auto; min-height: 0; }
+    .conflict-content { border-right: 1px solid #e2e7da; background: #fdfcf9; }
+
+    .conflict-type-header, .selected-record-header {
+      padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid #e2e7da;
+    }
+    .conflict-type-header h3, .selected-record-header h3 { margin: 0 0 10px; font-size: 15px; color: #3d4a38; }
+    .resolution-switch, .record-resolution-switch {
+      display: flex; flex-wrap: wrap; gap: 12px;
+    }
+    .resolution-switch label, .record-resolution-switch label, .diff-choice label {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #4a5a45;
+      cursor: pointer; padding: 4px 8px; border-radius: 4px;
+    }
+    .resolution-switch label:hover, .record-resolution-switch label:hover { background: #eef3e7; }
+
+    .conflict-record-list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .conflict-record-list li {
+      padding: 12px; border-radius: 6px; border: 1px solid #e2e7da; background: white;
+      cursor: pointer; transition: all .15s;
+    }
+    .conflict-record-list li:hover { border-color: #2c5144; background: #f4f7f0; }
+    .conflict-record-list li.active { border-color: #2c5144; background: #eaf2e4; box-shadow: 0 0 0 2px rgba(44,81,68,.15); }
+    .rc-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .rc-row strong { font-size: 14px; color: #242923; }
+    .rc-resolution { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .rc-resolution.rc-keep-local { background: #d9f0e0; color: #2d7a4c; }
+    .rc-resolution.rc-adopt-remote { background: #d9e4f5; color: #2d5b9a; }
+    .rc-resolution.rc-field-level { background: #f5ecd9; color: #8a5a1d; }
+    .conflict-record-list li small { color: #65715f; font-size: 12px; }
+
+    .field-diff-table { display: flex; flex-direction: column; gap: 0; border: 1px solid #e2e7da; border-radius: 8px; overflow: hidden; }
+    .diff-row {
+      display: grid; grid-template-columns: 180px 1fr 1fr 140px; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #eef3e7;
+      align-items: start; font-size: 13px;
+    }
+    .diff-row:last-child { border-bottom: none; }
+    .diff-header { background: #f4f7f0; font-weight: 600; color: #5a6b53; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+    .diff-field { color: #3d4a38; min-width: 0; word-break: break-word; }
+    .diff-local, .diff-remote {
+      min-width: 0; padding: 8px 10px; border-radius: 4px; background: #f9faf6;
+      border: 1px solid transparent;
+    }
+    .diff-local code, .diff-remote code {
+      display: block; white-space: pre-wrap; word-break: break-all; color: #242923; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+    }
+    .diff-local.chosen { background: #e6f4ea; border-color: #4a9f6d; }
+    .diff-remote.chosen { background: #e6eefb; border-color: #5a8fd9; }
+    .diff-choice { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+    .diff-choice label { padding: 2px 4px; }
+
+    .conflict-modal-footer {
+      padding: 16px 28px; border-top: 1px solid #e2e7da; display: flex; justify-content: space-between; align-items: center;
+      background: #f9faf6;
+    }
+    .confirm-btn {
+      background: #2c5144; color: white; border: none; padding: 10px 22px; border-radius: 6px;
+      cursor: pointer; font-weight: 600; font-size: 14px;
+    }
+    .confirm-btn:hover { background: #1e3a30; }
+
+    @media (max-width: 900px) {
+      .conflict-body { grid-template-columns: 1fr; }
+      .diff-row { grid-template-columns: 110px 1fr 1fr; }
+      .diff-choice { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; }
+      .conflict-groups, .conflict-content { border-right: none; border-bottom: 1px solid #e2e7da; }
+    }
   `],
 })
-export class App implements AfterViewChecked {
+export class App implements AfterViewChecked, OnInit {
   @ViewChild('mealPrepComp') mealPrepComp!: MealPrepComponent;
+
+  private sync = SYNC_INSTANCE();
+  private syncUnsub?: () => void;
+
+  constructor(
+    private cdr: ChangeDetectorRef,
+    private mealPrepService: MealPrepService,
+    private volunteerDeliveryService: VolunteerDeliveryService,
+  ) {
+    this.load();
+    this.loadKanbanSort();
+    this.loadVisits();
+    this.loadMealTags();
+    this.loadExceptions();
+    this.loadPhoneNotifications();
+    this.loadCallbackTasks();
+    if (this.tasks.length === 0) this.generateTasks();
+  }
+
+  ngOnInit() {
+    this.initSyncSnapshots();
+    this.syncUnsub = this.sync.subscribe((n) => {
+      if (n.type === 'conflicts' && n.conflicts) {
+        this.handleIncomingConflicts(n.conflicts);
+      } else if (n.type === 'synced' && n.dataType) {
+        this.refreshDataTypeFromStorage(n.dataType);
+      }
+    });
+  }
+
+  private initSyncSnapshots() {
+    this.sync.captureLocalSnapshot('elders', this.elders);
+    this.sync.captureLocalSnapshot('volunteers', this.volunteers);
+    this.sync.captureLocalSnapshot('tasks', this.tasks);
+    this.sync.captureLocalSnapshot('mealTags', this.mealTags);
+    this.sync.captureLocalSnapshot('exceptionRecords', this.exceptionRecords);
+    this.sync.captureLocalSnapshot('visitRecords', this.visitRecords);
+    this.sync.captureLocalSnapshot('phoneNotifications', this.phoneNotifications);
+    this.sync.captureLocalSnapshot('callbackTasks', this.callbackTasks);
+    this.sync.captureLocalSnapshot('kanbanSort', this.kanbanSort);
+  }
+
+  private pendingConflictGroups: SyncConflictGroup[] = [];
+
+  conflictPanelVisible = false;
+  activeConflictGroups: SyncConflictGroup[] = [];
+  selectedConflictGroupIndex = 0;
+  selectedConflictRecordId: string | null = null;
+  lastSyncMessage = '';
+  lastSyncType: 'info' | 'warn' | 'error' = 'info';
+  syncToastVisible = false;
+  private syncToastTimer: any = null;
+
+  private showSyncToast(message: string, type: 'info' | 'warn' | 'error' = 'info') {
+    this.lastSyncMessage = message;
+    this.lastSyncType = type;
+    this.syncToastVisible = true;
+    if (this.syncToastTimer) clearTimeout(this.syncToastTimer);
+    this.syncToastTimer = setTimeout(() => {
+      this.syncToastVisible = false;
+    }, 3000);
+  }
+
+  private handleIncomingConflicts(groups: SyncConflictGroup[]) {
+    this.activeConflictGroups = groups;
+    this.selectedConflictGroupIndex = 0;
+    if (groups.length > 0 && groups[0].conflicts.length > 0) {
+      this.selectedConflictRecordId = groups[0].conflicts[0].recordId;
+    }
+    this.conflictPanelVisible = true;
+    this.showSyncToast(`检测到 ${groups.reduce((s, g) => s + g.conflicts.length, 0)} 个数据冲突，请处理`, 'warn');
+  }
+
+  private refreshDataTypeFromStorage(dataType: SyncDataType) {
+    switch (dataType) {
+      case 'elders': this.elders = this.sync.readLocalData<Elder[]>('elders') || this.elders; this.sync.captureLocalSnapshot('elders', this.elders); break;
+      case 'volunteers': this.volunteers = this.sync.readLocalData<Volunteer[]>('volunteers') || this.volunteers; this.sync.captureLocalSnapshot('volunteers', this.volunteers); break;
+      case 'tasks': this.tasks = this.sync.readLocalData<MealTask[]>('tasks') || this.tasks; this.sync.captureLocalSnapshot('tasks', this.tasks); break;
+      case 'mealTags': this.mealTags = this.sync.readLocalData<MealTag[]>('mealTags') || this.mealTags; this.sync.captureLocalSnapshot('mealTags', this.mealTags); break;
+      case 'exceptionRecords': this.exceptionRecords = this.sync.readLocalData<ExceptionRecord[]>('exceptionRecords') || this.exceptionRecords; this.sync.captureLocalSnapshot('exceptionRecords', this.exceptionRecords); break;
+      case 'visitRecords': this.visitRecords = this.sync.readLocalData<VisitRecord[]>('visitRecords') || this.visitRecords; this.sync.captureLocalSnapshot('visitRecords', this.visitRecords); break;
+      case 'phoneNotifications': this.phoneNotifications = this.sync.readLocalData<PhoneNotification[]>('phoneNotifications') || this.phoneNotifications; this.sync.captureLocalSnapshot('phoneNotifications', this.phoneNotifications); break;
+      case 'callbackTasks': this.callbackTasks = this.sync.readLocalData<CallbackTask[]>('callbackTasks') || this.callbackTasks; this.sync.captureLocalSnapshot('callbackTasks', this.callbackTasks); break;
+      case 'kanbanSort': this.kanbanSort = this.sync.readLocalData<KanbanSortMap>('kanbanSort') || this.kanbanSort; this.sync.captureLocalSnapshot('kanbanSort', this.kanbanSort); break;
+    }
+    this.showSyncToast('数据已同步更新', 'info');
+    this.cdr.markForCheck();
+  }
 
   viewMode: AppViewMode = 'schedule';
 
@@ -1542,7 +1913,8 @@ export class App implements AfterViewChecked {
     description: '',
     handler: '',
     status: '待处理',
-    result: ''
+    result: '',
+    source: '手动登记'
   };
   exceptionListFilter: ExceptionStatus | '全部' = '全部';
   exceptionListDate = '';
@@ -1584,17 +1956,6 @@ export class App implements AfterViewChecked {
     return this.elders.find((e) => e.id === this.selectedElderIdForVisit);
   }
 
-  constructor() {
-    this.load();
-    this.loadKanbanSort();
-    this.loadVisits();
-    this.loadMealTags();
-    this.loadExceptions();
-    this.loadPhoneNotifications();
-    this.loadCallbackTasks();
-    if (this.tasks.length === 0) this.generateTasks();
-  }
-
   setViewMode(mode: AppViewMode) {
     this.viewMode = mode;
   }
@@ -1618,18 +1979,26 @@ export class App implements AfterViewChecked {
   }
 
   onPrepExceptionCreated(exc: PrepExceptionRecord) {
-    this.exceptionRecords = [exc, ...this.exceptionRecords];
+    if (this.isExceptionDuplicate(exc.taskId, '备餐缺餐', (exc as any).category || '餐食问题')) {
+      this.showSyncToast('检测到重复异常记录，已忽略', 'warn');
+      return;
+    }
+    this.exceptionRecords = [exc as any, ...this.exceptionRecords];
     this.saveExceptions();
   }
 
   onPrepNotificationCreated(notif: PrepPhoneNotification) {
-    const exists = this.phoneNotifications.some(n => n.id === notif.id || n.taskId === notif.taskId);
+    const n = notif as unknown as PhoneNotification;
+    if (this.isNotificationDuplicate(n.taskId, n.source, n.targetId)) {
+      this.showSyncToast('检测到重复电话通知，已忽略', 'warn');
+      return;
+    }
+    const exists = this.phoneNotifications.some(pn => pn.id === n.id);
     if (!exists) {
-      const newNotif = notif as unknown as PhoneNotification;
-      this.phoneNotifications = [newNotif, ...this.phoneNotifications];
+      this.phoneNotifications = [n, ...this.phoneNotifications];
       this.savePhoneNotifications();
-      if (this.shouldCreateAutoCallback(newNotif)) {
-        this.createAutoCallbackTask(newNotif, 2);
+      if (this.shouldCreateAutoCallback(n)) {
+        this.createAutoCallbackTask(n, 2);
       }
     }
   }
@@ -1653,23 +2022,50 @@ export class App implements AfterViewChecked {
       this.save();
     }
     if (data.exceptionCreated) {
-      const exists = this.exceptionRecords.some(r => r.id === data.exceptionCreated.id);
-      if (!exists) {
-        this.exceptionRecords = [data.exceptionCreated, ...this.exceptionRecords];
-        this.saveExceptions();
-      }
-    }
-    if (data.notificationCreated) {
-      const exists = this.phoneNotifications.some(n => n.id === data.notificationCreated.id);
-      if (!exists) {
-        const newNotif = data.notificationCreated;
-        this.phoneNotifications = [newNotif, ...this.phoneNotifications];
-        this.savePhoneNotifications();
-        if (this.shouldCreateAutoCallback(newNotif)) {
-          this.createAutoCallbackTask(newNotif, 1);
+      const exc = data.exceptionCreated;
+      if (this.isExceptionDuplicate(exc.taskId, exc.source, exc.category)) {
+        this.showSyncToast('检测到重复配送异常记录，已忽略', 'warn');
+      } else {
+        const exists = this.exceptionRecords.some(r => r.id === exc.id);
+        if (!exists) {
+          this.exceptionRecords = [exc, ...this.exceptionRecords];
+          this.saveExceptions();
         }
       }
     }
+    if (data.notificationCreated) {
+      const n = data.notificationCreated as PhoneNotification;
+      if (this.isNotificationDuplicate(n.taskId, n.source, n.targetId)) {
+        this.showSyncToast('检测到重复配送通知，已忽略', 'warn');
+      } else {
+        const exists = this.phoneNotifications.some(pn => pn.id === n.id);
+        if (!exists) {
+          this.phoneNotifications = [n, ...this.phoneNotifications];
+          this.savePhoneNotifications();
+          if (this.shouldCreateAutoCallback(n)) {
+            this.createAutoCallbackTask(n, 1);
+          }
+        }
+      }
+    }
+  }
+
+  private isExceptionDuplicate(taskId: string, source: ExceptionSource, category?: ExceptionCategory): boolean {
+    return this.exceptionRecords.some(r =>
+      r.taskId === taskId && r.source === source && (!category || r.category === category)
+    );
+  }
+
+  private isNotificationDuplicate(taskId: string, source: ExceptionSource, targetId: string): boolean {
+    return this.phoneNotifications.some(n =>
+      n.taskId === taskId && n.source === source && n.targetId === targetId
+    );
+  }
+
+  private isCallbackDuplicate(notificationId: string, status: string): boolean {
+    return this.callbackTasks.some(c =>
+      c.notificationId === notificationId && c.status !== '已完成' && c.status !== '已取消'
+    );
   }
 
   addElder() {
@@ -1839,7 +2235,8 @@ export class App implements AfterViewChecked {
       description: task.exception || '',
       handler: '',
       status: '待处理',
-      result: ''
+      result: '',
+      source: '手动登记'
     };
     this.exceptionPanelTab = 'form';
     this.exceptionPanelVisible = true;
@@ -2032,27 +2429,27 @@ export class App implements AfterViewChecked {
   }
 
   private saveKanbanSort() {
-    localStorage.setItem('zfl-4-kanban-sort', JSON.stringify(this.kanbanSort));
+    this.sync.writeLocalData('kanbanSort', this.kanbanSort);
   }
 
   private loadKanbanSort() {
-    const raw = localStorage.getItem('zfl-4-kanban-sort');
-    if (raw) this.kanbanSort = JSON.parse(raw);
+    const raw = this.sync.readLocalData<KanbanSortMap>('kanbanSort');
+    if (raw) this.kanbanSort = raw;
   }
 
   private load() {
-    const elders = localStorage.getItem('zfl-4-elders');
-    const volunteers = localStorage.getItem('zfl-4-volunteers');
-    const tasks = localStorage.getItem('zfl-4-tasks');
-    if (elders) this.elders = JSON.parse(elders).map((e: Elder) => ({ ...e, mealTags: e.mealTags || [] }));
-    if (volunteers) this.volunteers = JSON.parse(volunteers);
-    if (tasks) this.tasks = JSON.parse(tasks);
+    const elders = this.sync.readLocalData<Elder[]>('elders');
+    const volunteers = this.sync.readLocalData<Volunteer[]>('volunteers');
+    const tasks = this.sync.readLocalData<MealTask[]>('tasks');
+    if (elders) this.elders = elders.map((e: Elder) => ({ ...e, mealTags: e.mealTags || [] }));
+    if (volunteers) this.volunteers = volunteers;
+    if (tasks) this.tasks = tasks;
   }
 
   private save() {
-    localStorage.setItem('zfl-4-elders', JSON.stringify(this.elders));
-    localStorage.setItem('zfl-4-volunteers', JSON.stringify(this.volunteers));
-    localStorage.setItem('zfl-4-tasks', JSON.stringify(this.tasks));
+    this.sync.writeLocalData('elders', this.elders);
+    this.sync.writeLocalData('volunteers', this.volunteers);
+    this.sync.writeLocalData('tasks', this.tasks);
   }
 
   selectElder(id: string) {
@@ -2230,13 +2627,12 @@ export class App implements AfterViewChecked {
   }
 
   private saveMealTags() {
-    localStorage.setItem('zfl-4-meal-tags', JSON.stringify(this.mealTags));
+    this.sync.writeLocalData('mealTags', this.mealTags);
   }
 
   private loadMealTags() {
-    const raw = localStorage.getItem('zfl-4-meal-tags');
-    if (raw) {
-      const loaded = JSON.parse(raw);
+    const loaded = this.sync.readLocalData<MealTag[]>('mealTags');
+    if (loaded) {
       this.mealTags = loaded.map((t: MealTag, i: number) => ({
         ...t,
         color: t.color || TAG_COLORS[i % TAG_COLORS.length]
@@ -2249,39 +2645,39 @@ export class App implements AfterViewChecked {
   }
 
   private saveExceptions() {
-    localStorage.setItem('zfl-4-exceptions', JSON.stringify(this.exceptionRecords));
+    this.sync.writeLocalData('exceptionRecords', this.exceptionRecords);
   }
 
   private loadExceptions() {
-    const raw = localStorage.getItem('zfl-4-exceptions');
-    if (raw) this.exceptionRecords = JSON.parse(raw);
+    const raw = this.sync.readLocalData<ExceptionRecord[]>('exceptionRecords');
+    if (raw) this.exceptionRecords = raw;
   }
 
   private saveVisits() {
-    localStorage.setItem('zfl-4-visits', JSON.stringify(this.visitRecords));
+    this.sync.writeLocalData('visitRecords', this.visitRecords);
   }
 
   private loadVisits() {
-    const raw = localStorage.getItem('zfl-4-visits');
-    if (raw) this.visitRecords = JSON.parse(raw);
+    const raw = this.sync.readLocalData<VisitRecord[]>('visitRecords');
+    if (raw) this.visitRecords = raw;
   }
 
   private savePhoneNotifications() {
-    localStorage.setItem('zfl-4-phone-notifications', JSON.stringify(this.phoneNotifications));
+    this.sync.writeLocalData('phoneNotifications', this.phoneNotifications);
   }
 
   private loadPhoneNotifications() {
-    const raw = localStorage.getItem('zfl-4-phone-notifications');
-    if (raw) this.phoneNotifications = JSON.parse(raw);
+    const raw = this.sync.readLocalData<PhoneNotification[]>('phoneNotifications');
+    if (raw) this.phoneNotifications = raw;
   }
 
   private saveCallbackTasks() {
-    localStorage.setItem('zfl-4-callback-tasks', JSON.stringify(this.callbackTasks));
+    this.sync.writeLocalData('callbackTasks', this.callbackTasks);
   }
 
   private loadCallbackTasks() {
-    const raw = localStorage.getItem('zfl-4-callback-tasks');
-    if (raw) this.callbackTasks = JSON.parse(raw);
+    const raw = this.sync.readLocalData<CallbackTask[]>('callbackTasks');
+    if (raw) this.callbackTasks = raw;
   }
 
   openPhoneNotificationPanel() {
@@ -2498,10 +2894,9 @@ export class App implements AfterViewChecked {
   }
 
   createAutoCallbackTask(notification: PhoneNotification, defaultDelayHours: number = 1) {
-    const existing = this.callbackTasks.some(
-      t => t.notificationId === notification.id && t.status !== '已完成' && t.status !== '已取消'
-    );
-    if (existing) return;
+    if (this.isCallbackDuplicate(notification.id, notification.notificationStatus)) {
+      return;
+    }
 
     const now = new Date();
     now.setHours(now.getHours() + defaultDelayHours);
@@ -2526,6 +2921,207 @@ export class App implements AfterViewChecked {
     };
     this.callbackTasks = [newTask, ...this.callbackTasks];
     this.saveCallbackTasks();
+  }
+
+  // ---------- Conflict Resolution UI Methods ----------
+
+  get currentConflictGroup(): SyncConflictGroup | undefined {
+    return this.activeConflictGroups[this.selectedConflictGroupIndex];
+  }
+
+  get currentConflictsForGroup(): RecordConflict[] {
+    return this.currentConflictGroup?.conflicts || [];
+  }
+
+  get selectedRecordConflict(): RecordConflict | undefined {
+    return this.currentConflictsForGroup.find(c => c.recordId === this.selectedConflictRecordId);
+  }
+
+  selectConflictGroup(index: number) {
+    this.selectedConflictGroupIndex = index;
+    const group = this.activeConflictGroups[index];
+    if (group && group.conflicts.length > 0) {
+      this.selectedConflictRecordId = group.conflicts[0].recordId;
+    } else {
+      this.selectedConflictRecordId = null;
+    }
+  }
+
+  selectConflictRecord(recordId: string) {
+    this.selectedConflictRecordId = recordId;
+  }
+
+  setGroupDefaultResolution(groupIndex: number, resolution: ConflictResolution) {
+    const group = this.activeConflictGroups[groupIndex];
+    if (!group) return;
+    group.defaultResolution = resolution;
+    for (const rc of group.conflicts) {
+      rc.resolution = resolution;
+      if (resolution === 'field-level') {
+        rc.fieldResolutions = rc.fieldResolutions || {};
+        for (const fc of rc.fieldConflicts) {
+          if (!(fc.field in rc.fieldResolutions)) {
+            rc.fieldResolutions[fc.field] = 'local';
+          }
+        }
+      }
+    }
+  }
+
+  setRecordResolution(recordId: string, resolution: ConflictResolution) {
+    const rc = this.findRecordConflict(recordId);
+    if (!rc) return;
+    rc.resolution = resolution;
+    if (resolution === 'field-level') {
+      rc.fieldResolutions = rc.fieldResolutions || {};
+      for (const fc of rc.fieldConflicts) {
+        if (!(fc.field in rc.fieldResolutions)) {
+          rc.fieldResolutions[fc.field] = 'local';
+        }
+      }
+    }
+  }
+
+  setFieldChoice(recordId: string, field: string, choice: 'local' | 'remote') {
+    const rc = this.findRecordConflict(recordId);
+    if (!rc) return;
+    rc.fieldResolutions = rc.fieldResolutions || {};
+    rc.fieldResolutions[field] = choice;
+    const fc = rc.fieldConflicts.find(f => f.field === field);
+    if (fc) fc.resolved = choice;
+  }
+
+  private findRecordConflict(recordId: string): RecordConflict | undefined {
+    for (const g of this.activeConflictGroups) {
+      const rc = g.conflicts.find(c => c.recordId === recordId);
+      if (rc) return rc;
+    }
+    return undefined;
+  }
+
+  applyAllConflicts() {
+    for (const group of this.activeConflictGroups) {
+      this.applyConflictGroup(group);
+    }
+    this.initSyncSnapshots();
+    this.activeConflictGroups = [];
+    this.conflictPanelVisible = false;
+    this.selectedConflictRecordId = null;
+
+    if (this.isImportConflictResolutionMode && this.pendingImportData) {
+      const backup = this.pendingImportData;
+      const mergeById = <T extends { id: string }>(existing: T[], incoming: T[]): T[] => {
+        const map = new Map(existing.map(e => [e.id, e]));
+        for (const item of incoming) {
+          if (!map.has(item.id)) map.set(item.id, item);
+        }
+        return Array.from(map.values());
+      };
+      const mergeKanbanSort = (incoming: KanbanSortMap): KanbanSortMap => {
+        const merged: KanbanSortMap = JSON.parse(JSON.stringify(this.kanbanSort || {}));
+        if (incoming && typeof incoming === 'object') {
+          for (const date of Object.keys(incoming)) {
+            if (!merged[date]) merged[date] = incoming[date];
+          }
+        }
+        return merged;
+      };
+      this.elders = mergeById(this.elders, backup.elders);
+      this.volunteers = mergeById(this.volunteers, backup.volunteers);
+      this.tasks = mergeById(this.tasks, backup.tasks);
+      this.mealTags = mergeById(this.mealTags, backup.mealTags);
+      this.exceptionRecords = mergeById(this.exceptionRecords, backup.exceptionRecords);
+      this.visitRecords = mergeById(this.visitRecords, backup.visitRecords);
+      this.phoneNotifications = mergeById(this.phoneNotifications, backup.phoneNotifications);
+      this.callbackTasks = mergeById(this.callbackTasks, backup.callbackTasks);
+      if (backup.kanbanSort) this.kanbanSort = mergeKanbanSort(backup.kanbanSort);
+      if (backup.prepData) this.mealPrepService.importStorageData(backup.prepData, true);
+      if (backup.deliveryData) this.volunteerDeliveryService.importStorageData(backup.deliveryData, true);
+      this.exceptionRecords = this.sync.deduplicateArray(
+        this.exceptionRecords,
+        (r) => this.sync.buildDedupKeyForException({ taskId: r.taskId, source: r.source, category: r.category })
+      );
+      this.phoneNotifications = this.sync.deduplicateArray(
+        this.phoneNotifications,
+        (n) => this.sync.buildDedupKeyForNotification({ taskId: n.taskId, source: n.source, targetId: n.targetId })
+      );
+      this.callbackTasks = this.sync.deduplicateArray(
+        this.callbackTasks,
+        (c) => this.sync.buildDedupKeyForCallback({ notificationId: c.notificationId, status: c.status })
+      );
+      this.save(); this.saveKanbanSort(); this.saveMealTags(); this.saveExceptions();
+      this.saveVisits(); this.savePhoneNotifications(); this.saveCallbackTasks();
+      this.finalizeImportComplete();
+    }
+
+    this.showSyncToast('冲突已解决，数据已合并', 'info');
+  }
+
+  private applyConflictGroup(group: SyncConflictGroup) {
+    const dataType = group.dataType;
+    switch (dataType) {
+      case 'elders':
+        this.elders = this.sync.mergeConflicts(group, this.elders) as Elder[];
+        this.save();
+        break;
+      case 'volunteers':
+        this.volunteers = this.sync.mergeConflicts(group, this.volunteers) as Volunteer[];
+        this.save();
+        break;
+      case 'tasks':
+        this.tasks = this.sync.mergeConflicts(group, this.tasks) as MealTask[];
+        this.save();
+        break;
+      case 'mealTags':
+        this.mealTags = this.sync.mergeConflicts(group, this.mealTags) as MealTag[];
+        this.saveMealTags();
+        break;
+      case 'exceptionRecords':
+        this.exceptionRecords = this.sync.mergeConflicts(group, this.exceptionRecords) as ExceptionRecord[];
+        this.saveExceptions();
+        break;
+      case 'visitRecords':
+        this.visitRecords = this.sync.mergeConflicts(group, this.visitRecords) as VisitRecord[];
+        this.saveVisits();
+        break;
+      case 'phoneNotifications':
+        this.phoneNotifications = this.sync.mergeConflicts(group, this.phoneNotifications) as PhoneNotification[];
+        this.savePhoneNotifications();
+        break;
+      case 'callbackTasks':
+        this.callbackTasks = this.sync.mergeConflicts(group, this.callbackTasks) as CallbackTask[];
+        this.saveCallbackTasks();
+        break;
+      case 'kanbanSort':
+        this.kanbanSort = this.sync.mergeConflicts(group, this.kanbanSort) as KanbanSortMap;
+        this.saveKanbanSort();
+        break;
+      case 'prepData':
+        this.mealPrepService.mergeResolvedConflicts(group);
+        break;
+      case 'deliveryData':
+        this.volunteerDeliveryService.mergeResolvedConflicts(group);
+        break;
+    }
+  }
+
+  dismissConflictPanel() {
+    if (this.activeConflictGroups.length > 0 && !confirm('仍有未解决的冲突，忽略可能导致数据不一致。确认关闭？')) {
+      return;
+    }
+    this.conflictPanelVisible = false;
+  }
+
+  keepAllLocal() {
+    for (let i = 0; i < this.activeConflictGroups.length; i++) {
+      this.setGroupDefaultResolution(i, 'keep-local');
+    }
+  }
+
+  adoptAllRemote() {
+    for (let i = 0; i < this.activeConflictGroups.length; i++) {
+      this.setGroupDefaultResolution(i, 'adopt-remote');
+    }
   }
 
   notifStatusColor(status: PhoneNotification['notificationStatus']): string {
@@ -2586,7 +3182,9 @@ export class App implements AfterViewChecked {
       visitRecords: [...this.visitRecords],
       phoneNotifications: [...this.phoneNotifications],
       callbackTasks: [...this.callbackTasks],
-      kanbanSort: { ...this.kanbanSort }
+      kanbanSort: { ...this.kanbanSort },
+      prepData: this.mealPrepService.exportStorageData(),
+      deliveryData: this.volunteerDeliveryService.exportStorageData(),
     };
 
     const jsonStr = JSON.stringify(backup, null, 2);
@@ -3028,6 +3626,33 @@ export class App implements AfterViewChecked {
       return;
     }
 
+    const conflictGroups: SyncConflictGroup[] = [];
+    const detectionPairs: Array<[SyncDataType, any, any]> = [
+      ['elders', backup.elders, this.elders],
+      ['volunteers', backup.volunteers, this.volunteers],
+      ['tasks', backup.tasks, this.tasks],
+      ['mealTags', backup.mealTags, this.mealTags],
+      ['exceptionRecords', backup.exceptionRecords, this.exceptionRecords],
+      ['visitRecords', backup.visitRecords, this.visitRecords],
+      ['phoneNotifications', backup.phoneNotifications, this.phoneNotifications],
+      ['callbackTasks', backup.callbackTasks, this.callbackTasks],
+      ['kanbanSort', backup.kanbanSort || {}, this.kanbanSort],
+    ];
+    if (backup.prepData) {
+      detectionPairs.push(['prepData', backup.prepData, this.mealPrepService.exportStorageData()]);
+    }
+    if (backup.deliveryData) {
+      detectionPairs.push(['deliveryData', backup.deliveryData, this.volunteerDeliveryService.exportStorageData()]);
+    }
+
+    for (const [dt, incoming, current] of detectionPairs) {
+      const baseSnapshot = this.sync.getLocalSnapshot(dt);
+      const group = this.sync.detectConflicts(dt, baseSnapshot, incoming, current);
+      if (group.conflicts.length > 0) {
+        conflictGroups.push(group);
+      }
+    }
+
     const mergeById = <T extends { id: string }>(existing: T[], incoming: T[]): T[] => {
       const map = new Map(existing.map(e => [e.id, e]));
       for (const item of incoming) {
@@ -3036,6 +3661,66 @@ export class App implements AfterViewChecked {
       return Array.from(map.values());
     };
 
+    const mergeKanbanSort = (incoming: KanbanSortMap): KanbanSortMap => {
+      const merged: KanbanSortMap = JSON.parse(JSON.stringify(this.kanbanSort || {}));
+      if (incoming && typeof incoming === 'object') {
+        for (const date of Object.keys(incoming)) {
+          if (!merged[date]) {
+            merged[date] = incoming[date];
+          } else {
+            for (const volId of Object.keys(incoming[date])) {
+              merged[date][volId] = incoming[date][volId];
+            }
+          }
+        }
+      }
+      return merged;
+    };
+
+    if (conflictGroups.length > 0) {
+      for (const group of conflictGroups) {
+        group.defaultResolution = 'keep-local';
+        for (const rc of group.conflicts) rc.resolution = 'keep-local';
+      }
+      this.pendingImportData = backup;
+      this.activeConflictGroups = conflictGroups;
+      this.selectedConflictGroupIndex = 0;
+      if (conflictGroups[0].conflicts.length > 0) {
+        this.selectedConflictRecordId = conflictGroups[0].conflicts[0].recordId;
+      }
+      this.conflictPanelVisible = true;
+      this.importExportPanelVisible = false;
+      this.isImportConflictResolutionMode = true;
+      this.showSyncToast(`导入数据检测到 ${conflictGroups.reduce((s, g) => s + g.conflicts.length, 0)} 个冲突，请处理`, 'warn');
+      return;
+    }
+
+    this.applyBackupDataWithoutConflict(backup, mergeById, mergeKanbanSort);
+    this.finalizeImportComplete();
+  }
+
+  private pendingImportData: BackupData | null = null;
+  isImportConflictResolutionMode = false;
+
+  get totalConflictsCount(): number {
+    let s = 0;
+    for (const g of this.activeConflictGroups) s += g.conflicts.length;
+    return s;
+  }
+
+  stringify(v: any): string {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'object') {
+      try { return JSON.stringify(v); } catch { return String(v); }
+    }
+    return String(v);
+  }
+
+  private applyBackupDataWithoutConflict(
+    backup: BackupData,
+    mergeById: <T extends { id: string }>(existing: T[], incoming: T[]) => T[],
+    mergeKanbanSort: (incoming: KanbanSortMap) => KanbanSortMap,
+  ) {
     this.elders = mergeById(this.elders, backup.elders);
     this.volunteers = mergeById(this.volunteers, backup.volunteers);
     this.tasks = mergeById(this.tasks, backup.tasks);
@@ -3045,18 +3730,27 @@ export class App implements AfterViewChecked {
     this.phoneNotifications = mergeById(this.phoneNotifications, backup.phoneNotifications);
     this.callbackTasks = mergeById(this.callbackTasks, backup.callbackTasks);
 
-    if (backup.kanbanSort && typeof backup.kanbanSort === 'object') {
-      for (const date of Object.keys(backup.kanbanSort)) {
-        if (!this.kanbanSort[date]) {
-          this.kanbanSort[date] = backup.kanbanSort[date];
-        } else {
-          const existing = this.kanbanSort[date];
-          const incoming = backup.kanbanSort[date];
-          for (const volId of Object.keys(incoming)) {
-            existing[volId] = incoming[volId];
-          }
-        }
-      }
+    this.exceptionRecords = this.sync.deduplicateArray(
+      this.exceptionRecords,
+      (r) => this.sync.buildDedupKeyForException({ taskId: r.taskId, source: r.source, category: r.category })
+    );
+    this.phoneNotifications = this.sync.deduplicateArray(
+      this.phoneNotifications,
+      (n) => this.sync.buildDedupKeyForNotification({ taskId: n.taskId, source: n.source, targetId: n.targetId })
+    );
+    this.callbackTasks = this.sync.deduplicateArray(
+      this.callbackTasks,
+      (c) => this.sync.buildDedupKeyForCallback({ notificationId: c.notificationId, status: c.status })
+    );
+
+    if (backup.kanbanSort) {
+      this.kanbanSort = mergeKanbanSort(backup.kanbanSort);
+    }
+    if (backup.prepData) {
+      this.mealPrepService.importStorageData(backup.prepData, true);
+    }
+    if (backup.deliveryData) {
+      this.volunteerDeliveryService.importStorageData(backup.deliveryData, true);
     }
 
     this.save();
@@ -3066,10 +3760,15 @@ export class App implements AfterViewChecked {
     this.saveVisits();
     this.savePhoneNotifications();
     this.saveCallbackTasks();
+  }
 
+  private finalizeImportComplete() {
+    this.initSyncSnapshots();
     this.importSuccess = true;
     this.importPreview = null;
     this.importedData = null;
+    this.pendingImportData = null;
+    this.isImportConflictResolutionMode = false;
   }
 
   resetImport() {

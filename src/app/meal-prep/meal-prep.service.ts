@@ -16,6 +16,7 @@ import {
   PrintItem,
   PrintGroupType,
 } from './meal-prep.types';
+import { SYNC_INSTANCE, SyncConflictGroup, SyncNotification } from '../sync.service';
 
 export type MealTag = {
   id: string;
@@ -104,24 +105,41 @@ export type PrepStorageData = Record<string, Record<string, {
 @Injectable({ providedIn: 'root' })
 export class MealPrepService {
   private storageData: PrepStorageData = {};
+  private sync = SYNC_INSTANCE();
+  private syncUnsub?: () => void;
 
   constructor() {
     this.loadStorage();
+    this.syncUnsub = this.sync.subscribe((n) => {
+      if (n.type === 'conflicts' && n.conflicts) {
+        const prepConflict = n.conflicts.find((c) => c.dataType === 'prepData');
+        if (prepConflict) {
+          this.resolvePrepConflicts(prepConflict);
+        }
+      } else if (n.type === 'synced' && n.dataType === 'prepData') {
+          this.loadStorage();
+        }
+    });
+  }
+
+  private resolvePrepConflicts(group: SyncConflictGroup) {
+    const merged = this.sync.mergeConflicts(group, this.storageData);
+    this.storageData = merged;
+    this.saveStorage(true);
   }
 
   private loadStorage() {
-    const raw = localStorage.getItem(LS_PREP_DATA_KEY);
+    const raw = this.sync.readLocalData<any>('prepData');
     if (raw) {
-      try {
-        this.storageData = JSON.parse(raw);
-      } catch {
-        this.storageData = {};
-      }
+      this.storageData = raw;
+    } else {
+      this.storageData = {};
     }
+    this.sync.captureLocalSnapshot('prepData', this.storageData);
   }
 
-  private saveStorage() {
-    localStorage.setItem(LS_PREP_DATA_KEY, JSON.stringify(this.storageData));
+  private saveStorage(silent: boolean = false) {
+    this.sync.writeLocalData('prepData', this.storageData);
   }
 
   exportStorageData(): PrepStorageData {
@@ -617,6 +635,42 @@ export class MealPrepService {
       case '缺餐异常': return '#c75454';
       default: return '#8a9783';
     }
+  }
+
+  buildDedupKeyForPrepException(taskId: string, category = '餐食问题'): string {
+    return this.sync.buildDedupKeyForException({ taskId, source: '备餐缺餐', category });
+  }
+
+  buildDedupKeyForPrepNotification(taskId: string, targetId: string): string {
+    return this.sync.buildDedupKeyForNotification({ taskId, source: '备餐缺餐', targetId });
+  }
+
+  isExceptionDuplicate(taskId: string, existingRecords: ExceptionRecord[]): boolean {
+    const key = this.buildDedupKeyForPrepException(taskId);
+    return existingRecords.some((r) =>
+      r.source === '备餐缺餐' && r.taskId === taskId &&
+      this.sync.buildDedupKeyForException(r) === key
+    );
+  }
+
+  isNotificationDuplicate(taskId: string, targetId: string, existingNotifications: PhoneNotification[]): boolean {
+    const key = this.buildDedupKeyForPrepNotification(taskId, targetId);
+    return existingNotifications.some((n) =>
+      n.source === '备餐缺餐' && n.taskId === taskId && n.targetId === targetId &&
+      this.sync.buildDedupKeyForNotification(n) === key
+    );
+  }
+
+  detectPrepDataConflicts(remoteData: PrepStorageData): SyncConflictGroup {
+    const base = this.sync.getLocalSnapshot('prepData');
+    return this.sync.detectConflicts('prepData', base, remoteData, this.storageData);
+  }
+
+  mergeResolvedConflicts(group: SyncConflictGroup): PrepStorageData {
+    const merged = this.sync.mergeConflicts(group, this.storageData);
+    this.storageData = merged;
+    this.saveStorage();
+    return merged;
   }
 
   generateKitchenPrintViewData(

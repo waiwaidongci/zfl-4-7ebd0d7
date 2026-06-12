@@ -9,6 +9,7 @@ import {
   LS_DELIVERY_DATA_KEY,
   DELIVERY_STATUS_COLORS,
 } from './volunteer-delivery.types';
+import { SYNC_INSTANCE, SyncConflictGroup, SyncNotification } from '../sync.service';
 
 export type MealTag = {
   id: string;
@@ -102,51 +103,45 @@ export type TaskWritebackResult = {
 @Injectable({ providedIn: 'root' })
 export class VolunteerDeliveryService implements OnDestroy {
   private storageData: DeliveryStorageData = {};
-  private broadcastChannel: BroadcastChannel | null = null;
-  private storageListener!: (e: StorageEvent) => void;
+  private sync = SYNC_INSTANCE();
+  private syncUnsub?: () => void;
 
   constructor() {
     this.loadStorage();
-    this.storageListener = (e: StorageEvent) => {
-      if (e.key === LS_DELIVERY_DATA_KEY && e.newValue !== e.oldValue) {
-        try {
-          const remoteData = JSON.parse(e.newValue || '{}');
-          this.storageData = remoteData;
-        } catch {
-          this.storageData = {};
+    this.syncUnsub = this.sync.subscribe((n) => {
+      if (n.type === 'conflicts' && n.conflicts) {
+        const delivConflict = n.conflicts.find((c) => c.dataType === 'deliveryData');
+        if (delivConflict) {
+          this.resolveDeliveryConflicts(delivConflict);
         }
-      }
-    };
-    window.addEventListener('storage', this.storageListener);
-    try {
-      this.broadcastChannel = new BroadcastChannel('zfl-4-delivery-sync');
-      this.broadcastChannel.onmessage = () => {
+      } else if (n.type === 'synced' && n.dataType === 'deliveryData') {
         this.loadStorage();
-      };
-    } catch {
-      this.broadcastChannel = null;
-    }
+      }
+    });
   }
 
   ngOnDestroy() {
-    window.removeEventListener('storage', this.storageListener);
-    if (this.broadcastChannel) this.broadcastChannel.close();
+    if (this.syncUnsub) this.syncUnsub();
+  }
+
+  private resolveDeliveryConflicts(group: SyncConflictGroup) {
+    const merged = this.sync.mergeConflicts(group, this.storageData);
+    this.storageData = merged;
+    this.saveStorage();
   }
 
   private loadStorage() {
-    const raw = localStorage.getItem(LS_DELIVERY_DATA_KEY);
+    const raw = this.sync.readLocalData<DeliveryStorageData>('deliveryData');
     if (raw) {
-      try {
-        this.storageData = JSON.parse(raw);
-      } catch {
-        this.storageData = {};
-      }
+      this.storageData = raw;
+    } else {
+      this.storageData = {};
     }
+    this.sync.captureLocalSnapshot('deliveryData', this.storageData);
   }
 
   private saveStorage() {
-    localStorage.setItem(LS_DELIVERY_DATA_KEY, JSON.stringify(this.storageData));
-    this.broadcastChannel?.postMessage({ type: 'delivery-updated' });
+    this.sync.writeLocalData('deliveryData', this.storageData);
   }
 
   private getStoredStatus(date: string, taskId: string) {
@@ -467,5 +462,37 @@ export class VolunteerDeliveryService implements OnDestroy {
 
   getDeliveryStatusColor(status: DeliveryStatus): string {
     return DELIVERY_STATUS_COLORS[status];
+  }
+
+  buildDedupKeyForDeliveryException(taskId: string, source: '配送异常' | '未接通', category?: string): string {
+    return this.sync.buildDedupKeyForException({ taskId, source, category });
+  }
+
+  buildDedupKeyForDeliveryNotification(taskId: string, source: '配送异常' | '未接通', targetId: string): string {
+    return this.sync.buildDedupKeyForNotification({ taskId, source, targetId });
+  }
+
+  isDeliveryExceptionDuplicate(taskId: string, source: '配送异常' | '未接通', existingRecords: ExceptionRecord[]): boolean {
+    return existingRecords.some((r) =>
+      r.taskId === taskId && r.source === source
+    );
+  }
+
+  isDeliveryNotificationDuplicate(taskId: string, source: '配送异常' | '未接通', targetId: string, existingNotifications: PhoneNotification[]): boolean {
+    return existingNotifications.some((n) =>
+      n.taskId === taskId && n.source === source && n.targetId === targetId
+    );
+  }
+
+  detectDeliveryDataConflicts(remoteData: DeliveryStorageData): SyncConflictGroup {
+    const base = this.sync.getLocalSnapshot('deliveryData');
+    return this.sync.detectConflicts('deliveryData', base, remoteData, this.storageData);
+  }
+
+  mergeResolvedConflicts(group: SyncConflictGroup): DeliveryStorageData {
+    const merged = this.sync.mergeConflicts(group, this.storageData);
+    this.storageData = merged;
+    this.saveStorage();
+    return merged;
   }
 }
