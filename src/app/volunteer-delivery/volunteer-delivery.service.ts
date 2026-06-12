@@ -60,6 +60,8 @@ export type VisitRecord = {
   createdAt: string;
 };
 
+export type ExceptionSource = '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
+
 export type ExceptionRecord = {
   id: string;
   taskId: string;
@@ -71,6 +73,7 @@ export type ExceptionRecord = {
   handler: string;
   status: '待处理' | '处理中' | '已解决';
   result: string;
+  source: ExceptionSource;
   createdAt: string;
   updatedAt: string;
 };
@@ -84,6 +87,7 @@ export type PhoneNotification = {
   taskId: string;
   notificationStatus: '未通知' | '已通知' | '未接通' | '稍后再拨';
   remark: string;
+  source: ExceptionSource;
   updatedAt: string;
 };
 
@@ -409,6 +413,7 @@ export class VolunteerDeliveryService implements OnDestroy {
       handler: '',
       status: '待处理',
       result: '',
+      source: deliveryStatus === '未接通' ? '未接通' : '配送异常',
       createdAt: timeStr,
       updatedAt: timeStr,
     };
@@ -439,6 +444,7 @@ export class VolunteerDeliveryService implements OnDestroy {
       taskId: task.id,
       notificationStatus,
       remark,
+      source: deliveryStatus === '未接通' ? '未接通' : '配送异常',
       updatedAt: timeStr,
     };
   }

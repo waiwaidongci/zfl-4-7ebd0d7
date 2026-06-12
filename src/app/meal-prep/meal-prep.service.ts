@@ -46,6 +46,8 @@ export type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收'
 export type ExceptionSeverity = '一般' | '较重' | '紧急';
 export type ExceptionStatus = '待处理' | '处理中' | '已解决';
 
+export type ExceptionSource = '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
+
 export type ExceptionRecord = {
   id: string;
   taskId: string;
@@ -57,6 +59,7 @@ export type ExceptionRecord = {
   handler: string;
   status: ExceptionStatus;
   result: string;
+  source: ExceptionSource;
   createdAt: string;
   updatedAt: string;
 };
@@ -73,6 +76,7 @@ export type PhoneNotification = {
   taskId: string;
   notificationStatus: NotificationStatus;
   remark: string;
+  source: ExceptionSource;
   updatedAt: string;
 };
 
@@ -541,6 +545,7 @@ export class MealPrepService {
       handler: '',
       status: '待处理',
       result: '',
+      source: '备餐缺餐',
       createdAt: timeStr,
       updatedAt: timeStr,
     };
@@ -564,6 +569,7 @@ export class MealPrepService {
       taskId: task.id,
       notificationStatus: '未通知',
       remark: `备餐缺餐通知：${missingNote || '今日无法备餐'}`,
+      source: '备餐缺餐',
       updatedAt: timeStr,
     };
   }

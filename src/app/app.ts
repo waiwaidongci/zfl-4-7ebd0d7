@@ -81,6 +81,8 @@ type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收' | '餐
 type ExceptionSeverity = '一般' | '较重' | '紧急';
 type ExceptionStatus = '待处理' | '处理中' | '已解决';
 
+type ExceptionSource = '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
+
 type ExceptionRecord = {
   id: string;
   taskId: string;
@@ -92,6 +94,7 @@ type ExceptionRecord = {
   handler: string;
   status: ExceptionStatus;
   result: string;
+  source: ExceptionSource;
   createdAt: string;
   updatedAt: string;
 };
@@ -119,6 +122,7 @@ type PhoneNotification = {
   taskId: string;
   notificationStatus: NotificationStatus;
   remark: string;
+  source: ExceptionSource;
   updatedAt: string;
 };
 
@@ -183,6 +187,24 @@ type BackupData = {
 };
 
 const WEEK_DAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+function inferExceptionSource(exc: any): ExceptionSource {
+  if (exc.source && ['备餐缺餐', '配送异常', '未接通', '手动登记'].includes(exc.source)) return exc.source;
+  const desc: string = exc.description || '';
+  if (desc.includes('备餐缺餐') || desc.includes('厨房备餐') || desc.includes('厨房缺餐')) return '备餐缺餐';
+  if (desc.includes('未接通') || desc.includes('无人接听')) return '未接通';
+  if (desc.includes('配送异常') || desc.includes('志愿者配送')) return '配送异常';
+  return '手动登记';
+}
+
+function inferNotificationSource(pn: any): ExceptionSource {
+  if (pn.source && ['备餐缺餐', '配送异常', '未接通', '手动登记'].includes(pn.source)) return pn.source;
+  const remark: string = pn.remark || '';
+  if (remark.includes('备餐缺餐') || remark.includes('厨房缺餐')) return '备餐缺餐';
+  if (remark.includes('未接通') || remark.includes('无人接听')) return '未接通';
+  if (remark.includes('配送异常') || remark.includes('配送未接通')) return '配送异常';
+  return '手动登记';
+}
 
 type ImportPreviewItem<T> = {
   item: T;
@@ -563,6 +585,7 @@ type SyncNotification = {
                 </div>
                 <div class="exc-item-meta">
                   <span class="exc-category">{{ exc.category }}</span>
+                  <span class="exc-source-tag" [style.color]="sourceColor(exc.source)" [style.borderColor]="sourceColor(exc.source)">{{ sourceLabel(exc.source) }}</span>
                   <span class="exc-status-tag" [style.color]="statusColor(exc.status)" [style.borderColor]="statusColor(exc.status)">{{ exc.status }}</span>
                 </div>
                 <p class="exc-item-desc">{{ exc.description }}</p>
@@ -669,6 +692,16 @@ type SyncNotification = {
           <button type="button" [class.active-tab]="phoneNotificationTab === 'elder'" (click)="phoneNotificationTab = 'elder'">👴 老人</button>
           <button type="button" [class.active-tab]="phoneNotificationTab === 'volunteer'" (click)="phoneNotificationTab = 'volunteer'">👥 志愿者</button>
         </div>
+        <div class="pn-source-filter">
+          <label>来源：</label>
+          <select [(ngModel)]="phoneNotificationSource">
+            <option value="全部">全部来源</option>
+            <option value="备餐缺餐">备餐缺餐</option>
+            <option value="配送异常">配送异常</option>
+            <option value="未接通">未接通</option>
+            <option value="手动登记">手动登记</option>
+          </select>
+        </div>
 
         <div class="pn-list">
           <ng-container *ngFor="let n of phoneNotificationsForDate()">
@@ -685,6 +718,7 @@ type SyncNotification = {
               <div class="pn-item-meta">
                 <span class="pn-phone">📱 {{ n.phone || '暂无电话' }}</span>
                 <span class="pn-task-status">任务状态：{{ phoneNotificationTaskStatus(n) }}</span>
+                <span class="pn-source-tag" [style.color]="sourceColor(n.source)" [style.borderColor]="sourceColor(n.source)">{{ sourceLabel(n.source) }}</span>
               </div>
               <div class="pn-item-remark" *ngIf="n.remark && editingNotificationId !== n.id">
                 <label>备注：</label>
@@ -885,6 +919,13 @@ type SyncNotification = {
                   <option value="">全部老人</option>
                   <option *ngFor="let e of elders" [value]="e.id">{{ e.name }}</option>
                 </select>
+                <select [(ngModel)]="exceptionListSource">
+                  <option value="全部">全部来源</option>
+                  <option value="备餐缺餐">备餐缺餐</option>
+                  <option value="配送异常">配送异常</option>
+                  <option value="未接通">未接通</option>
+                  <option value="手动登记">手动登记</option>
+                </select>
               </div>
               <div class="exc-modal-items">
                 <div class="exc-modal-item" *ngFor="let exc of filteredExceptionRecords()">
@@ -900,6 +941,7 @@ type SyncNotification = {
                   </div>
                   <div class="exc-modal-item-meta">
                     <span class="exc-category">{{ exc.category }}</span>
+                    <span class="exc-source-tag" [style.color]="sourceColor(exc.source)" [style.borderColor]="sourceColor(exc.source)">{{ sourceLabel(exc.source) }}</span>
                     <span *ngIf="exc.handler">负责人：{{ exc.handler }}</span>
                   </div>
                   <p class="exc-modal-item-desc">{{ exc.description }}</p>
@@ -942,6 +984,13 @@ type SyncNotification = {
                 <option value="">全部老人</option>
                 <option *ngFor="let e of elders" [value]="e.id">{{ e.name }}</option>
               </select>
+              <select [(ngModel)]="exceptionHistorySource">
+                <option value="全部">全部来源</option>
+                <option value="备餐缺餐">备餐缺餐</option>
+                <option value="配送异常">配送异常</option>
+                <option value="未接通">未接通</option>
+                <option value="手动登记">手动登记</option>
+              </select>
             </div>
             <div class="exc-modal-items">
               <div class="exc-modal-item" *ngFor="let exc of historyExceptionRecords()">
@@ -957,6 +1006,7 @@ type SyncNotification = {
                 </div>
                 <div class="exc-modal-item-meta">
                   <span class="exc-category">{{ exc.category }}</span>
+                  <span class="exc-source-tag" [style.color]="sourceColor(exc.source)" [style.borderColor]="sourceColor(exc.source)">{{ sourceLabel(exc.source) }}</span>
                   <span *ngIf="exc.handler">负责人：{{ exc.handler }}</span>
                 </div>
                 <p class="exc-modal-item-desc">{{ exc.description }}</p>
@@ -1091,6 +1141,12 @@ type SyncNotification = {
                       <span class="stat overwrite">~{{ importPreviewSummary.exceptionRecords.overwrite }}</span>
                       <span class="stat duplicate">={{ importPreviewSummary.exceptionRecords.duplicate }}</span>
                     </div>
+                    <div class="preview-source-breakdown">
+                      <span class="source-tag" style="color:#e67e22;border-color:#e67e22">备餐缺餐 {{ importPreviewSummary.exceptionRecords.bySource['备餐缺餐'] }}</span>
+                      <span class="source-tag" style="color:#c75454;border-color:#c75454">配送异常 {{ importPreviewSummary.exceptionRecords.bySource['配送异常'] }}</span>
+                      <span class="source-tag" style="color:#d9a84a;border-color:#d9a84a">未接通 {{ importPreviewSummary.exceptionRecords.bySource['未接通'] }}</span>
+                      <span class="source-tag" style="color:#666;border-color:#666">手动登记 {{ importPreviewSummary.exceptionRecords.bySource['手动登记'] }}</span>
+                    </div>
                   </div>
 
                   <div class="preview-card" *ngIf="importPreviewSummary.visitRecords.total > 0">
@@ -1108,6 +1164,12 @@ type SyncNotification = {
                       <span class="stat new">+{{ importPreviewSummary.phoneNotifications.new }}</span>
                       <span class="stat overwrite">~{{ importPreviewSummary.phoneNotifications.overwrite }}</span>
                       <span class="stat duplicate">={{ importPreviewSummary.phoneNotifications.duplicate }}</span>
+                    </div>
+                    <div class="preview-source-breakdown">
+                      <span class="source-tag" style="color:#e67e22;border-color:#e67e22">备餐缺餐 {{ importPreviewSummary.phoneNotifications.bySource['备餐缺餐'] }}</span>
+                      <span class="source-tag" style="color:#c75454;border-color:#c75454">配送异常 {{ importPreviewSummary.phoneNotifications.bySource['配送异常'] }}</span>
+                      <span class="source-tag" style="color:#d9a84a;border-color:#d9a84a">未接通 {{ importPreviewSummary.phoneNotifications.bySource['未接通'] }}</span>
+                      <span class="source-tag" style="color:#666;border-color:#666">手动登记 {{ importPreviewSummary.phoneNotifications.bySource['手动登记'] }}</span>
                     </div>
                   </div>
                 </div>
@@ -1631,9 +1693,10 @@ type SyncNotification = {
     .exc-item-desc { margin: 0 0 6px; font-size: 13px; color: #3d4a38; line-height: 1.5; }
     .exc-item-handler { font-size: 12px; color: #5a8fd9; margin-bottom: 6px; }
     .exc-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .exc-severity, .exc-status-tag, .exc-category { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; border: 1px solid; }
+    .exc-severity, .exc-status-tag, .exc-category, .exc-source-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; border: 1px solid; }
     .exc-severity { background: transparent; }
     .exc-status-tag { background: transparent; }
+    .exc-source-tag { background: transparent; }
     .exc-category { background: #f0f5fc; color: #5a8fd9; border-color: #c4d9f0; }
     .exc-modal { max-width: 700px; }
     .exc-form { display: flex; flex-direction: column; gap: 16px; }
@@ -1736,6 +1799,7 @@ type SyncNotification = {
     .pn-type-tag.volunteer-tag { background: #f0f5fc; color: #5a8fd9; border: 1px solid #c4d9f0; }
 
     .pn-status-tag { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; border: 1px solid; background: transparent; }
+    .pn-source-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; border: 1px solid; background: transparent; }
 
     .pn-item-meta { display: flex; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; font-size: 13px; color: #5a6b53; }
     .pn-phone { font-weight: 600; color: #315448; }
@@ -1991,17 +2055,21 @@ export class App {
     description: '',
     handler: '',
     status: '待处理',
-    result: ''
+    result: '',
+    source: '手动登记'
   };
   exceptionListFilter: ExceptionStatus | '全部' = '全部';
   exceptionListDate = '';
   exceptionListElderId = '';
+  exceptionListSource: ExceptionSource | '全部' = '全部';
   exceptionHistoryVisible = false;
   exceptionHistoryElderId = '';
   exceptionHistoryDate = '';
+  exceptionHistorySource: ExceptionSource | '全部' = '全部';
 
   phoneNotifications: PhoneNotification[] = [];
   phoneNotificationTab: 'all' | 'elder' | 'volunteer' = 'all';
+  phoneNotificationSource: ExceptionSource | '全部' = '全部';
   editingNotificationId: string | null = null;
   editingNotificationRemark: string = '';
 
@@ -2017,6 +2085,7 @@ export class App {
   EXCEPTION_CATEGORIES: ExceptionCategory[] = ['无人应答', '地址错误', '老人拒收', '餐食问题', '配送延误', '老人身体不适', '其他'];
   EXCEPTION_SEVERITIES: ExceptionSeverity[] = ['一般', '较重', '紧急'];
   EXCEPTION_STATUSES: ExceptionStatus[] = ['待处理', '处理中', '已解决'];
+  EXCEPTION_SOURCES: ExceptionSource[] = ['备餐缺餐', '配送异常', '未接通', '手动登记'];
 
   NOTIFICATION_STATUSES: NotificationStatus[] = ['未通知', '已通知', '未接通', '稍后再拨'];
 
@@ -2484,8 +2553,8 @@ export class App {
       elders: { name: '姓名', preference: '餐食偏好', address: '地址', contact: '联系方式', note: '备注', mealTags: '餐食标签', deliveryDays: '送餐日期', pauseDates: '暂停日期', specialMealNote: '特殊备注' },
       volunteers: { name: '姓名', phone: '电话', capacity: '每日容量', area: '片区', availableDays: '可服务日期' },
       tasks: { volunteerId: '志愿者', status: '状态', exception: '异常描述', isManuallyModified: '手动标记', specialMealNote: '特殊餐食备注', elderId: '老人', date: '日期' },
-      exceptionRecords: { category: '分类', severity: '严重程度', description: '描述', handler: '负责人', status: '状态', result: '处理结果', updatedAt: '更新时间' },
-      phoneNotifications: { targetType: '通知对象类型', targetId: '通知对象', phone: '电话', notificationStatus: '通知状态', remark: '备注', updatedAt: '更新时间', taskId: '关联任务', date: '日期' }
+      exceptionRecords: { category: '分类', severity: '严重程度', description: '描述', handler: '负责人', status: '状态', result: '处理结果', source: '异常来源', updatedAt: '更新时间' },
+      phoneNotifications: { targetType: '通知对象类型', targetId: '通知对象', phone: '电话', notificationStatus: '通知状态', remark: '备注', source: '异常来源', updatedAt: '更新时间', taskId: '关联任务', date: '日期' }
     };
     return labels[type]?.[field] || field;
   }
@@ -3121,7 +3190,8 @@ export class App {
       description: task.exception || '',
       handler: '',
       status: '待处理',
-      result: ''
+      result: '',
+      source: '手动登记'
     };
     this.exceptionPanelTab = 'form';
     this.exceptionPanelVisible = true;
@@ -3143,6 +3213,7 @@ export class App {
       elderId: task.elderId,
       date: task.date,
       ...this.exceptionForm,
+      source: '手动登记',
       createdAt: timeStr,
       updatedAt: timeStr
     };
@@ -3207,6 +3278,9 @@ export class App {
     if (this.exceptionListElderId) {
       records = records.filter((r) => r.elderId === this.exceptionListElderId);
     }
+    if (this.exceptionListSource !== '全部') {
+      records = records.filter((r) => r.source === this.exceptionListSource);
+    }
     return records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
@@ -3217,6 +3291,9 @@ export class App {
     }
     if (this.exceptionHistoryElderId) {
       records = records.filter((r) => r.elderId === this.exceptionHistoryElderId);
+    }
+    if (this.exceptionHistorySource !== '全部') {
+      records = records.filter((r) => r.source === this.exceptionHistorySource);
     }
     return records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
@@ -3239,6 +3316,21 @@ export class App {
     if (status === '已解决') return '#4a9f6d';
     if (status === '处理中') return '#5a8fd9';
     return '#c75454';
+  }
+
+  sourceColor(source: ExceptionSource | undefined): string {
+    if (!source) return '#8a9783';
+    switch (source) {
+      case '备餐缺餐': return '#d78b63';
+      case '配送异常': return '#c75454';
+      case '未接通': return '#d9a84a';
+      case '手动登记': return '#5a8fd9';
+      default: return '#8a9783';
+    }
+  }
+
+  sourceLabel(source: ExceptionSource | undefined): string {
+    return source || '未知';
   }
 
   exceptionFormElderName(): string {
@@ -3663,7 +3755,18 @@ export class App {
 
   private loadExceptions() {
     const raw = localStorage.getItem('zfl-4-exceptions');
-    if (raw) this.exceptionRecords = JSON.parse(raw);
+    if (raw) {
+      this.exceptionRecords = JSON.parse(raw);
+      let migrated = false;
+      this.exceptionRecords = this.exceptionRecords.map(r => {
+        if (!r.source) {
+          migrated = true;
+          return { ...r, source: inferExceptionSource(r) };
+        }
+        return r;
+      });
+      if (migrated) this.saveExceptions();
+    }
   }
 
   private saveVisits() {
@@ -3683,7 +3786,18 @@ export class App {
 
   private loadPhoneNotifications() {
     const raw = localStorage.getItem('zfl-4-phone-notifications');
-    if (raw) this.phoneNotifications = JSON.parse(raw);
+    if (raw) {
+      this.phoneNotifications = JSON.parse(raw);
+      let migrated = false;
+      this.phoneNotifications = this.phoneNotifications.map(n => {
+        if (!n.source) {
+          migrated = true;
+          return { ...n, source: inferNotificationSource(n) };
+        }
+        return n;
+      });
+      if (migrated) this.savePhoneNotifications();
+    }
   }
 
   private extractPhoneNumber(contact: string): string {
@@ -3715,6 +3829,7 @@ export class App {
             taskId: task.id,
             notificationStatus: '未通知',
             remark: '',
+            source: '手动登记',
             updatedAt: timeStr
           });
         }
@@ -3736,6 +3851,7 @@ export class App {
               taskId: task.id,
               notificationStatus: '未通知',
               remark: '',
+              source: '手动登记',
               updatedAt: timeStr
             });
           }
@@ -3757,6 +3873,10 @@ export class App {
       .filter((n) => {
         if (this.phoneNotificationTab === 'all') return true;
         return n.targetType === this.phoneNotificationTab;
+      })
+      .filter((n) => {
+        if (this.phoneNotificationSource === '全部') return true;
+        return n.source === this.phoneNotificationSource;
       })
       .sort((a, b) => {
         const statusOrder = { '未通知': 0, '稍后再拨': 1, '未接通': 2, '已通知': 3 };
@@ -4057,12 +4177,14 @@ export class App {
         const VALID_CATEGORIES = ['无人应答', '地址错误', '老人拒收', '餐食问题', '配送延误', '老人身体不适', '其他'];
         const VALID_SEVERITIES = ['一般', '较重', '紧急'];
         const VALID_EXC_STATUSES = ['待处理', '处理中', '已解决'];
+        const VALID_SOURCES: ExceptionSource[] = ['备餐缺餐', '配送异常', '未接通', '手动登记'];
         for (let i = 0; i < data.exceptionRecords.length; i++) {
           const exc = data.exceptionRecords[i];
           if (!exc || typeof exc !== 'object') {
             errors.push(`异常记录[${i}]: 不是有效的对象`);
             continue;
           }
+          if (!exc.source) exc.source = inferExceptionSource(exc);
           for (const [field, type] of EXC_FIELDS) {
             if (!(field in exc)) {
               errors.push(`异常记录[${i}]: 缺少 ${field} 字段`);
@@ -4078,6 +4200,9 @@ export class App {
           }
           if ('status' in exc && typeof exc.status === 'string' && !VALID_EXC_STATUSES.includes(exc.status)) {
             errors.push(`异常记录[${i}]: status 值"${exc.status}"无效`);
+          }
+          if ('source' in exc && typeof exc.source === 'string' && !VALID_SOURCES.includes(exc.source)) {
+            errors.push(`异常记录[${i}]: source 值"${exc.source}"无效`);
           }
         }
       }
@@ -4124,12 +4249,14 @@ export class App {
         ];
         const VALID_TARGET_TYPES = ['elder', 'volunteer'];
         const VALID_STATUSES = ['未通知', '已通知', '未接通', '稍后再拨'];
+        const VALID_SOURCES: ExceptionSource[] = ['备餐缺餐', '配送异常', '未接通', '手动登记'];
         for (let i = 0; i < data.phoneNotifications.length; i++) {
           const pn = data.phoneNotifications[i];
           if (!pn || typeof pn !== 'object') {
             errors.push(`电话通知[${i}]: 不是有效的对象`);
             continue;
           }
+          if (!pn.source) pn.source = inferNotificationSource(pn);
           for (const [field, type] of PN_FIELDS) {
             if (!(field in pn)) {
               errors.push(`电话通知[${i}]: 缺少 ${field} 字段`);
@@ -4142,6 +4269,9 @@ export class App {
           }
           if ('notificationStatus' in pn && typeof pn.notificationStatus === 'string' && !VALID_STATUSES.includes(pn.notificationStatus)) {
             errors.push(`电话通知[${i}]: notificationStatus 值"${pn.notificationStatus}"无效`);
+          }
+          if ('source' in pn && typeof pn.source === 'string' && !VALID_SOURCES.includes(pn.source)) {
+            errors.push(`电话通知[${i}]: source 值"${pn.source}"无效`);
           }
         }
       }
@@ -4231,10 +4361,40 @@ export class App {
       volunteers: { total: p.volunteers.length, new: this.countImportItemsByStatus(p.volunteers, 'new'), duplicate: this.countImportItemsByStatus(p.volunteers, 'duplicate'), overwrite: this.countImportItemsByStatus(p.volunteers, 'overwrite') },
       tasks: { total: p.tasks.length, new: this.countImportItemsByStatus(p.tasks, 'new'), duplicate: this.countImportItemsByStatus(p.tasks, 'duplicate'), overwrite: this.countImportItemsByStatus(p.tasks, 'overwrite') },
       mealTags: { total: p.mealTags.length, new: this.countImportItemsByStatus(p.mealTags, 'new'), duplicate: this.countImportItemsByStatus(p.mealTags, 'duplicate'), overwrite: this.countImportItemsByStatus(p.mealTags, 'overwrite') },
-      exceptionRecords: { total: p.exceptionRecords.length, new: this.countImportItemsByStatus(p.exceptionRecords, 'new'), duplicate: this.countImportItemsByStatus(p.exceptionRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.exceptionRecords, 'overwrite') },
+      exceptionRecords: { 
+        total: p.exceptionRecords.length, 
+        new: this.countImportItemsByStatus(p.exceptionRecords, 'new'), 
+        duplicate: this.countImportItemsByStatus(p.exceptionRecords, 'duplicate'), 
+        overwrite: this.countImportItemsByStatus(p.exceptionRecords, 'overwrite'),
+        bySource: this.countBySource(p.exceptionRecords, 'exception')
+      },
       visitRecords: { total: p.visitRecords.length, new: this.countImportItemsByStatus(p.visitRecords, 'new'), duplicate: this.countImportItemsByStatus(p.visitRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.visitRecords, 'overwrite') },
-      phoneNotifications: { total: p.phoneNotifications.length, new: this.countImportItemsByStatus(p.phoneNotifications, 'new'), duplicate: this.countImportItemsByStatus(p.phoneNotifications, 'duplicate'), overwrite: this.countImportItemsByStatus(p.phoneNotifications, 'overwrite') },
+      phoneNotifications: { 
+        total: p.phoneNotifications.length, 
+        new: this.countImportItemsByStatus(p.phoneNotifications, 'new'), 
+        duplicate: this.countImportItemsByStatus(p.phoneNotifications, 'duplicate'), 
+        overwrite: this.countImportItemsByStatus(p.phoneNotifications, 'overwrite'),
+        bySource: this.countBySource(p.phoneNotifications, 'notification')
+      },
     };
+  }
+
+  countBySource(items: any[], type: 'exception' | 'notification'): Record<ExceptionSource, number> {
+    const result: Record<string, number> = {
+      '备餐缺餐': 0,
+      '配送异常': 0,
+      '未接通': 0,
+      '手动登记': 0
+    };
+    for (const item of items) {
+      const source = item.data?.source || item.source || '手动登记';
+      if (result[source] !== undefined) {
+        result[source]++;
+      } else {
+        result['手动登记']++;
+      }
+    }
+    return result as Record<ExceptionSource, number>;
   }
 
   private isValidElder(e: any): boolean {
@@ -4267,8 +4427,9 @@ export class App {
   }
 
   private isValidExceptionRecord(r: any): boolean {
-    return r && typeof r === 'object'
-      && typeof r.id === 'string' && typeof r.taskId === 'string'
+    if (!r || typeof r !== 'object') return false;
+    if (!r.source) r.source = inferExceptionSource(r);
+    return typeof r.id === 'string' && typeof r.taskId === 'string'
       && typeof r.elderId === 'string' && typeof r.date === 'string'
       && typeof r.category === 'string' && typeof r.severity === 'string'
       && typeof r.description === 'string' && typeof r.handler === 'string'
@@ -4285,8 +4446,9 @@ export class App {
   }
 
   private isValidPhoneNotification(r: any): boolean {
-    return r && typeof r === 'object'
-      && typeof r.id === 'string' && typeof r.date === 'string'
+    if (!r || typeof r !== 'object') return false;
+    if (!r.source) r.source = inferNotificationSource(r);
+    return typeof r.id === 'string' && typeof r.date === 'string'
       && typeof r.targetType === 'string' && typeof r.targetId === 'string'
       && typeof r.phone === 'string' && typeof r.taskId === 'string'
       && typeof r.notificationStatus === 'string' && typeof r.remark === 'string'
@@ -4484,7 +4646,7 @@ export class App {
       } else if (isUnreachable) {
         this.exceptionRecords = this.exceptionRecords.map((e) =>
           e.taskId === update.exceptionCreated!.taskId && e.date === update.exceptionCreated!.date
-            ? { ...e, category: '无人应答' as ExceptionCategory, description: update.exceptionCreated!.description, updatedAt: update.exceptionCreated!.updatedAt }
+            ? { ...e, category: '无人应答' as ExceptionCategory, description: update.exceptionCreated!.description, source: update.exceptionCreated!.source, updatedAt: update.exceptionCreated!.updatedAt }
             : e
         );
         this.saveExceptions();
@@ -4499,7 +4661,7 @@ export class App {
           const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
           this.exceptionRecords = this.exceptionRecords.map((e) =>
             e.taskId === taskId && e.date === taskDate
-              ? { ...e, category: '无人应答' as ExceptionCategory, description: `志愿者配送上门未接通：${update.taskUpdated!.exception}`, updatedAt: timeStr }
+              ? { ...e, category: '无人应答' as ExceptionCategory, description: `志愿者配送上门未接通：${update.taskUpdated!.exception}`, source: '未接通' as ExceptionSource, updatedAt: timeStr }
               : e
           );
           this.saveExceptions();
@@ -4520,7 +4682,7 @@ export class App {
           n.taskId === update.notificationCreated!.taskId
             && n.date === update.notificationCreated!.date
             && n.targetType === update.notificationCreated!.targetType
-            ? { ...n, notificationStatus: '未接通' as NotificationStatus, remark: update.notificationCreated!.remark, updatedAt: update.notificationCreated!.updatedAt }
+            ? { ...n, notificationStatus: '未接通' as NotificationStatus, remark: update.notificationCreated!.remark, source: update.notificationCreated!.source, updatedAt: update.notificationCreated!.updatedAt }
             : n
         );
         this.savePhoneNotifications();
@@ -4539,6 +4701,7 @@ export class App {
                   ...n,
                   notificationStatus: '未接通' as NotificationStatus,
                   remark: `配送未接通通知：${update.taskUpdated!.exception || '电话无人接听，需再次联系'}`,
+                  source: '未接通' as ExceptionSource,
                   updatedAt: timeStr
                 }
               : n
