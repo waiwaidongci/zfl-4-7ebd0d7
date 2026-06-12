@@ -1,6 +1,14 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, ViewChild, ElementRef, AfterViewChecked, ChangeDetectorRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { MealPrepComponent } from './meal-prep/meal-prep.component';
+import { VolunteerDeliveryComponent } from './volunteer-delivery/volunteer-delivery.component';
+import {
+  ExceptionRecord as PrepExceptionRecord,
+  PhoneNotification as PrepPhoneNotification,
+} from './meal-prep/meal-prep.service';
+
+type AppViewMode = 'schedule' | 'meal-prep' | 'volunteer-delivery';
 
 type MealTag = {
   id: string;
@@ -16,6 +24,9 @@ type Elder = {
   address: string;
   contact: string;
   note: string;
+  deliveryDays: number[];
+  pauseDates: string[];
+  specialMealNote: string;
 };
 
 type Volunteer = {
@@ -24,6 +35,7 @@ type Volunteer = {
   phone: string;
   capacity: number;
   area: string;
+  availableDays: number[];
 };
 
 type MealTask = {
@@ -33,6 +45,8 @@ type MealTask = {
   volunteerId: string;
   status: '待分配' | '配送中' | '已送达' | '异常';
   exception: string;
+  isManuallyModified: boolean;
+  specialMealNote: string;
 };
 
 type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收' | '餐食问题' | '配送延误' | '老人身体不适' | '其他';
@@ -63,6 +77,19 @@ type VisitRecord = {
   mealFeedback: string;
   nextAttention: string;
   createdAt: string;
+};
+
+type PhoneNotification = {
+  id: string;
+  date: string;
+  targetType: 'elder' | 'volunteer';
+  targetId: string;
+  phone: string;
+  taskId: string;
+  notificationStatus: '未通知' | '已通知' | '未接通' | '稍后再拨';
+  remark: string;
+  source: '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
+  updatedAt: string;
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -143,13 +170,18 @@ type ImportError = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MealPrepComponent, VolunteerDeliveryComponent],
   template: `
     <main>
       <header class="hero">
         <div>
           <p>社区老人送餐</p>
-          <h1>排班前端</h1>
+          <h1>{{ viewModeLabel }}</h1>
+        </div>
+        <div class="view-switcher no-print">
+          <button type="button" [class.active-view]="viewMode === 'schedule'" (click)="setViewMode('schedule')">📋 每日排班</button>
+          <button type="button" [class.active-view]="viewMode === 'meal-prep'" (click)="setViewMode('meal-prep')">🍳 备餐产能与出餐核对</button>
+          <button type="button" [class.active-view]="viewMode === 'volunteer-delivery'" (click)="setViewMode('volunteer-delivery')">🚴 志愿者配送</button>
         </div>
         <div class="stats">
           <span>{{ elders.length }}位老人</span>
@@ -157,9 +189,13 @@ type ImportError = {
           <span>{{ todayTasks().length }}个今日任务</span>
           <span>{{ todayUnresolvedExceptions().length }}条异常</span>
         </div>
-        <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
+        <div class="hero-actions no-print">
+          <button type="button" class="ghost hero-kitchen-btn" (click)="quickOpenKitchenPrint()" *ngIf="viewMode === 'schedule' || viewMode === 'meal-prep'">🖨️ 厨房批次打印</button>
+          <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
+        </div>
       </header>
 
+      <ng-container *ngIf="viewMode === 'schedule'">
       <section class="layout">
         <aside class="stack">
           <form class="panel" (ngSubmit)="addElder()">
@@ -451,6 +487,35 @@ type ImportError = {
           </div>
         </div>
       </section>
+      </ng-container>
+
+      <app-meal-prep
+        #mealPrepComp
+        *ngIf="viewMode === 'meal-prep'"
+        class="view-container"
+        [date]="taskDate"
+        [tasks]="tasks"
+        [elders]="elders"
+        [mealTags]="mealTags"
+        [volunteers]="volunteers"
+        (exceptionCreated)="onPrepExceptionCreated($event)"
+        (notificationCreated)="onPrepNotificationCreated($event)"
+        (taskUpdated)="onPrepTaskUpdated($event)"
+      ></app-meal-prep>
+
+      <app-volunteer-delivery
+        *ngIf="viewMode === 'volunteer-delivery'"
+        class="view-container"
+        [date]="taskDate"
+        [volunteers]="volunteers"
+        [tasks]="tasks"
+        [elders]="elders"
+        [mealTags]="mealTags"
+        [visitRecords]="visitRecords"
+        [kanbanSort]="kanbanSort"
+        (statusUpdated)="onDeliveryStatusUpdated($event)"
+        (backToSchedule)="setViewMode('schedule')"
+      ></app-volunteer-delivery>
 
       <div class="modal-overlay" *ngIf="visitPanelVisible" (click)="closeVisitPanel()">
         <div class="modal-panel" (click)="$event.stopPropagation()">
@@ -1030,7 +1095,17 @@ type ImportError = {
     .exc-result-row label { font-weight: 600; color: #3d4a38; white-space: nowrap; }
     .exc-result-row span { color: #4a5a45; line-height: 1.5; }
 
-    .import-export-btn { align-self: flex-end; white-space: nowrap; }
+    .view-switcher { display: flex; gap: 4px; background: rgba(255,255,255,.12); padding: 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,.2); }
+    .view-switcher button { background: transparent; color: rgba(255,255,255,.75); border: 0; padding: 9px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; white-space: nowrap; transition: all .15s ease; }
+    .view-switcher button:hover { color: #fff; background: rgba(255,255,255,.08); }
+    .view-switcher button.active-view { background: #fff; color: #315448; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+    .hero-actions { display: flex; gap: 8px; align-items: center; }
+    .hero-actions .ghost { background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.3); }
+    .hero-actions .ghost:hover { background: rgba(255,255,255,.25); border-color: rgba(255,255,255,.45); }
+    .hero-kitchen-btn { font-weight: 600; }
+    .import-export-btn { white-space: nowrap; }
+    .view-container { margin-top: 16px; }
+
     .import-export-modal { max-width: 720px; }
     .export-section { display: flex; flex-direction: column; gap: 20px; }
     .export-info h3 { margin: 0 0 8px; font-size: 16px; color: #315448; }
@@ -1091,23 +1166,30 @@ type ImportError = {
     }
   `],
 })
-export class App {
+export class App implements AfterViewChecked {
+  @ViewChild('mealPrepComp') mealPrepComp!: MealPrepComponent;
+
+  viewMode: AppViewMode = 'schedule';
+
+  private pendingKitchenPrint = false;
+
   elders: Elder[] = [
-    { id: crypto.randomUUID(), name: '苏阿姨', preference: '少盐软饭', mealTags: ['low-salt', 'soft-food'], address: '松桂里3栋201', contact: '女儿13800001111', note: '午餐需敲门等候' },
-    { id: crypto.randomUUID(), name: '何叔叔', preference: '糖尿病餐', mealTags: ['diabetic'], address: '松桂里5栋104', contact: '邻居王姐', note: '行动慢，放门口需电话确认' },
-    { id: crypto.randomUUID(), name: '林奶奶', preference: '素食', mealTags: ['vegetarian'], address: '梧桐巷12号', contact: '儿子13900002222', note: '周三加汤' }
+    { id: crypto.randomUUID(), name: '苏阿姨', preference: '少盐软饭', mealTags: ['low-salt', 'soft-food'], address: '松桂里3栋201', contact: '女儿13800001111', note: '午餐需敲门等候', deliveryDays: [1, 2, 3, 4, 5, 6, 7], pauseDates: [], specialMealNote: '' },
+    { id: crypto.randomUUID(), name: '何叔叔', preference: '糖尿病餐', mealTags: ['diabetic'], address: '松桂里5栋104', contact: '邻居王姐', note: '行动慢，放门口需电话确认', deliveryDays: [1, 2, 3, 4, 5, 6, 7], pauseDates: [], specialMealNote: '无糖、少碳水' },
+    { id: crypto.randomUUID(), name: '林奶奶', preference: '素食', mealTags: ['vegetarian'], address: '梧桐巷12号', contact: '儿子13900002222', note: '周三加汤', deliveryDays: [1, 2, 3, 4, 5, 6, 7], pauseDates: [], specialMealNote: '' }
   ];
 
   volunteers: Volunteer[] = [
-    { id: crypto.randomUUID(), name: '小赵', phone: '13600003333', capacity: 4, area: '松桂里' },
-    { id: crypto.randomUUID(), name: '陈姐', phone: '13700004444', capacity: 3, area: '梧桐巷' }
+    { id: crypto.randomUUID(), name: '小赵', phone: '13600003333', capacity: 4, area: '松桂里', availableDays: [1, 2, 3, 4, 5, 6, 7] },
+    { id: crypto.randomUUID(), name: '陈姐', phone: '13700004444', capacity: 3, area: '梧桐巷', availableDays: [1, 2, 3, 4, 5, 6, 7] }
   ];
 
   tasks: MealTask[] = [];
+  phoneNotifications: PhoneNotification[] = [];
   taskDate = today;
   kanbanSort: KanbanSortMap = {};
-  elderForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
-  volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '' };
+  elderForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5, 6, 7], pauseDates: [], specialMealNote: '' };
+  volunteerForm: Omit<Volunteer, 'id'> = { name: '', phone: '', capacity: 3, area: '', availableDays: [1, 2, 3, 4, 5, 6, 7] };
 
   mealTags: MealTag[] = [...PRESET_TAGS];
   newTagName = '';
@@ -1115,7 +1197,16 @@ export class App {
   editingTagName = '';
 
   editingElderId: string | null = null;
-  elderEditForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
+  elderEditForm: Omit<Elder, 'id'> = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5, 6, 7], pauseDates: [], specialMealNote: '' };
+
+  get viewModeLabel(): string {
+    switch (this.viewMode) {
+      case 'schedule': return '排班前端';
+      case 'meal-prep': return '备餐产能与出餐核对';
+      case 'volunteer-delivery': return '志愿者配送';
+      default: return '排班前端';
+    }
+  }
 
   visitRecords: VisitRecord[] = [];
   visitPanelVisible = false;
@@ -1174,20 +1265,90 @@ export class App {
     this.loadVisits();
     this.loadMealTags();
     this.loadExceptions();
+    this.loadPhoneNotifications();
     if (this.tasks.length === 0) this.generateTasks();
+  }
+
+  setViewMode(mode: AppViewMode) {
+    this.viewMode = mode;
+  }
+
+  quickOpenKitchenPrint() {
+    if (this.viewMode === 'meal-prep' && this.mealPrepComp) {
+      this.mealPrepComp.openPrintView();
+    } else {
+      this.pendingKitchenPrint = true;
+      this.viewMode = 'meal-prep';
+    }
+  }
+
+  ngAfterViewChecked() {
+    if (this.pendingKitchenPrint && this.mealPrepComp) {
+      this.pendingKitchenPrint = false;
+      setTimeout(() => {
+        this.mealPrepComp.openPrintView();
+      }, 0);
+    }
+  }
+
+  onPrepExceptionCreated(exc: PrepExceptionRecord) {
+    this.exceptionRecords = [exc, ...this.exceptionRecords];
+    this.saveExceptions();
+  }
+
+  onPrepNotificationCreated(notif: PrepPhoneNotification) {
+    const exists = this.phoneNotifications.some(n => n.id === notif.id || n.taskId === notif.taskId);
+    if (!exists) {
+      this.phoneNotifications = [notif as unknown as PhoneNotification, ...this.phoneNotifications];
+      this.savePhoneNotifications();
+    }
+  }
+
+  onPrepTaskUpdated(data: { taskId: string; status: MealTask['status']; exception: string }) {
+    this.tasks = this.tasks.map(t =>
+      t.id === data.taskId ? { ...t, status: data.status, exception: data.exception || t.exception } : t
+    );
+    this.save();
+  }
+
+  onDeliveryStatusUpdated(data: any) {
+    if (data.taskUpdated) {
+      this.tasks = this.tasks.map(t =>
+        t.id === data.taskUpdated.taskId ? {
+          ...t,
+          status: data.taskUpdated.status,
+          exception: data.taskUpdated.exception || t.exception,
+        } : t
+      );
+      this.save();
+    }
+    if (data.exceptionCreated) {
+      const exists = this.exceptionRecords.some(r => r.id === data.exceptionCreated.id);
+      if (!exists) {
+        this.exceptionRecords = [data.exceptionCreated, ...this.exceptionRecords];
+        this.saveExceptions();
+      }
+    }
+    if (data.notificationCreated) {
+      const exists = this.phoneNotifications.some(n => n.id === data.notificationCreated.id);
+      if (!exists) {
+        this.phoneNotifications = [data.notificationCreated, ...this.phoneNotifications];
+        this.savePhoneNotifications();
+      }
+    }
   }
 
   addElder() {
     if (!this.elderForm.name.trim()) return;
     this.elders = [{ id: crypto.randomUUID(), ...this.elderForm }, ...this.elders];
-    this.elderForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
+    this.elderForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5, 6, 7], pauseDates: [], specialMealNote: '' };
     this.save();
   }
 
   addVolunteer() {
     if (!this.volunteerForm.name.trim()) return;
     this.volunteers = [{ id: crypto.randomUUID(), ...this.volunteerForm, capacity: Number(this.volunteerForm.capacity || 1) }, ...this.volunteers];
-    this.volunteerForm = { name: '', phone: '', capacity: 3, area: '' };
+    this.volunteerForm = { name: '', phone: '', capacity: 3, area: '', availableDays: [1, 2, 3, 4, 5, 6, 7] };
     this.save();
   }
 
@@ -1195,7 +1356,7 @@ export class App {
     const existing = new Set(this.tasks.filter((task) => task.date === this.taskDate).map((task) => task.elderId));
     const created = this.elders
       .filter((elder) => !existing.has(elder.id))
-      .map((elder) => ({ id: crypto.randomUUID(), elderId: elder.id, date: this.taskDate, volunteerId: '', status: '待分配' as const, exception: '' }));
+      .map((elder) => ({ id: crypto.randomUUID(), elderId: elder.id, date: this.taskDate, volunteerId: '', status: '待分配' as const, exception: '', isManuallyModified: false, specialMealNote: elder.specialMealNote || '' }));
     this.tasks = [...created, ...this.tasks];
     this.save();
   }
@@ -1684,6 +1845,9 @@ export class App {
       address: elder.address,
       contact: elder.contact,
       note: elder.note,
+      deliveryDays: elder.deliveryDays || [1, 2, 3, 4, 5, 6, 7],
+      pauseDates: elder.pauseDates || [],
+      specialMealNote: elder.specialMealNote || '',
     };
   }
 
@@ -1707,7 +1871,7 @@ export class App {
 
   cancelEditElder() {
     this.editingElderId = null;
-    this.elderEditForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '' };
+    this.elderEditForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5, 6, 7], pauseDates: [], specialMealNote: '' };
   }
 
   elderMealTags(elderId: string): MealTag[] {
@@ -1766,6 +1930,15 @@ export class App {
   private loadVisits() {
     const raw = localStorage.getItem('zfl-4-visits');
     if (raw) this.visitRecords = JSON.parse(raw);
+  }
+
+  private savePhoneNotifications() {
+    localStorage.setItem('zfl-4-phone-notifications', JSON.stringify(this.phoneNotifications));
+  }
+
+  private loadPhoneNotifications() {
+    const raw = localStorage.getItem('zfl-4-phone-notifications');
+    if (raw) this.phoneNotifications = JSON.parse(raw);
   }
 
   openImportExportPanel() {
