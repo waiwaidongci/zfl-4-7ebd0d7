@@ -3434,6 +3434,14 @@ export class App implements AfterViewChecked, OnInit {
       }
     }
 
+    if (data.prepData !== undefined && (!data.prepData || typeof data.prepData !== 'object' || Array.isArray(data.prepData))) {
+      errors.push('prepData 字段格式不正确（必须为对象）');
+    }
+
+    if (data.deliveryData !== undefined && (!data.deliveryData || typeof data.deliveryData !== 'object' || Array.isArray(data.deliveryData))) {
+      errors.push('deliveryData 字段格式不正确（必须为对象）');
+    }
+
     if (errors.length > 0) {
       this.importError = {
         type: 'validation',
@@ -3454,12 +3462,20 @@ export class App implements AfterViewChecked, OnInit {
       visitRecords: data.visitRecords || [],
       phoneNotifications: data.phoneNotifications || [],
       callbackTasks: data.callbackTasks || [],
-      kanbanSort: data.kanbanSort || {}
+      kanbanSort: data.kanbanSort || {},
+      prepData: data.prepData || {},
+      deliveryData: data.deliveryData || {},
+    };
+
+    const nestedStatusCount = (storageData: Record<string, Record<string, unknown>> | undefined): number => {
+      if (!storageData) return 0;
+      return Object.values(storageData).reduce((sum, dayData) => sum + Object.keys(dayData || {}).length, 0);
     };
 
     const totalCount = backup.elders.length + backup.volunteers.length + backup.tasks.length
       + backup.mealTags.length + backup.exceptionRecords.length + backup.visitRecords.length
-      + backup.phoneNotifications.length + backup.callbackTasks.length;
+      + backup.phoneNotifications.length + backup.callbackTasks.length
+      + nestedStatusCount(backup.prepData) + nestedStatusCount(backup.deliveryData);
 
     if (totalCount === 0) {
       this.importError = {
