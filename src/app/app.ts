@@ -4387,7 +4387,7 @@ export class App {
       '手动登记': 0
     };
     for (const item of items) {
-      const source = item.data?.source || item.source || '手动登记';
+      const source = item.item?.source || item.data?.source || item.source || '手动登记';
       if (result[source] !== undefined) {
         result[source]++;
       } else {
