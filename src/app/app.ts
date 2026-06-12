@@ -458,12 +458,12 @@ type ImportError = {
               <button type="button" class="ghost sm" (click)="openPhoneNotificationPanel()">管理</button>
             </div>
             <div class="phone-status-row">
-              <div class="phone-status-item"><strong>{{ phoneNotifications.filter(n => n.notificationStatus === '未通知').length }}</strong><span>待通知</span></div>
-              <div class="phone-status-item"><strong>{{ phoneNotifications.filter(n => n.notificationStatus === '未接通' || n.notificationStatus === '稍后再拨').length }}</strong><span>需回拨</span></div>
+              <div class="phone-status-item"><strong>{{ getPendingNotificationCount() }}</strong><span>待通知</span></div>
+              <div class="phone-status-item"><strong>{{ getCallbackRequiredNotificationCount() }}</strong><span>需回拨</span></div>
               <div class="phone-status-item"><strong>{{ getPendingCallbackCount() }}</strong><span>回拨中</span></div>
             </div>
             <div class="phone-callback-list">
-              <div class="phone-callback-item" *ngFor="let cb of callbackTasks.filter(t => t.status === '待回拨' || t.status === '回拨中').slice(0, 3)">
+              <div class="phone-callback-item" *ngFor="let cb of activeCallbackTasksPreview()">
                 <div class="cb-item-header">
                   <strong>{{ elderName(cb.elderId) }}</strong>
                   <span class="cb-status-tag" [style.color]="cb.status === '待回拨' ? '#d9a84a' : '#5a8fd9'" [style.borderColor]="cb.status === '待回拨' ? '#d9a84a' : '#5a8fd9'">{{ cb.status }}</span>
@@ -481,7 +481,7 @@ type ImportError = {
                   <button type="button" class="sm" *ngIf="cb.status === '回拨中'" (click)="editCallbackTask(cb.id)">完成回拨</button>
                 </div>
               </div>
-              <p class="muted center" *ngIf="callbackTasks.filter(t => t.status === '待回拨' || t.status === '回拨中').length === 0">暂无待处理回拨任务</p>
+              <p class="muted center" *ngIf="getPendingCallbackCount() === 0">暂无待处理回拨任务</p>
             </div>
           </section>
         </aside>
@@ -883,7 +883,7 @@ type ImportError = {
                     <button type="button" class="ghost sm" *ngIf="notif.notificationStatus !== '已通知'" (click)="updateNotificationStatus(notif.id, '已通知')">标记已通知</button>
                     <button type="button" class="ghost sm" *ngIf="notif.notificationStatus === '未通知'" (click)="updateNotificationStatus(notif.id, '未接通')">未接通</button>
                     <button type="button" class="sm" style="background:#5a8fd9" (click)="openCallbackForm(notif)">
-                      {{ getTaskCallbacks(notif.taskId).some(t => t.status !== '已完成' && t.status !== '已取消') ? '查看回拨' : '设置回拨' }}
+                      {{ hasActiveCallbackTask(notif.taskId) ? '查看回拨' : '设置回拨' }}
                     </button>
                   </div>
                   <small class="created-at">更新于 {{ notif.updatedAt }}</small>
@@ -1628,7 +1628,7 @@ export class App implements AfterViewChecked {
       const newNotif = notif as unknown as PhoneNotification;
       this.phoneNotifications = [newNotif, ...this.phoneNotifications];
       this.savePhoneNotifications();
-      if (newNotif.notificationStatus === '未接通' || newNotif.notificationStatus === '稍后再拨' || newNotif.notificationStatus === '未通知') {
+      if (this.shouldCreateAutoCallback(newNotif)) {
         this.createAutoCallbackTask(newNotif, 2);
       }
     }
@@ -1665,7 +1665,7 @@ export class App implements AfterViewChecked {
         const newNotif = data.notificationCreated;
         this.phoneNotifications = [newNotif, ...this.phoneNotifications];
         this.savePhoneNotifications();
-        if (newNotif.notificationStatus === '未接通' || newNotif.notificationStatus === '稍后再拨' || newNotif.notificationStatus === '未通知') {
+        if (this.shouldCreateAutoCallback(newNotif)) {
           this.createAutoCallbackTask(newNotif, 1);
         }
       }
@@ -2469,10 +2469,32 @@ export class App implements AfterViewChecked {
     return this.callbackTasks.filter(t => t.status === '待回拨' || t.status === '回拨中').length;
   }
 
+  getPendingNotificationCount(): number {
+    return this.phoneNotifications.filter(n => n.notificationStatus === '未通知').length;
+  }
+
+  getCallbackRequiredNotificationCount(): number {
+    return this.phoneNotifications.filter(n => this.shouldCreateAutoCallback(n)).length;
+  }
+
+  activeCallbackTasksPreview(): CallbackTask[] {
+    return this.callbackTasks
+      .filter(t => t.status === '待回拨' || t.status === '回拨中')
+      .slice(0, 3);
+  }
+
+  hasActiveCallbackTask(taskId: string): boolean {
+    return this.getTaskCallbacks(taskId).some(t => t.status !== '已完成' && t.status !== '已取消');
+  }
+
   getTaskCallbacks(taskId: string): CallbackTask[] {
     return this.callbackTasks
       .filter(t => t.taskId === taskId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  private shouldCreateAutoCallback(notification: PhoneNotification): boolean {
+    return notification.notificationStatus === '未接通' || notification.notificationStatus === '稍后再拨';
   }
 
   createAutoCallbackTask(notification: PhoneNotification, defaultDelayHours: number = 1) {
