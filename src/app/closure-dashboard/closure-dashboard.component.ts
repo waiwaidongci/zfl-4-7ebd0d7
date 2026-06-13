@@ -19,13 +19,13 @@ import {
   ExceptionSource,
   ExceptionStatus,
   TaskStatusUpdatePayload,
+  PrepStatus,
+  DeliveryStatus,
 } from './closure-dashboard.types';
 import { ClosureDashboardService } from './closure-dashboard.service';
 import { MealPrepService } from '../meal-prep/meal-prep.service';
 import { VolunteerDeliveryService } from '../volunteer-delivery/volunteer-delivery.service';
 import { SYNC_INSTANCE, SyncNotification, SyncDataType } from '../sync.service';
-import type { PrepStatus } from '../meal-prep/meal-prep.types';
-import type { DeliveryStatus } from '../volunteer-delivery/volunteer-delivery.types';
 
 export type ClosureStatusUpdateResult = {
   taskUpdated?: MealTask;

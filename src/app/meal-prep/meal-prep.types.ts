@@ -1,4 +1,5 @@
-export type PrepStatus = '待备餐' | '备餐中' | '已完成' | '缺餐异常';
+import type { PrepStatus } from '../shared.types';
+export type { PrepStatus } from '../shared.types';
 
 export type VolunteerRef = {
   id: string;

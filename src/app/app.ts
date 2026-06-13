@@ -15,125 +15,23 @@ import {
   ConflictResolution,
 } from './sync.service';
 import {
-  ExceptionRecord as PrepExceptionRecord,
-  PhoneNotification as PrepPhoneNotification,
-} from './meal-prep/meal-prep.service';
+  MealTag,
+  Elder,
+  Volunteer,
+  MealTask,
+  ExceptionCategory,
+  ExceptionSeverity,
+  ExceptionStatus,
+  ExceptionSource,
+  ExceptionRecord,
+  VisitRecord,
+  PhoneNotification,
+  TemporaryDeliveryChange,
+  CallbackTask,
+  KanbanSortMap,
+} from './shared.types';
 
 type AppViewMode = 'schedule' | 'meal-prep' | 'volunteer-delivery' | 'closure-dashboard';
-
-type MealTag = {
-  id: string;
-  name: string;
-  color: string;
-};
-
-type Elder = {
-  id: string;
-  name: string;
-  preference: string;
-  mealTags: string[];
-  address: string;
-  contact: string;
-  note: string;
-  deliveryDays: number[];
-  pauseDates: string[];
-  specialMealNote: string;
-};
-
-type Volunteer = {
-  id: string;
-  name: string;
-  phone: string;
-  capacity: number;
-  area: string;
-  availableDays: number[];
-};
-
-type MealTask = {
-  id: string;
-  elderId: string;
-  date: string;
-  volunteerId: string;
-  status: '待分配' | '配送中' | '已送达' | '异常';
-  exception: string;
-  isManuallyModified: boolean;
-  specialMealNote: string;
-};
-
-type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收' | '餐食问题' | '配送延误' | '老人身体不适' | '其他';
-type ExceptionSeverity = '一般' | '较重' | '紧急';
-type ExceptionStatus = '待处理' | '处理中' | '已解决';
-type ExceptionSource = '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
-
-type ExceptionRecord = {
-  id: string;
-  taskId: string;
-  elderId: string;
-  date: string;
-  category: ExceptionCategory;
-  severity: ExceptionSeverity;
-  description: string;
-  handler: string;
-  status: ExceptionStatus;
-  result: string;
-  source: ExceptionSource;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type VisitRecord = {
-  id: string;
-  elderId: string;
-  visitDate: string;
-  visitMethod: '电话' | '上门' | '视频' | '其他';
-  healthFeedback: string;
-  mealFeedback: string;
-  nextAttention: string;
-  createdAt: string;
-};
-
-type PhoneNotification = {
-  id: string;
-  date: string;
-  targetType: 'elder' | 'volunteer';
-  targetId: string;
-  phone: string;
-  taskId: string;
-  notificationStatus: '未通知' | '已通知' | '未接通' | '稍后再拨';
-  remark: string;
-  source: '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
-  updatedAt: string;
-};
-
-type TemporaryDeliveryChange = {
-  id: string;
-  elderId: string;
-  date: string;
-  address?: string;
-  contact?: string;
-  mealTagIds?: string[];
-  specialMealNote?: string;
-  volunteerId?: string;
-  reason: string;
-  createdAt: string;
-};
-
-type CallbackTask = {
-  id: string;
-  notificationId: string;
-  taskId: string;
-  elderId: string;
-  date: string;
-  phone: string;
-  nextCallbackTime: string;
-  handler: string;
-  status: '待回拨' | '回拨中' | '已完成' | '已取消';
-  result: string;
-  callbackCount: number;
-  remark: string;
-  createdAt: string;
-  updatedAt: string;
-};
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -149,8 +47,6 @@ const TAG_COLORS = [
   '#4a9f6d', '#d78b63', '#6ba36a', '#8b7cc4', '#c75454',
   '#5a8fd9', '#d9a84a', '#9a6bd9', '#4aa6a6', '#d97aa6'
 ];
-
-type KanbanSortMap = Record<string, Record<string, string[]>>;
 
 type KanbanGroup = {
   volunteer: Volunteer;
@@ -3845,7 +3741,7 @@ export class App implements AfterViewChecked, OnInit {
     }
   }
 
-  onPrepExceptionCreated(exc: PrepExceptionRecord) {
+  onPrepExceptionCreated(exc: ExceptionRecord) {
     if (this.isExceptionDuplicate(exc.taskId, '备餐缺餐', (exc as any).category || '餐食问题')) {
       this.showSyncToast('检测到重复异常记录，已忽略', 'warn');
       return;
@@ -3854,7 +3750,7 @@ export class App implements AfterViewChecked, OnInit {
     this.saveExceptions();
   }
 
-  onPrepNotificationCreated(notif: PrepPhoneNotification) {
+  onPrepNotificationCreated(notif: PhoneNotification) {
     const n = notif as unknown as PhoneNotification;
     if (this.isNotificationDuplicate(n.taskId, n.source, n.targetId)) {
       this.showSyncToast('检测到重复电话通知，已忽略', 'warn');

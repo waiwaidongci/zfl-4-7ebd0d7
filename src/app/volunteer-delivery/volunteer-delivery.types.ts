@@ -1,4 +1,5 @@
-export type DeliveryStatus = '待配送' | '配送中' | '已送达' | '异常' | '未接通';
+import type { DeliveryStatus } from '../shared.types';
+export type { DeliveryStatus } from '../shared.types';
 
 export type DeliveryStoredStatus = {
   status: DeliveryStatus;

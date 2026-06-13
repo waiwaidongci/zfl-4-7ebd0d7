@@ -16,102 +16,31 @@ import {
   DeliveryStoredStatus,
 } from './volunteer-delivery.types';
 import { SYNC_INSTANCE, SyncConflictGroup, SyncNotification } from '../sync.service';
+import {
+  TemporaryDeliveryChange,
+  MealTag,
+  Elder,
+  Volunteer,
+  MealTask,
+  VisitRecord,
+  ExceptionSource,
+  ExceptionRecord,
+  PhoneNotification,
+  KanbanSortMap,
+} from '../shared.types';
 
-export type TemporaryDeliveryChange = {
-  id: string;
-  elderId: string;
-  date: string;
-  address?: string;
-  contact?: string;
-  mealTagIds?: string[];
-  specialMealNote?: string;
-  volunteerId?: string;
-  reason: string;
-  createdAt: string;
-};
-
-export type MealTag = {
-  id: string;
-  name: string;
-  color: string;
-};
-
-export type Elder = {
-  id: string;
-  name: string;
-  preference: string;
-  mealTags: string[];
-  address: string;
-  contact: string;
-  note: string;
-  deliveryDays: number[];
-  pauseDates: string[];
-  specialMealNote: string;
-};
-
-export type Volunteer = {
-  id: string;
-  name: string;
-  phone: string;
-  capacity: number;
-  area: string;
-  availableDays: number[];
-};
-
-export type MealTask = {
-  id: string;
-  elderId: string;
-  date: string;
-  volunteerId: string;
-  status: '待分配' | '配送中' | '已送达' | '异常';
-  exception: string;
-  isManuallyModified: boolean;
-  specialMealNote: string;
-};
-
-export type VisitRecord = {
-  id: string;
-  elderId: string;
-  visitDate: string;
-  visitMethod: '电话' | '上门' | '视频' | '其他';
-  healthFeedback: string;
-  mealFeedback: string;
-  nextAttention: string;
-  createdAt: string;
-};
-
-export type ExceptionSource = '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
-
-export type ExceptionRecord = {
-  id: string;
-  taskId: string;
-  elderId: string;
-  date: string;
-  category: '无人应答' | '地址错误' | '老人拒收' | '餐食问题' | '配送延误' | '老人身体不适' | '其他';
-  severity: '一般' | '较重' | '紧急';
-  description: string;
-  handler: string;
-  status: '待处理' | '处理中' | '已解决';
-  result: string;
-  source: ExceptionSource;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type PhoneNotification = {
-  id: string;
-  date: string;
-  targetType: 'elder' | 'volunteer';
-  targetId: string;
-  phone: string;
-  taskId: string;
-  notificationStatus: '未通知' | '已通知' | '未接通' | '稍后再拨';
-  remark: string;
-  source: ExceptionSource;
-  updatedAt: string;
-};
-
-export type KanbanSortMap = Record<string, Record<string, string[]>>;
+export type {
+  TemporaryDeliveryChange,
+  MealTag,
+  Elder,
+  Volunteer,
+  MealTask,
+  VisitRecord,
+  ExceptionSource,
+  ExceptionRecord,
+  PhoneNotification,
+  KanbanSortMap,
+} from '../shared.types';
 
 export type TaskWritebackResult = {
   taskUpdated?: MealTask;
