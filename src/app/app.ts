@@ -251,6 +251,100 @@ type SimulationData = {
   dayStats: Record<string, DaySimulationStats>;
 };
 
+type SimDiffTaskItem = {
+  taskId: string;
+  elderId: string;
+  elderName: string;
+  elderAddress: string;
+  volunteerId?: string;
+  volunteerName?: string;
+  routeOrder?: number;
+  specialMealNote?: string;
+  isPaused?: boolean;
+};
+
+type SimDiffAddedTask = SimDiffTaskItem & {
+  changeType: 'added';
+  addReason?: 'new-elder' | 'resumed-from-pause' | 'delivery-day-added';
+};
+
+type SimDiffRemovedTask = SimDiffTaskItem & {
+  changeType: 'removed';
+  removeReason?: 'paused' | 'delivery-day-removed' | 'elder-removed';
+};
+
+type SimDiffVolunteerChange = SimDiffTaskItem & {
+  changeType: 'volunteer';
+  oldVolunteerId?: string;
+  oldVolunteerName?: string;
+  newVolunteerId?: string;
+  newVolunteerName?: string;
+};
+
+type SimDiffRouteChange = {
+  changeType: 'route';
+  volunteerId: string;
+  volunteerName: string;
+  oldOrder: Array<{ taskId: string; elderId: string; elderName: string; position: number }>;
+  newOrder: Array<{ taskId: string; elderId: string; elderName: string; position: number }>;
+  movedTasks: Array<{ taskId: string; elderId: string; elderName: string; oldPos: number; newPos: number }>;
+  compositionChanged: boolean;
+  addedElders: Array<{ elderId: string; elderName: string }>;
+  removedElders: Array<{ elderId: string; elderName: string }>;
+};
+
+type SimDiffPausedItem = {
+  elderId: string;
+  elderName: string;
+  address: string;
+  contact: string;
+  wasPaused: boolean;
+  isPaused: boolean;
+  changeType: 'pause-new' | 'pause-resume' | 'pause-unchanged';
+};
+
+type SimDiffSpecialMealItem = {
+  taskId: string;
+  elderId: string;
+  elderName: string;
+  oldNote?: string;
+  newNote?: string;
+  changeType: 'special-new' | 'special-removed' | 'special-changed' | 'special-unchanged';
+};
+
+type DaySimulationDiff = {
+  date: string;
+  totalTasks: { before: number; after: number; diff: number };
+  assignedTasks: { before: number; after: number; diff: number };
+  addedTasks: SimDiffAddedTask[];
+  removedTasks: SimDiffRemovedTask[];
+  volunteerChanges: SimDiffVolunteerChange[];
+  routeChanges: SimDiffRouteChange[];
+  pausedChanges: SimDiffPausedItem[];
+  specialMealChanges: SimDiffSpecialMealItem[];
+  hasChanges: boolean;
+  pauseEffectiveCount: {
+    newPausedAffected: number;
+    resumedAffected: number;
+    totalPausedIncluded: number;
+  };
+};
+
+type SimulationDiffResult = {
+  dayDiffs: Record<string, DaySimulationDiff>;
+  summary: {
+    totalAdded: number;
+    totalRemoved: number;
+    totalVolunteerChanges: number;
+    totalRouteChanges: number;
+    totalPauseChanges: number;
+    totalSpecialMealChanges: number;
+    datesWithChanges: string[];
+    totalPausedNew: number;
+    totalPausedResumed: number;
+  };
+};
+
 @Component({
   selector: 'app-root',
   imports: [CommonModule, FormsModule, MealPrepComponent, VolunteerDeliveryComponent, ClosureDashboardComponent],
@@ -405,7 +499,7 @@ type SimulationData = {
             <div class="simulation-actions">
               <button type="button" class="ghost sm" (click)="openSimulationPanel()">📊 查看详情</button>
               <button type="button" class="auto-assign-btn sm" (click)="autoAssignSimulationTasks()">🔄 自动分配</button>
-              <button type="button" class="sm submit-btn" (click)="submitSimulation()">✓ 提交方案</button>
+              <button type="button" class="sm submit-btn" (click)="submitSimulation()">📝 预览差异并提交</button>
               <button type="button" class="ghost sm cancel-btn" (click)="cancelSimulation()">✕ 取消模拟</button>
             </div>
           </div>
@@ -1882,12 +1976,400 @@ type SimulationData = {
           <div class="sim-modal-footer">
             <button type="button" class="ghost" (click)="closeSimulationPanel()">关闭</button>
             <button type="button" class="auto-assign-btn" (click)="autoAssignSimulationTasks(); closeSimulationPanel()">重新自动分配</button>
-            <button type="button" class="submit-btn" (click)="submitSimulation()">提交方案</button>
+            <button type="button" class="submit-btn" (click)="submitSimulation()">📝 预览差异并提交</button>
           </div>
         </div>
       </div>
 
-      <div class="sync-toast" *ngIf="syncToastVisible" [class.toast-warn]="lastSyncType === 'warn'" [class.toast-error]="lastSyncType === 'error'">
+      <div class="modal-overlay" *ngIf="simulationDiffVisible" (click)="closeSimulationDiffPreview()">
+        <div class="modal-panel simulation-diff-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>📋 提交前差异预览</h2>
+              <p class="muted">{{ simulationData?.startDate }} 至 {{ simulationData?.endDate }} · 共 {{ getSimulationDatesCount() }} 天 · {{ getSummaryDatesWithChangesCount() }} 天有变化</p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeSimulationDiffPreview()">关闭</button>
+          </div>
+
+          <div class="diff-summary-bar" *ngIf="simulationDiffResult">
+            <div class="diff-sum-item added">
+              <strong>{{ getSummaryTotalAdded() }}</strong>
+              <span>新增任务</span>
+            </div>
+            <div class="diff-sum-item removed">
+              <strong>{{ getSummaryTotalRemoved() }}</strong>
+              <span>移除任务</span>
+            </div>
+            <div class="diff-sum-item volunteer">
+              <strong>{{ getSummaryTotalVolunteerChanges() }}</strong>
+              <span>分配变更</span>
+            </div>
+            <div class="diff-sum-item route">
+              <strong>{{ getSummaryTotalRouteChanges() }}</strong>
+              <span>路线调整</span>
+            </div>
+            <div class="diff-sum-item paused">
+              <strong>{{ getSummaryTotalPauseChanges() }}</strong>
+              <span>暂停变化</span>
+            </div>
+            <div class="diff-sum-item special">
+              <strong>{{ getSummaryTotalSpecialMealChanges() }}</strong>
+              <span>餐食变更</span>
+            </div>
+          </div>
+
+          <div class="diff-day-tabs">
+            <button
+              type="button"
+              class="diff-day-tab"
+              *ngFor="let date of simulationData?.dates"
+              [class.active]="simulationDiffDate === date"
+              [class.has-changes]="getDiffDayHasChanges(date)"
+              (click)="simulationDiffDate = date"
+            >
+              {{ date }}
+              <span class="diff-day-badge" *ngIf="getDiffDayHasChanges(date)">
+                {{ getDiffDayBadgeCount(date) }}
+              </span>
+            </button>
+          </div>
+
+          <div class="modal-tabs diff-modal-tabs">
+            <button type="button" [class.active-tab]="simulationDiffTab === 'summary'" (click)="simulationDiffTab = 'summary'">📊 总览</button>
+            <button type="button" [class.active-tab]="simulationDiffTab === 'tasks'" (click)="simulationDiffTab = 'tasks'">
+              ➕➖ 任务增减
+              <span class="tab-badge" *ngIf="getCurrentDiffDayAddedCount() + getCurrentDiffDayRemovedCount() > 0">
+                {{ getCurrentDiffDayAddedCount() + getCurrentDiffDayRemovedCount() }}
+              </span>
+            </button>
+            <button type="button" [class.active-tab]="simulationDiffTab === 'volunteer'" (click)="simulationDiffTab = 'volunteer'">
+              👥 分配变更
+              <span class="tab-badge" *ngIf="getCurrentDiffDayVolunteerCount() > 0">
+                {{ getCurrentDiffDayVolunteerCount() }}
+              </span>
+            </button>
+            <button type="button" [class.active-tab]="simulationDiffTab === 'route'" (click)="simulationDiffTab = 'route'">
+              🗺️ 路线变化
+              <span class="tab-badge" *ngIf="getCurrentDiffDayRouteCount() > 0">
+                {{ getCurrentDiffDayRouteCount() }}
+              </span>
+            </button>
+            <button type="button" [class.active-tab]="simulationDiffTab === 'paused'" (click)="simulationDiffTab = 'paused'">
+              ⏸️ 暂停影响
+              <span class="tab-badge" *ngIf="getSummaryTotalPausedNew() + getSummaryTotalPausedResumed() > 0">
+                {{ getSummaryTotalPausedNew() + getSummaryTotalPausedResumed() }}
+              </span>
+            </button>
+            <button type="button" [class.active-tab]="simulationDiffTab === 'special'" (click)="simulationDiffTab = 'special'">
+              🍽️ 特殊餐食
+              <span class="tab-badge" *ngIf="getCurrentDiffDaySpecialCount() > 0">
+                {{ getCurrentDiffDaySpecialCount() }}
+              </span>
+            </button>
+          </div>
+
+          <div class="modal-body diff-modal-body">
+
+            <div *ngIf="simulationDiffTab === 'summary'" class="diff-overview">
+              <div class="diff-overview-grid" *ngIf="getCurrentDiffDay()">
+                <div class="diff-stat-card">
+                  <div class="diff-stat-icon">📋</div>
+                  <div class="diff-stat-info">
+                    <div class="diff-stat-row">
+                      <span>原有</span><strong>{{ getCurrentDiffDayTotalBefore() }}</strong>
+                    </div>
+                    <div class="diff-stat-row">
+                      <span>模拟</span><strong>{{ getCurrentDiffDayTotalAfter() }}</strong>
+                    </div>
+                    <div class="diff-stat-row" [class.positive]="getCurrentDiffDayTotalDiff() > 0" [class.negative]="getCurrentDiffDayTotalDiff() < 0">
+                      <span>变化</span>
+                      <strong>{{ getCurrentDiffDayTotalDiff() > 0 ? '+' : '' }}{{ getCurrentDiffDayTotalDiff() }}</strong>
+                    </div>
+                    <small>总任务数</small>
+                  </div>
+                </div>
+                <div class="diff-stat-card assigned">
+                  <div class="diff-stat-icon">✅</div>
+                  <div class="diff-stat-info">
+                    <div class="diff-stat-row">
+                      <span>原有</span><strong>{{ getCurrentDiffDayAssignedBefore() }}</strong>
+                    </div>
+                    <div class="diff-stat-row">
+                      <span>模拟</span><strong>{{ getCurrentDiffDayAssignedAfter() }}</strong>
+                    </div>
+                    <div class="diff-stat-row" [class.positive]="getCurrentDiffDayAssignedDiff() > 0" [class.negative]="getCurrentDiffDayAssignedDiff() < 0">
+                      <span>变化</span>
+                      <strong>{{ getCurrentDiffDayAssignedDiff() > 0 ? '+' : '' }}{{ getCurrentDiffDayAssignedDiff() }}</strong>
+                    </div>
+                    <small>已分配任务</small>
+                  </div>
+                </div>
+                <div class="diff-stat-card added">
+                  <div class="diff-stat-icon">➕</div>
+                  <div class="diff-stat-info">
+                    <strong>{{ getCurrentDiffDayAddedCount() }}</strong>
+                    <small>新增任务</small>
+                  </div>
+                </div>
+                <div class="diff-stat-card removed">
+                  <div class="diff-stat-icon">➖</div>
+                  <div class="diff-stat-info">
+                    <strong>{{ getCurrentDiffDayRemovedCount() }}</strong>
+                    <small>移除任务</small>
+                  </div>
+                </div>
+                <div class="diff-stat-card volunteer">
+                  <div class="diff-stat-icon">🔄</div>
+                  <div class="diff-stat-info">
+                    <strong>{{ getCurrentDiffDayVolunteerCount() }}</strong>
+                    <small>志愿者分配变更</small>
+                  </div>
+                </div>
+                <div class="diff-stat-card route">
+                  <div class="diff-stat-icon">🗺️</div>
+                  <div class="diff-stat-info">
+                    <strong>{{ getCurrentDiffDayRouteCount() }}</strong>
+                    <small>志愿者路线调整</small>
+                  </div>
+                </div>
+              </div>
+
+              <div class="diff-section" *ngIf="simulationDiffResult">
+                <h3>📅 每日变化概览</h3>
+                <div class="diff-day-table">
+                  <div class="diff-day-row header">
+                    <span>日期</span>
+                    <span>总任务</span>
+                    <span>新增</span>
+                    <span>移除</span>
+                    <span>分配变更</span>
+                    <span>路线调整</span>
+                    <span>暂停变化</span>
+                    <span>特殊餐食</span>
+                    <span>状态</span>
+                  </div>
+                  <div class="diff-day-row" *ngFor="let date of simulationData?.dates" [class.no-changes]="!getDiffDayHasChanges(date)">
+                    <span class="date-cell">{{ date }}</span>
+                    <span>{{ getDiffDayTotalBefore(date) }} → {{ getDiffDayTotalAfter(date) }}</span>
+                    <span class="added-cell">{{ getDiffDayAddedCount(date) }}</span>
+                    <span class="removed-cell">{{ getDiffDayRemovedCount(date) }}</span>
+                    <span class="volunteer-cell">{{ getDiffDayVolunteerCount(date) }}</span>
+                    <span class="route-cell">{{ getDiffDayRouteCount(date) }}</span>
+                    <span class="pause-cell">
+                      <ng-container *ngIf="getDiffDayNewPausedCount(date) + getDiffDayResumedCount(date) > 0">
+                        <span class="pause-mini-tag pause-new-mini" *ngIf="getDiffDayNewPausedCount(date) > 0">新停{{ getDiffDayNewPausedCount(date) }}</span>
+                        <span class="pause-mini-tag pause-resume-mini" *ngIf="getDiffDayResumedCount(date) > 0">恢复{{ getDiffDayResumedCount(date) }}</span>
+                      </ng-container>
+                      <span class="muted sm" *ngIf="getDiffDayNewPausedCount(date) + getDiffDayResumedCount(date) === 0">-</span>
+                    </span>
+                    <span class="special-cell">{{ getDiffDaySpecialCount(date) || '-' }}</span>
+                    <span>
+                      <span class="status-tag" *ngIf="getDiffDayHasChanges(date)" style="background:#fff3e0;color:#e65100;border-color:#ffb74d;">有变化</span>
+                      <span class="status-tag" *ngIf="!getDiffDayHasChanges(date)" style="background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;">无变化</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div *ngIf="simulationDiffTab === 'tasks'" class="diff-tasks">
+              <div class="diff-section" *ngIf="getCurrentDiffDayAddedCount() > 0">
+                <h3>➕ 新增任务（{{ getCurrentDiffDayAddedCount() }}）</h3>
+                <div class="diff-list">
+                  <div class="diff-item added" *ngFor="let item of getCurrentDiffDayAddedTasks()">
+                    <div class="diff-item-main">
+                      <div class="diff-item-title">
+                        <strong (click)="locateElderInDiff(item.elderId)" class="clickable">{{ item.elderName }}</strong>
+                        <span class="route-order-tag" *ngIf="item.routeOrder">#{{ item.routeOrder }}</span>
+                        <span class="diff-volunteer" *ngIf="item.volunteerName" (click)="locateVolunteerInDiff(item.volunteerId!)" class="clickable">配送：{{ item.volunteerName }}</span>
+                        <span class="diff-volunteer unassigned" *ngIf="!item.volunteerName">未分配</span>
+                        <span class="reason-tag resumed" *ngIf="item.addReason === 'resumed-from-pause'">⏪ 恢复送餐</span>
+                        <span class="reason-tag new" *ngIf="item.addReason === 'new-elder'">👤 新老人</span>
+                        <span class="reason-tag new" *ngIf="item.addReason === 'delivery-day-added'">📅 新增配送日</span>
+                      </div>
+                      <small>{{ item.elderAddress }}</small>
+                      <div class="special-note" *ngIf="item.specialMealNote">🍽️ {{ item.specialMealNote }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="diff-section" *ngIf="getCurrentDiffDayRemovedCount() > 0">
+                <h3>➖ 移除任务（{{ getCurrentDiffDayRemovedCount() }}）</h3>
+                <div class="diff-list">
+                  <div class="diff-item removed" *ngFor="let item of getCurrentDiffDayRemovedTasks()">
+                    <div class="diff-item-main">
+                      <div class="diff-item-title">
+                        <strong (click)="locateElderInDiff(item.elderId)" class="clickable">{{ item.elderName }}</strong>
+                        <span class="route-order-tag" *ngIf="item.routeOrder">#{{ item.routeOrder }}</span>
+                        <span class="diff-volunteer" *ngIf="item.volunteerName">原配送：{{ item.volunteerName }}</span>
+                        <span class="diff-volunteer unassigned" *ngIf="!item.volunteerName">原未分配</span>
+                        <span class="reason-tag paused" *ngIf="item.removeReason === 'paused'">⏸️ 转为暂停</span>
+                        <span class="reason-tag removed" *ngIf="item.removeReason === 'elder-removed'">👤 移除老人</span>
+                        <span class="reason-tag removed" *ngIf="item.removeReason === 'delivery-day-removed'">📅 移除配送日</span>
+                      </div>
+                      <small>{{ item.elderAddress }}</small>
+                      <div class="special-note" *ngIf="item.specialMealNote">🍽️ {{ item.specialMealNote }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p class="muted center" *ngIf="getCurrentDiffDayAddedCount() === 0 && getCurrentDiffDayRemovedCount() === 0">当日无任务增减</p>
+            </div>
+
+            <div *ngIf="simulationDiffTab === 'volunteer'" class="diff-volunteer-change">
+              <div class="diff-section" *ngIf="getCurrentDiffDayVolunteerCount() > 0">
+                <h3>👥 志愿者分配变更（{{ getCurrentDiffDayVolunteerCount() }}）</h3>
+                <div class="diff-list">
+                  <div class="diff-item volunteer-change" *ngFor="let item of getCurrentDiffDayVolunteerChanges()">
+                    <div class="diff-item-main">
+                      <div class="diff-item-title">
+                        <strong (click)="locateElderInDiff(item.elderId)" class="clickable">{{ item.elderName }}</strong>
+                      </div>
+                      <small>{{ item.elderAddress }}</small>
+                      <div class="change-arrow-row">
+                        <div class="change-box old">
+                          <small>原分配</small>
+                          <strong *ngIf="item.oldVolunteerName" (click)="locateVolunteerInDiff(item.oldVolunteerId!)" class="clickable">{{ item.oldVolunteerName }}</strong>
+                          <strong class="unassigned" *ngIf="!item.oldVolunteerName">未分配</strong>
+                        </div>
+                        <div class="change-arrow">→</div>
+                        <div class="change-box new">
+                          <small>新分配</small>
+                          <strong *ngIf="item.newVolunteerName" (click)="locateVolunteerInDiff(item.newVolunteerId!)" class="clickable">{{ item.newVolunteerName }}</strong>
+                          <strong class="unassigned" *ngIf="!item.newVolunteerName">未分配</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p class="muted center" *ngIf="getCurrentDiffDayVolunteerCount() === 0">当日无志愿者分配变更</p>
+            </div>
+
+            <div *ngIf="simulationDiffTab === 'route'" class="diff-route-change">
+              <div class="diff-section" *ngIf="getCurrentDiffDayRouteCount() > 0">
+                <h3>🗺️ 路线顺序变化（{{ getCurrentDiffDayRouteCount() }}名志愿者）</h3>
+                <div class="route-compare-grid">
+                  <div class="route-compare-card" *ngFor="let rc of getCurrentDiffDayRouteChanges()">
+                    <div class="route-compare-header">
+                      <strong (click)="locateVolunteerInDiff(rc.volunteerId)" class="clickable">{{ rc.volunteerName }}</strong>
+                      <span class="moved-count">{{ rc.movedTasks.length }} 单顺序变化</span>
+                    </div>
+                    <div class="route-compare-body">
+                      <div class="route-col old">
+                        <h4>原有顺序</h4>
+                        <div class="route-compare-list">
+                          <div class="route-compare-item" *ngFor="let task of rc.oldOrder" [class.moved]="hasMovedTask(rc.movedTasks, task.elderId)">
+                            <span class="route-num">{{ task.position }}</span>
+                            <span (click)="locateElderInDiff(task.elderId)" class="clickable">{{ task.elderName }}</span>
+                          </div>
+                          <p class="muted sm" *ngIf="rc.oldOrder.length === 0">无任务</p>
+                        </div>
+                      </div>
+                      <div class="route-col-arrow">→</div>
+                      <div class="route-col new">
+                        <h4>模拟顺序</h4>
+                        <div class="route-compare-list">
+                          <div class="route-compare-item" *ngFor="let task of rc.newOrder" [class.moved]="hasMovedTask(rc.movedTasks, task.elderId)">
+                            <span class="route-num">{{ task.position }}</span>
+                            <span (click)="locateElderInDiff(task.elderId)" class="clickable">{{ task.elderName }}</span>
+                            <span class="moved-tag" *ngIf="hasMovedTask(rc.movedTasks, task.elderId)">
+                              {{ getMovedTaskByElder(rc.movedTasks, task.elderId)?.oldPos }}→{{ getMovedTaskByElder(rc.movedTasks, task.elderId)?.newPos }}
+                            </span>
+                          </div>
+                          <p class="muted sm" *ngIf="rc.newOrder.length === 0">无任务</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="route-moved-list" *ngIf="rc.movedTasks.length > 0">
+                      <h5>位置变动明细</h5>
+                      <div class="moved-item" *ngFor="let m of rc.movedTasks">
+                        <span (click)="locateElderInDiff(m.elderId)" class="clickable">{{ m.elderName }}</span>
+                        <span>第 {{ m.oldPos }} 位 → 第 {{ m.newPos }} 位</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p class="muted center" *ngIf="getCurrentDiffDayRouteCount() === 0">当日无路线顺序变化</p>
+            </div>
+
+            <div *ngIf="simulationDiffTab === 'paused'" class="diff-paused">
+              <div class="diff-section">
+                <h3>⏸️ 暂停送餐影响</h3>
+                <div class="diff-list" *ngIf="getCurrentDiffDayPausedCount() > 0">
+                  <div class="diff-item paused-item" *ngFor="let item of getCurrentDiffDayPausedChanges()" [class.new-pause]="item.changeType === 'pause-new'" [class.resume]="item.changeType === 'pause-resume'">
+                    <div class="diff-item-main">
+                      <div class="diff-item-title">
+                        <strong (click)="locateElderInDiff(item.elderId)" class="clickable">{{ item.elderName }}</strong>
+                        <span class="pause-tag new" *ngIf="item.changeType === 'pause-new'">新增暂停</span>
+                        <span class="pause-tag resume" *ngIf="item.changeType === 'pause-resume'">恢复送餐</span>
+                        <span class="pause-tag keep" *ngIf="item.changeType === 'pause-unchanged' && item.isPaused">持续暂停</span>
+                      </div>
+                      <small>{{ item.address }}</small>
+                      <small class="contact">📞 {{ item.contact }}</small>
+                      <div class="pause-status-row">
+                        <span class="pause-status" [class.active]="item.wasPaused">提交前：{{ item.wasPaused ? '已暂停' : '正常送餐' }}</span>
+                        <span class="pause-arrow">→</span>
+                        <span class="pause-status" [class.active]="item.isPaused">提交后：{{ item.isPaused ? '暂停送餐' : '正常送餐' }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p class="muted center" *ngIf="getCurrentDiffDayPausedCount() === 0">当日无暂停送餐的老人</p>
+              </div>
+            </div>
+
+            <div *ngIf="simulationDiffTab === 'special'" class="diff-special">
+              <div class="diff-section" *ngIf="getCurrentDiffDaySpecialCount() > 0">
+                <h3>🍽️ 特殊餐食变化（{{ getCurrentDiffDaySpecialCount() }}）</h3>
+                <div class="diff-list">
+                  <div class="diff-item special-change" *ngFor="let item of getCurrentDiffDaySpecialChanges()">
+                    <div class="diff-item-main">
+                      <div class="diff-item-title">
+                        <strong (click)="locateElderInDiff(item.elderId)" class="clickable">{{ item.elderName }}</strong>
+                        <span class="special-tag new" *ngIf="item.changeType === 'special-new'">新增特殊餐</span>
+                        <span class="special-tag removed" *ngIf="item.changeType === 'special-removed'">取消特殊餐</span>
+                        <span class="special-tag changed" *ngIf="item.changeType === 'special-changed'">餐食调整</span>
+                      </div>
+                      <div class="special-compare" *ngIf="item.changeType === 'special-changed'">
+                        <div class="change-box old">
+                          <small>原有备注</small>
+                          <p>{{ item.oldNote }}</p>
+                        </div>
+                        <div class="change-arrow">→</div>
+                        <div class="change-box new">
+                          <small>模拟备注</small>
+                          <p>{{ item.newNote }}</p>
+                        </div>
+                      </div>
+                      <div class="special-single new" *ngIf="item.changeType === 'special-new'">
+                        <small>新增备注</small>
+                        <p>{{ item.newNote }}</p>
+                      </div>
+                      <div class="special-single removed" *ngIf="item.changeType === 'special-removed'">
+                        <small>移除备注</small>
+                        <p>{{ item.oldNote }}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p class="muted center" *ngIf="getCurrentDiffDaySpecialCount() === 0">当日无特殊餐食变更</p>
+            </div>
+
+          </div>
+
+          <div class="diff-modal-footer">
+            <button type="button" class="ghost" (click)="closeSimulationDiffPreview()">返回修改</button>
+            <button type="button" class="submit-btn confirm-btn" (click)="confirmSubmitSimulation()">
+              ✓ 确认提交以上 {{ getSummaryDatesWithChangesCount() }} 天方案
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sync-toast" *ngIf="syncToastVisible" [class.toast-warn]="lastSyncType === 'warn'" [class.toast-error]="lastSyncType === 'error'" [class.toast-success]="lastSyncType === 'success'">
         <span>{{ lastSyncMessage }}</span>
       </div>
 
@@ -2557,6 +3039,172 @@ type SimulationData = {
 
     .center { text-align: center; }
 
+    .simulation-diff-modal { max-width: 1000px; max-height: 90vh; }
+
+    .diff-summary-bar { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; padding: 14px 22px; background: #fafbf7; border-bottom: 1px solid #e8ede1; }
+    .diff-sum-item { text-align: center; padding: 10px 6px; border-radius: 8px; background: #fff; border: 1px solid #e2e7da; }
+    .diff-sum-item strong { display: block; font-size: 22px; }
+    .diff-sum-item span { font-size: 12px; color: #65715f; }
+    .diff-sum-item.added strong { color: #4a9f6d; }
+    .diff-sum-item.removed strong { color: #c75454; }
+    .diff-sum-item.volunteer strong { color: #5a8fd9; }
+    .diff-sum-item.route strong { color: #9a6bd9; }
+    .diff-sum-item.paused strong { color: #d9a84a; }
+    .diff-sum-item.special strong { color: #b36a2e; }
+
+    .diff-day-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 10px 22px; border-bottom: 1px solid #e8ede1; background: #fff; }
+    .diff-day-tab { padding: 8px 14px; border: 1px solid #d5dcc8; border-radius: 8px; background: #fafbf7; cursor: pointer; white-space: nowrap; font-size: 13px; display: flex; align-items: center; gap: 6px; position: relative; }
+    .diff-day-tab:hover { background: #f0f2ed; }
+    .diff-day-tab.active { background: #4a9f6d; border-color: #3a8f5d; color: #fff; font-weight: 600; }
+    .diff-day-tab.has-changes:not(.active) { border-color: #ffb74d; background: #fff8ed; }
+    .diff-day-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; background: #ffb74d; color: #5a3900; font-size: 11px; border-radius: 10px; font-weight: 600; }
+    .diff-day-tab.active .diff-day-badge { background: rgba(255,255,255,0.25); color: #fff; }
+
+    .diff-modal-tabs { padding: 0 22px; border-bottom: 1px solid #e8ede1; flex-wrap: wrap; }
+    .diff-modal-tabs button { position: relative; }
+    .tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; background: #c75454; color: #fff; font-size: 11px; border-radius: 9px; margin-left: 4px; font-weight: 600; }
+    .active-tab .tab-badge { background: rgba(255,255,255,0.3); }
+
+    .diff-modal-body { max-height: 55vh; overflow-y: auto; padding: 18px 22px; }
+
+    .diff-overview-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 20px; }
+    .diff-stat-card { display: flex; align-items: center; gap: 10px; padding: 14px; border-radius: 10px; background: #f7f8f4; border: 1px solid #e2e7da; }
+    .diff-stat-icon { font-size: 26px; flex-shrink: 0; }
+    .diff-stat-info { flex: 1; min-width: 0; }
+    .diff-stat-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 2px; }
+    .diff-stat-row span { color: #8a9783; }
+    .diff-stat-row strong { font-size: 15px; }
+    .diff-stat-row.positive strong { color: #4a9f6d; }
+    .diff-stat-row.negative strong { color: #c75454; }
+    .diff-stat-info small { font-size: 12px; color: #65715f; display: block; margin-top: 4px; }
+    .diff-stat-card.assigned { background: #edf7f0; }
+    .diff-stat-card.added { background: #eaf5ee; border-color: #b8ddc5; }
+    .diff-stat-card.removed { background: #fceced; border-color: #eeb9b9; }
+    .diff-stat-card.volunteer { background: #eef3fb; border-color: #b9cfee; }
+    .diff-stat-card.route { background: #f3eff8; border-color: #cebae9; }
+
+    .diff-section { margin-top: 18px; }
+    .diff-section h3 { margin: 0 0 12px; font-size: 15px; color: #315448; padding-bottom: 8px; border-bottom: 1px solid #e8ede1; }
+
+    .diff-day-table { border: 1px solid #e2e7da; border-radius: 8px; overflow: hidden; }
+    .diff-day-row { display: grid; grid-template-columns: 1.1fr 1.2fr 0.6fr 0.6fr 0.85fr 0.85fr 1fr 0.8fr 0.75fr; gap: 0; }
+    .diff-day-row.header { background: #f0f2ed; font-weight: 600; font-size: 13px; }
+    .diff-day-row.header span { padding: 10px 12px; border-bottom: 1px solid #e2e7da; }
+    .diff-day-row span { padding: 9px 12px; font-size: 13px; border-bottom: 1px solid #f0f2ed; display: flex; align-items: center; }
+    .diff-day-row:not(.header):last-child span { border-bottom: none; }
+    .diff-day-row:not(.header):hover { background: #fafbf7; }
+    .diff-day-row.no-changes { opacity: 0.6; }
+    .date-cell { font-weight: 600; color: #315448; }
+    .added-cell { color: #4a9f6d; font-weight: 600; }
+    .removed-cell { color: #c75454; font-weight: 600; }
+    .volunteer-cell { color: #5a8fd9; font-weight: 600; }
+    .route-cell { color: #9a6bd9; font-weight: 600; }
+    .pause-cell { color: #d9a84a; font-weight: 600; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .special-cell { color: #b36a2e; font-weight: 600; }
+    .pause-mini-tag { display: inline-block; padding: 1px 6px; font-size: 10px; border-radius: 8px; font-weight: 600; line-height: 1.4; }
+    .pause-new-mini { background: #fceced; color: #c75454; border: 1px solid #eeb9b9; }
+    .pause-resume-mini { background: #eaf5ee; color: #4a9f6d; border: 1px solid #b8ddc5; }
+    .status-tag { display: inline-block; padding: 3px 10px; font-size: 11px; border-radius: 12px; border: 1px solid; font-weight: 600; }
+
+    .diff-list { display: flex; flex-direction: column; gap: 8px; }
+    .diff-item { display: flex; padding: 12px 14px; border-radius: 8px; border: 1px solid #e2e7da; background: #fff; align-items: flex-start; gap: 12px; }
+    .diff-item.added { border-left: 4px solid #4a9f6d; background: #f5faf6; }
+    .diff-item.removed { border-left: 4px solid #c75454; background: #fbf4f4; }
+    .diff-item.volunteer-change { border-left: 4px solid #5a8fd9; background: #f4f8fc; }
+    .diff-item.special-change { border-left: 4px solid #b36a2e; background: #fcf6ee; }
+    .diff-item.paused-item { border-left: 4px solid #d9a84a; background: #fcf7ed; }
+    .diff-item.paused-item.new-pause { border-left-color: #c75454; background: #fbf4f4; }
+    .diff-item.paused-item.resume { border-left-color: #4a9f6d; background: #f5faf6; }
+    .diff-item-main { flex: 1; min-width: 0; }
+    .diff-item-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .diff-item-title strong { font-size: 14px; }
+    .clickable { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+    .clickable:hover { color: #315448; }
+    .route-order-tag { display: inline-block; padding: 2px 8px; background: #5a8fd9; color: #fff; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .diff-volunteer { font-size: 12px; padding: 3px 10px; border-radius: 12px; background: #e8efe6; color: #315448; border: 1px solid #d5dcc8; font-weight: 500; }
+    .diff-volunteer.unassigned { background: #f0f2ed; color: #8a9783; }
+    .reason-tag { display: inline-block; padding: 3px 10px; font-size: 11px; border-radius: 12px; font-weight: 600; }
+    .reason-tag.resumed { background: #eaf5ee; color: #2e7d32; border: 1px solid #b8ddc5; }
+    .reason-tag.new { background: #e8f0fa; color: #1565c0; border: 1px solid #b9cfee; }
+    .reason-tag.paused { background: #fceced; color: #c62828; border: 1px solid #eeb9b9; }
+    .reason-tag.removed { background: #fafafa; color: #616161; border: 1px solid #e0e0e0; }
+
+    .change-arrow-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .change-box { padding: 10px 14px; border-radius: 8px; flex: 1; min-width: 140px; }
+    .change-box small { display: block; font-size: 11px; color: #8a9783; margin-bottom: 4px; }
+    .change-box strong { font-size: 14px; }
+    .change-box.old { background: #f0f2ed; border: 1px solid #d5dcc8; }
+    .change-box.old .unassigned { color: #8a9783; font-weight: 500; }
+    .change-box.new { background: #eaf5ee; border: 1px solid #b8ddc5; }
+    .change-box.new .unassigned { color: #c75454; font-weight: 500; }
+    .change-arrow { font-size: 20px; color: #8a9783; flex-shrink: 0; }
+    .unassigned { color: #8a9783; font-weight: 500; }
+
+    .pause-tag { display: inline-block; padding: 3px 10px; font-size: 11px; border-radius: 12px; font-weight: 600; }
+    .pause-tag.new { background: #fceced; color: #c75454; border: 1px solid #eeb9b9; }
+    .pause-tag.resume { background: #eaf5ee; color: #4a9f6d; border: 1px solid #b8ddc5; }
+    .pause-tag.keep { background: #fff8ed; color: #d9a84a; border: 1px solid #f0d9a0; }
+    .contact { color: #5a8fd9; margin-top: 2px; display: block; }
+    .pause-status-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    .pause-status { font-size: 12px; padding: 4px 10px; border-radius: 6px; background: #f0f2ed; color: #65715f; }
+    .pause-status.active { background: #fceced; color: #c75454; font-weight: 500; }
+    .pause-arrow { color: #8a9783; }
+
+    .special-tag { display: inline-block; padding: 3px 10px; font-size: 11px; border-radius: 12px; font-weight: 600; }
+    .special-tag.new { background: #fcf6ee; color: #b36a2e; border: 1px solid #efd4b4; }
+    .special-tag.removed { background: #fceced; color: #c75454; border: 1px solid #eeb9b9; }
+    .special-tag.changed { background: #eef3fb; color: #5a8fd9; border: 1px solid #b9cfee; }
+    .special-compare { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    .special-compare .change-box p { margin: 0; font-size: 13px; color: #3d4a38; }
+    .special-single { margin-top: 8px; padding: 8px 12px; border-radius: 6px; }
+    .special-single small { display: block; font-size: 11px; color: #8a9783; margin-bottom: 3px; }
+    .special-single p { margin: 0; font-size: 13px; }
+    .special-single.new { background: #fcf6ee; border: 1px solid #efd4b4; }
+    .special-single.removed { background: #fceced; border: 1px solid #eeb9b9; text-decoration: line-through; opacity: 0.8; }
+
+    .route-compare-grid { display: flex; flex-direction: column; gap: 14px; }
+    .route-compare-card { border: 1px solid #e2e7da; border-radius: 10px; background: #fff; overflow: hidden; }
+    .route-compare-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #f7f8f4; border-bottom: 1px solid #e2e7da; }
+    .route-compare-header strong { font-size: 14px; color: #315448; }
+    .moved-count { font-size: 12px; padding: 3px 10px; background: #f3eff8; color: #9a6bd9; border-radius: 12px; font-weight: 500; }
+    .comp-tag { display: inline-block; padding: 3px 10px; font-size: 11px; border-radius: 12px; font-weight: 600; margin-left: 4px; }
+    .comp-tag.added { background: #eaf5ee; color: #2e7d32; border: 1px solid #b8ddc5; }
+    .comp-tag.removed { background: #fceced; color: #c62828; border: 1px solid #eeb9b9; }
+    .route-compare-body { display: grid; grid-template-columns: 1fr 40px 1fr; gap: 0; padding: 12px; }
+    .route-col h4 { margin: 0 0 8px; font-size: 12px; color: #65715f; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+    .route-col.old h4 { color: #c75454; }
+    .route-col.new h4 { color: #4a9f6d; }
+    .route-col-arrow { display: flex; align-items: center; justify-content: center; color: #8a9783; font-size: 18px; font-weight: 600; }
+    .route-compare-list { display: flex; flex-direction: column; gap: 5px; }
+    .route-compare-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 5px; background: #fafbf7; font-size: 12px; }
+    .route-compare-item.moved { background: #fff8ed; border: 1px dashed #ffb74d; }
+    .route-num { flex-shrink: 0; width: 22px; height: 22px; line-height: 22px; text-align: center; background: #d5dcc8; color: #3d4a38; border-radius: 50%; font-size: 11px; font-weight: 600; }
+    .route-col.new .route-num { background: #4a9f6d; color: #fff; }
+    .route-col.old .route-num { background: #c75454; color: #fff; }
+    .moved-tag { margin-left: auto; font-size: 10px; padding: 2px 6px; background: #ffb74d; color: #5a3900; border-radius: 8px; font-weight: 600; }
+    .route-moved-list { padding: 10px 14px; background: #fffbf2; border-top: 1px solid #f0d9a0; }
+    .route-moved-list h5 { margin: 0 0 8px; font-size: 12px; color: #b36a2e; }
+    .moved-item { display: flex; justify-content: space-between; padding: 5px 8px; font-size: 12px; border-bottom: 1px dashed #f0d9a0; }
+    .moved-item:last-child { border-bottom: none; }
+    .moved-item span:last-child { color: #b36a2e; font-weight: 500; }
+
+    .diff-modal-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 22px; border-top: 1px solid #e8ede1; background: #fafbf7; flex-wrap: wrap; }
+    .diff-modal-footer .confirm-btn { background: linear-gradient(135deg, #4a9f6d, #3a8f5d); padding: 10px 24px; font-size: 14px; }
+    .diff-modal-footer .confirm-btn:hover { background: linear-gradient(135deg, #3a8f5d, #2e7f4d); }
+
+    .toast-success { background: #4a9f6d !important; color: #fff; }
+
+    @media (max-width: 900px) {
+      .diff-summary-bar { grid-template-columns: repeat(3, 1fr); }
+      .diff-overview-grid { grid-template-columns: repeat(2, 1fr); }
+      .route-compare-body { grid-template-columns: 1fr; gap: 10px; }
+      .route-col-arrow { transform: rotate(90deg); padding: 4px 0; }
+      .diff-day-row { grid-template-columns: 1.5fr 1fr repeat(4, 0.8fr); font-size: 11px; }
+      .diff-day-row span { padding: 7px 6px; font-size: 11px; }
+      .simulation-diff-modal { max-height: 92vh; }
+      .diff-modal-body { max-height: 45vh; }
+    }
+
     .temp-change-indicator { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
     .temp-change-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #fff3e0; color: #b36a2e; border: 1px solid #f0c78a; }
     .temp-change-existing { margin-bottom: 16px; }
@@ -2874,11 +3522,11 @@ export class App implements AfterViewChecked, OnInit {
   selectedConflictGroupIndex = 0;
   selectedConflictRecordId: string | null = null;
   lastSyncMessage = '';
-  lastSyncType: 'info' | 'warn' | 'error' = 'info';
+  lastSyncType: 'info' | 'warn' | 'error' | 'success' = 'info';
   syncToastVisible = false;
-  private syncToastTimer: any = null;
+  private syncToastTimer: any;
 
-  private showSyncToast(message: string, type: 'info' | 'warn' | 'error' = 'info') {
+  private showSyncToast(message: string, type: 'info' | 'warn' | 'error' | 'success' = 'info') {
     this.lastSyncMessage = message;
     this.lastSyncType = type;
     this.syncToastVisible = true;
@@ -2978,6 +3626,10 @@ export class App implements AfterViewChecked, OnInit {
   simulationViewDate = today;
   simulationPanelVisible = false;
   simulationDetailTab: 'overview' | 'load' | 'unassigned' | 'paused' | 'special' | 'route' = 'overview';
+  simulationDiffVisible = false;
+  simulationDiffResult: SimulationDiffResult | null = null;
+  simulationDiffDate: string = '';
+  simulationDiffTab: 'summary' | 'tasks' | 'volunteer' | 'route' | 'paused' | 'special' = 'summary';
 
   exceptionRecords: ExceptionRecord[] = [];
   exceptionPanelVisible = false;
@@ -3772,22 +4424,553 @@ export class App implements AfterViewChecked, OnInit {
     return this.getSimulationDayStats(this.simulationViewDate);
   }
 
+  computeSimulationDiff(): SimulationDiffResult | null {
+    if (!this.simulationData) return null;
+    const dayDiffs: Record<string, DaySimulationDiff> = {};
+    let totalAdded = 0;
+    let totalRemoved = 0;
+    let totalVolunteerChanges = 0;
+    let totalRouteChanges = 0;
+    let totalPauseChanges = 0;
+    let totalSpecialMealChanges = 0;
+    let totalPausedNew = 0;
+    let totalPausedResumed = 0;
+    const datesWithChanges: string[] = [];
+
+    for (const date of this.simulationData.dates) {
+      const simTasks = this.simulationData.tasks.filter((t) => t.date === date);
+      const realTasks = this.tasks.filter((t) => t.date === date);
+      const simTaskMap = new Map(simTasks.map((t) => [t.elderId, t]));
+      const realTaskMap = new Map(realTasks.map((t) => [t.elderId, t]));
+      const elderMap = new Map(this.elders.map((e) => [e.id, e]));
+      const volunteerMap = new Map(this.volunteers.map((v) => [v.id, v]));
+
+      const addedTasks: SimDiffAddedTask[] = [];
+      const removedTasks: SimDiffRemovedTask[] = [];
+      const volunteerChanges: SimDiffVolunteerChange[] = [];
+      const pausedChanges: SimDiffPausedItem[] = [];
+      const specialMealChanges: SimDiffSpecialMealItem[] = [];
+
+      const allElderIds = new Set([...simTaskMap.keys(), ...realTaskMap.keys()]);
+
+      for (const elderId of allElderIds) {
+        const simTask = simTaskMap.get(elderId);
+        const realTask = realTaskMap.get(elderId);
+        const elder = elderMap.get(elderId);
+        const elderName = elder?.name || '未知老人';
+        const elderAddress = elder?.address || '';
+        const simVolId = simTask?.volunteerId;
+        const realVolId = realTask?.volunteerId;
+        const simVolName = simVolId ? volunteerMap.get(simVolId)?.name : undefined;
+        const realVolName = realVolId ? volunteerMap.get(realVolId)?.name : undefined;
+        const isPausedNow = elder?.pauseDates?.includes(date) || false;
+
+        const simSort = this.simulationData.kanbanSort[date]?.[simVolId || ''] || [];
+        const realSort = this.kanbanSort[date]?.[realVolId || ''] || [];
+        const simRouteOrder = simVolId && simTask ? simSort.indexOf(simTask.id) + 1 : undefined;
+        const realRouteOrder = realVolId && realTask ? realSort.indexOf(realTask.id) + 1 : undefined;
+
+        const simSpecialNote = simTask?.specialMealNote || elder?.specialMealNote || '';
+        const realSpecialNote = realTask?.specialMealNote || elder?.specialMealNote || '';
+
+        const wasPaused = elder?.pauseDates?.includes(date) || false;
+        if (!realTask && simTask) {
+          let addReason: SimDiffAddedTask['addReason'];
+          if (wasPaused && !isPausedNow) {
+            addReason = 'resumed-from-pause';
+          } else {
+            const elderHasAnyRealTask = this.tasks.some(t => t.elderId === elderId);
+            if (!elderHasAnyRealTask) {
+              addReason = 'new-elder';
+            } else {
+              addReason = 'delivery-day-added';
+            }
+          }
+          addedTasks.push({
+            changeType: 'added',
+            taskId: simTask.id,
+            elderId,
+            elderName,
+            elderAddress,
+            volunteerId: simVolId,
+            volunteerName: simVolName,
+            routeOrder: simRouteOrder,
+            specialMealNote: simSpecialNote || undefined,
+            isPaused: isPausedNow,
+            addReason,
+          });
+        } else if (realTask && !simTask) {
+          let removeReason: SimDiffRemovedTask['removeReason'];
+          if (!wasPaused && isPausedNow) {
+            removeReason = 'paused';
+          } else {
+            const elderStillExists = elderMap.has(elderId);
+            if (!elderStillExists) {
+              removeReason = 'elder-removed';
+            } else {
+              removeReason = 'delivery-day-removed';
+            }
+          }
+          removedTasks.push({
+            changeType: 'removed',
+            taskId: realTask.id,
+            elderId,
+            elderName,
+            elderAddress,
+            volunteerId: realVolId,
+            volunteerName: realVolName,
+            routeOrder: realRouteOrder,
+            specialMealNote: realSpecialNote || undefined,
+            isPaused: isPausedNow,
+            removeReason,
+          });
+        } else if (realTask && simTask) {
+          if (simVolId !== realVolId) {
+            volunteerChanges.push({
+              changeType: 'volunteer',
+              taskId: simTask.id,
+              elderId,
+              elderName,
+              elderAddress,
+              oldVolunteerId: realVolId || undefined,
+              oldVolunteerName: realVolName,
+              newVolunteerId: simVolId || undefined,
+              newVolunteerName: simVolName,
+              routeOrder: simRouteOrder,
+            });
+          }
+        }
+
+        if (elder) {
+          let pauseChangeType: SimDiffPausedItem['changeType'] = 'pause-unchanged';
+          const realTaskForElder = realTaskMap.get(elderId);
+          const simTaskForElder = simTaskMap.get(elderId);
+          const wasInReal = !!realTaskForElder && !wasPaused;
+          const isInSim = !!simTaskForElder && !isPausedNow;
+          if (!wasPaused && isPausedNow) {
+            pauseChangeType = 'pause-new';
+            totalPauseChanges++;
+            totalPausedNew++;
+          } else if (wasPaused && !isPausedNow) {
+            pauseChangeType = 'pause-resume';
+            totalPauseChanges++;
+            totalPausedResumed++;
+          }
+          if (pauseChangeType !== 'pause-unchanged' || wasPaused || isPausedNow) {
+            pausedChanges.push({
+              elderId,
+              elderName: elder.name,
+              address: elder.address,
+              contact: elder.contact,
+              wasPaused,
+              isPaused: isPausedNow,
+              changeType: pauseChangeType,
+            });
+          }
+        }
+
+        if (simSpecialNote !== realSpecialNote) {
+          let specialChangeType: SimDiffSpecialMealItem['changeType'] = 'special-unchanged';
+          if (!realSpecialNote && simSpecialNote) {
+            specialChangeType = 'special-new';
+          } else if (realSpecialNote && !simSpecialNote) {
+            specialChangeType = 'special-removed';
+          } else if (realSpecialNote && simSpecialNote) {
+            specialChangeType = 'special-changed';
+          }
+          if (specialChangeType !== 'special-unchanged') {
+            totalSpecialMealChanges++;
+            specialMealChanges.push({
+              taskId: simTask?.id || realTask?.id || '',
+              elderId,
+              elderName,
+              oldNote: realSpecialNote || undefined,
+              newNote: simSpecialNote || undefined,
+              changeType: specialChangeType,
+            });
+          }
+        }
+      }
+
+      const routeChanges: SimDiffRouteChange[] = [];
+      for (const volunteer of this.volunteers) {
+        const simDateSort = this.simulationData.kanbanSort[date]?.[volunteer.id] || [];
+        const realDateSort = this.kanbanSort[date]?.[volunteer.id] || [];
+        const simVolTasks = simTasks
+          .filter((t) => t.volunteerId === volunteer.id)
+          .map((t, i) => {
+            const idx = simDateSort.indexOf(t.id);
+            const pos = idx >= 0 ? idx + 1 : simDateSort.length + i + 1;
+            return { taskId: t.id, elderId: t.elderId, elderName: elderMap.get(t.elderId)?.name || '', position: pos };
+          })
+          .sort((a, b) => a.position - b.position);
+        const realVolTasks = realTasks
+          .filter((t) => t.volunteerId === volunteer.id)
+          .map((t, i) => {
+            const idx = realDateSort.indexOf(t.id);
+            const pos = idx >= 0 ? idx + 1 : realDateSort.length + i + 1;
+            return { taskId: t.id, elderId: t.elderId, elderName: elderMap.get(t.elderId)?.name || '', position: pos };
+          })
+          .sort((a, b) => a.position - b.position);
+        const oldOrderMap = new Map(realVolTasks.map((o) => [o.elderId, o.position]));
+        const newOrderMap = new Map(simVolTasks.map((n) => [n.elderId, n.position]));
+        const movedTasks: SimDiffRouteChange['movedTasks'] = [];
+        const allElderForRoute = new Set([...oldOrderMap.keys(), ...newOrderMap.keys()]);
+        for (const eid of allElderForRoute) {
+          const oldPos = oldOrderMap.get(eid);
+          const newPos = newOrderMap.get(eid);
+          if (oldPos !== undefined && newPos !== undefined && oldPos !== newPos) {
+            const t = simVolTasks.find((x) => x.elderId === eid) || realVolTasks.find((x) => x.elderId === eid);
+            if (t) {
+              movedTasks.push({ taskId: t.taskId, elderId: eid, elderName: t.elderName, oldPos, newPos });
+            }
+          }
+        }
+        const simIds = new Set(simVolTasks.map((t) => t.taskId));
+        const realIds = new Set(realVolTasks.map((t) => t.taskId));
+        const hasCompositionChange = simIds.size !== realIds.size || [...simIds].some((id) => !realIds.has(id));
+        const addedElderIds = [...simIds].filter(id => !realIds.has(id));
+        const removedElderIds = [...realIds].filter(id => !simIds.has(id));
+        const addedElders = addedElderIds.map(id => {
+          const t = simVolTasks.find(x => x.taskId === id);
+          return { elderId: t?.elderId || '', elderName: t?.elderName || '' };
+        }).filter(x => x.elderId);
+        const removedElders = removedElderIds.map(id => {
+          const t = realVolTasks.find(x => x.taskId === id);
+          return { elderId: t?.elderId || '', elderName: t?.elderName || '' };
+        }).filter(x => x.elderId);
+        if (movedTasks.length > 0 || hasCompositionChange) {
+          totalRouteChanges++;
+          routeChanges.push({
+            changeType: 'route',
+            volunteerId: volunteer.id,
+            volunteerName: volunteer.name,
+            oldOrder: realVolTasks,
+            newOrder: simVolTasks,
+            movedTasks,
+            compositionChanged: hasCompositionChange,
+            addedElders,
+            removedElders,
+          });
+        }
+      }
+
+      const beforeTotal = realTasks.length;
+      const afterTotal = simTasks.length;
+      const beforeAssigned = realTasks.filter((t) => t.volunteerId).length;
+      const afterAssigned = simTasks.filter((t) => t.volunteerId).length;
+      const hasChanges = addedTasks.length > 0 || removedTasks.length > 0 || volunteerChanges.length > 0 || routeChanges.length > 0 || pausedChanges.some((p) => p.changeType !== 'pause-unchanged') || specialMealChanges.length > 0;
+      totalAdded += addedTasks.length;
+      totalRemoved += removedTasks.length;
+      totalVolunteerChanges += volunteerChanges.length;
+      if (hasChanges) datesWithChanges.push(date);
+
+      const newPausedAffected = pausedChanges.filter(p => p.changeType === 'pause-new').length;
+      const resumedAffected = pausedChanges.filter(p => p.changeType === 'pause-resume').length;
+      const totalPausedIncluded = pausedChanges.length;
+
+      dayDiffs[date] = {
+        date,
+        totalTasks: { before: beforeTotal, after: afterTotal, diff: afterTotal - beforeTotal },
+        assignedTasks: { before: beforeAssigned, after: afterAssigned, diff: afterAssigned - beforeAssigned },
+        addedTasks,
+        removedTasks,
+        volunteerChanges,
+        routeChanges,
+        pausedChanges,
+        specialMealChanges,
+        hasChanges,
+        pauseEffectiveCount: {
+          newPausedAffected,
+          resumedAffected,
+          totalPausedIncluded,
+        },
+      };
+    }
+
+    return {
+      dayDiffs,
+      summary: {
+        totalAdded,
+        totalRemoved,
+        totalVolunteerChanges,
+        totalRouteChanges,
+        totalPauseChanges,
+        totalSpecialMealChanges,
+        datesWithChanges,
+        totalPausedNew,
+        totalPausedResumed,
+      },
+    };
+  }
+
+  openSimulationDiffPreview() {
+    this.simulationDiffResult = this.computeSimulationDiff();
+    if (this.simulationDiffResult && this.simulationData) {
+      this.simulationDiffDate = this.simulationDiffResult.summary.datesWithChanges[0] || this.simulationData.dates[0];
+      this.simulationDiffTab = 'summary';
+      this.simulationDiffVisible = true;
+    }
+  }
+
+  closeSimulationDiffPreview() {
+    this.simulationDiffVisible = false;
+  }
+
+  locateElderInDiff(elderId: string) {
+    this.selectedElderId = elderId;
+    if (this.simulationDiffDate && this.simulationData) {
+      this.simulationViewDate = this.simulationDiffDate;
+      this.taskDate = this.simulationDiffDate;
+    }
+    this.closeSimulationDiffPreview();
+    const elder = this.elders.find((e) => e.id === elderId);
+    if (elder) {
+      this.showSyncToast(`已定位到老人：${elder.name}（${this.simulationDiffDate || '当前日期'}）`, 'info');
+    }
+  }
+
+  locateVolunteerInDiff(volunteerId: string) {
+    const volunteer = this.volunteers.find((v) => v.id === volunteerId);
+    if (volunteer && this.simulationData) {
+      if (this.simulationDiffDate) {
+        this.simulationViewDate = this.simulationDiffDate;
+        this.taskDate = this.simulationDiffDate;
+      }
+      this.closeSimulationDiffPreview();
+      this.simulationPanelVisible = true;
+      this.simulationDetailTab = 'route';
+      this.showSyncToast(`已定位到志愿者：${volunteer.name}，请查看路线顺序页签（${this.simulationViewDate || '当前日期'}）`, 'info');
+    }
+  }
+
+  getCurrentDiffDay(): DaySimulationDiff | null {
+    if (!this.simulationDiffResult || !this.simulationDiffDate) return null;
+    return this.simulationDiffResult.dayDiffs[this.simulationDiffDate] || null;
+  }
+
+  getDiffDayForDate(date: string): DaySimulationDiff | null {
+    if (!this.simulationDiffResult) return null;
+    return this.simulationDiffResult.dayDiffs[date] || null;
+  }
+
+  getDiffDayHasChanges(date: string): boolean {
+    const day = this.getDiffDayForDate(date);
+    return day?.hasChanges || false;
+  }
+
+  getDiffDayBadgeCount(date: string): number {
+    const day = this.getDiffDayForDate(date);
+    if (!day) return 0;
+    return day.addedTasks.length + day.removedTasks.length + day.volunteerChanges.length + day.routeChanges.length + day.specialMealChanges.length;
+  }
+
+  getDiffDayTotalBefore(date: string): number {
+    return this.getDiffDayForDate(date)?.totalTasks?.before || 0;
+  }
+
+  getDiffDayTotalAfter(date: string): number {
+    return this.getDiffDayForDate(date)?.totalTasks?.after || 0;
+  }
+
+  getDiffDayAddedCount(date: string): number {
+    return this.getDiffDayForDate(date)?.addedTasks?.length || 0;
+  }
+
+  getDiffDayRemovedCount(date: string): number {
+    return this.getDiffDayForDate(date)?.removedTasks?.length || 0;
+  }
+
+  getDiffDayVolunteerCount(date: string): number {
+    return this.getDiffDayForDate(date)?.volunteerChanges?.length || 0;
+  }
+
+  getDiffDayRouteCount(date: string): number {
+    return this.getDiffDayForDate(date)?.routeChanges?.length || 0;
+  }
+
+  getDiffDaySpecialCount(date: string): number | string {
+    const day = this.getDiffDayForDate(date);
+    if (!day) return '-';
+    const count = day.specialMealChanges.length;
+    return count > 0 ? count : '-';
+  }
+
+  getDiffDayNewPausedCount(date: string): number {
+    return this.getDiffDayForDate(date)?.pauseEffectiveCount?.newPausedAffected || 0;
+  }
+
+  getDiffDayResumedCount(date: string): number {
+    return this.getDiffDayForDate(date)?.pauseEffectiveCount?.resumedAffected || 0;
+  }
+
+  getCurrentDiffDayAddedCount(): number {
+    return this.getCurrentDiffDay()?.addedTasks?.length || 0;
+  }
+
+  getCurrentDiffDayRemovedCount(): number {
+    return this.getCurrentDiffDay()?.removedTasks?.length || 0;
+  }
+
+  getCurrentDiffDayVolunteerCount(): number {
+    return this.getCurrentDiffDay()?.volunteerChanges?.length || 0;
+  }
+
+  getCurrentDiffDayRouteCount(): number {
+    return this.getCurrentDiffDay()?.routeChanges?.length || 0;
+  }
+
+  getCurrentDiffDayPausedCount(): number {
+    return this.getCurrentDiffDay()?.pausedChanges?.length || 0;
+  }
+
+  getCurrentDiffDaySpecialCount(): number {
+    return this.getCurrentDiffDay()?.specialMealChanges?.length || 0;
+  }
+
+  getSummaryDatesWithChangesCount(): number {
+    return this.simulationDiffResult?.summary?.datesWithChanges?.length || 0;
+  }
+
+  getSummaryTotalAdded(): number {
+    return this.simulationDiffResult?.summary?.totalAdded || 0;
+  }
+
+  getSummaryTotalRemoved(): number {
+    return this.simulationDiffResult?.summary?.totalRemoved || 0;
+  }
+
+  getSummaryTotalVolunteerChanges(): number {
+    return this.simulationDiffResult?.summary?.totalVolunteerChanges || 0;
+  }
+
+  getSummaryTotalRouteChanges(): number {
+    return this.simulationDiffResult?.summary?.totalRouteChanges || 0;
+  }
+
+  getSummaryTotalPauseChanges(): number {
+    return this.simulationDiffResult?.summary?.totalPauseChanges || 0;
+  }
+
+  getSummaryTotalSpecialMealChanges(): number {
+    return this.simulationDiffResult?.summary?.totalSpecialMealChanges || 0;
+  }
+
+  getSummaryTotalPausedNew(): number {
+    return this.simulationDiffResult?.summary?.totalPausedNew || 0;
+  }
+
+  getSummaryTotalPausedResumed(): number {
+    return this.simulationDiffResult?.summary?.totalPausedResumed || 0;
+  }
+
+  getMovedTaskByElder(
+    movedTasks: Array<{ taskId: string; elderId: string; elderName: string; oldPos: number; newPos: number }>,
+    elderId: string
+  ): { oldPos: number; newPos: number } | null {
+    const found = movedTasks.find((m) => m.elderId === elderId);
+    return found ? { oldPos: found.oldPos, newPos: found.newPos } : null;
+  }
+
+  getTaskChangeVolunteerText(
+    oldVol: string | undefined,
+    newVol: string | undefined
+  ): string {
+    return `${oldVol || '未分配'} → ${newVol || '未分配'}`;
+  }
+
+  hasMovedTask(
+    movedTasks: Array<{ taskId: string; elderId: string; elderName: string; oldPos: number; newPos: number }>,
+    elderId: string
+  ): boolean {
+    return movedTasks.some((m) => m.elderId === elderId);
+  }
+
+  getCurrentDiffDayAddedTasks(): SimDiffAddedTask[] {
+    return this.getCurrentDiffDay()?.addedTasks || [];
+  }
+
+  getCurrentDiffDayRemovedTasks(): SimDiffRemovedTask[] {
+    return this.getCurrentDiffDay()?.removedTasks || [];
+  }
+
+  getCurrentDiffDayVolunteerChanges(): SimDiffVolunteerChange[] {
+    return this.getCurrentDiffDay()?.volunteerChanges || [];
+  }
+
+  getCurrentDiffDayRouteChanges(): SimDiffRouteChange[] {
+    return this.getCurrentDiffDay()?.routeChanges || [];
+  }
+
+  getCurrentDiffDayPausedChanges(): SimDiffPausedItem[] {
+    return this.getCurrentDiffDay()?.pausedChanges || [];
+  }
+
+  getCurrentDiffDaySpecialChanges(): SimDiffSpecialMealItem[] {
+    return this.getCurrentDiffDay()?.specialMealChanges || [];
+  }
+
+  getCurrentDiffDayTotalBefore(): number {
+    return this.getCurrentDiffDay()?.totalTasks?.before || 0;
+  }
+
+  getCurrentDiffDayTotalAfter(): number {
+    return this.getCurrentDiffDay()?.totalTasks?.after || 0;
+  }
+
+  getCurrentDiffDayTotalDiff(): number {
+    return this.getCurrentDiffDay()?.totalTasks?.diff || 0;
+  }
+
+  getCurrentDiffDayAssignedBefore(): number {
+    return this.getCurrentDiffDay()?.assignedTasks?.before || 0;
+  }
+
+  getCurrentDiffDayAssignedAfter(): number {
+    return this.getCurrentDiffDay()?.assignedTasks?.after || 0;
+  }
+
+  getCurrentDiffDayAssignedDiff(): number {
+    return this.getCurrentDiffDay()?.assignedTasks?.diff || 0;
+  }
+
   submitSimulation() {
     if (!this.simulationData) return;
-    if (!confirm(`确认提交模拟排班方案？\n\n日期范围：${this.simulationData.startDate} 至 ${this.simulationData.endDate}\n共 ${this.simulationData.dates.length} 天\n\n提交后将写入正式任务、看板排序和备餐清单。`)) {
-      return;
-    }
+    this.openSimulationDiffPreview();
+  }
+
+  confirmSubmitSimulation() {
+    if (!this.simulationData) return;
     const newTasks: MealTask[] = [];
     const existingTaskMap = new Map(this.tasks.map((t) => [`${t.date}-${t.elderId}`, t]));
     const submittedTasks: MealTask[] = [];
+    const updatedExistingTaskIds = new Set<string>();
+    const volunteerChangedTaskIdsByDate: Record<string, string[]> = {};
+    const removedTaskIdsByDate: Record<string, string[]> = {};
+    const allRemovedTaskIds = new Set<string>();
+    const allAddedTaskIds = new Set<string>();
+    let countAdded = 0;
+    let countUpdated = 0;
+    let countRemoved = 0;
+
     for (const simTask of this.simulationData.tasks) {
       const key = `${simTask.date}-${simTask.elderId}`;
       const existing = existingTaskMap.get(key);
       if (existing) {
+        const oldVolunteerId = existing.volunteerId;
         existing.volunteerId = simTask.volunteerId;
         existing.status = simTask.volunteerId ? '配送中' : '待分配';
         existing.isManuallyModified = true;
+        existing.specialMealNote = simTask.specialMealNote || existing.specialMealNote;
         submittedTasks.push(existing);
+        updatedExistingTaskIds.add(existing.id);
+        countUpdated++;
+        if (oldVolunteerId !== simTask.volunteerId) {
+          if (!volunteerChangedTaskIdsByDate[simTask.date]) {
+            volunteerChangedTaskIdsByDate[simTask.date] = [];
+          }
+          volunteerChangedTaskIdsByDate[simTask.date].push(existing.id);
+        }
       } else {
         const realTask: MealTask = {
           id: crypto.randomUUID(),
@@ -3801,14 +4984,41 @@ export class App implements AfterViewChecked, OnInit {
         };
         newTasks.push(realTask);
         submittedTasks.push(realTask);
+        allAddedTaskIds.add(realTask.id);
+        countAdded++;
       }
     }
-    this.tasks = [...this.tasks, ...newTasks];
+
+    for (const date of this.simulationData.dates) {
+      const simElderIds = new Set(
+        this.simulationData.tasks.filter(t => t.date === date).map(t => t.elderId)
+      );
+      const realDateTasks = this.tasks.filter(t => t.date === date);
+      for (const rt of realDateTasks) {
+        if (!simElderIds.has(rt.elderId)) {
+          if (!removedTaskIdsByDate[date]) {
+            removedTaskIdsByDate[date] = [];
+          }
+          removedTaskIdsByDate[date].push(rt.id);
+          allRemovedTaskIds.add(rt.id);
+          countRemoved++;
+        }
+      }
+    }
+
+    const rebuiltTasks: MealTask[] = this.tasks
+      .filter(t => !allRemovedTaskIds.has(t.id))
+      .map(t => updatedExistingTaskIds.has(t.id) ? { ...t } : t);
+    this.tasks = [...rebuiltTasks, ...newTasks];
+
     for (const date of this.simulationData.dates) {
       if (!this.kanbanSort[date]) {
         this.kanbanSort[date] = {};
       }
       const simDateSort = this.simulationData.kanbanSort[date];
+      const finalDateTaskIds = new Set(
+        this.tasks.filter(t => t.date === date).map(t => t.id)
+      );
       if (simDateSort) {
         for (const volId of Object.keys(simDateSort)) {
           const realIds = simDateSort[volId].map((simId) => {
@@ -3817,11 +5027,44 @@ export class App implements AfterViewChecked, OnInit {
             const key = `${simTask.date}-${simTask.elderId}`;
             const existing = existingTaskMap.get(key);
             return existing?.id || this.tasks.find((t) => t.date === simTask.date && t.elderId === simTask.elderId)?.id || simId;
-          }).filter((id) => id);
+          }).filter((id) => id && finalDateTaskIds.has(id));
           this.kanbanSort[date][volId] = realIds;
         }
       }
+      for (const volId of Object.keys(this.kanbanSort[date])) {
+        this.kanbanSort[date][volId] = this.kanbanSort[date][volId].filter(id => finalDateTaskIds.has(id));
+      }
+      const volIdsOnDate = new Set([
+        ...Object.keys(this.kanbanSort[date] || {}),
+        ...Object.keys(this.simulationData.kanbanSort[date] || {}),
+      ]);
+      const simVolIds = new Set(Object.keys(this.simulationData.kanbanSort[date] || {}));
+      for (const vid of volIdsOnDate) {
+        if (!simVolIds.has(vid)) {
+          delete this.kanbanSort[date][vid];
+        } else if (this.kanbanSort[date][vid]?.length === 0) {
+          delete this.kanbanSort[date][vid];
+        }
+      }
     }
+    this.kanbanSort = { ...this.kanbanSort };
+
+    for (const date of this.simulationData.dates) {
+      const validTaskIds = new Set(
+        this.tasks.filter(t => t.date === date).map(t => t.id)
+      );
+      const resetIds: string[] = [
+        ...(volunteerChangedTaskIdsByDate[date] || []),
+        ...(removedTaskIdsByDate[date] || []),
+      ];
+      if (resetIds.length > 0) {
+        this.mealPrepService.clearPrepStateForTaskIds(date, resetIds);
+        this.volunteerDeliveryService.clearDeliveryStateForTaskIds(date, resetIds);
+      }
+      this.mealPrepService.cleanupOrphanedStorageForDate(date, validTaskIds);
+      this.volunteerDeliveryService.cleanupOrphanedStorageForDate(date, validTaskIds);
+    }
+
     const createdNotifications: PhoneNotification[] = [];
     for (const task of submittedTasks) {
       const elder = this.elders.find((e) => e.id === task.elderId);
@@ -3842,8 +5085,14 @@ export class App implements AfterViewChecked, OnInit {
     }
     this.save();
     this.saveKanbanSort();
+    this.closeSimulationDiffPreview();
     this.cancelSimulation(false);
-    this.showSyncToast('模拟排班已提交，正式数据已更新', 'info');
+    const parts: string[] = [];
+    if (countAdded > 0) parts.push(`新增${countAdded}单`);
+    if (countUpdated > 0) parts.push(`更新${countUpdated}单`);
+    if (countRemoved > 0) parts.push(`移除${countRemoved}单`);
+    const detail = parts.length > 0 ? `（${parts.join('、')}）` : '';
+    this.showSyncToast(`模拟排班已提交${detail}，正式数据、备餐/配送/闭环看板已同步更新`, 'success');
   }
 
   cancelSimulation(showConfirm: boolean = true) {
@@ -3853,6 +5102,8 @@ export class App implements AfterViewChecked, OnInit {
     this.simulationMode = 'off';
     this.simulationData = null;
     this.simulationPanelVisible = false;
+    this.simulationDiffVisible = false;
+    this.simulationDiffResult = null;
     if (showConfirm) {
       this.showSyncToast('已退出模拟模式', 'info');
     }

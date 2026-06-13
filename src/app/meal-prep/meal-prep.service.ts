@@ -887,6 +887,24 @@ export class MealPrepService {
     }
   }
 
+  cleanupOrphanedStorageForDate(date: string, validTaskIds: Set<string>): void {
+    if (!this.storageData[date]) return;
+    const storedIds = Object.keys(this.storageData[date]);
+    let changed = false;
+    for (const taskId of storedIds) {
+      if (!validTaskIds.has(taskId)) {
+        delete this.storageData[date][taskId];
+        changed = true;
+      }
+    }
+    if (changed) {
+      if (Object.keys(this.storageData[date]).length === 0) {
+        delete this.storageData[date];
+      }
+      this.saveStorage();
+    }
+  }
+
   getTempChangePrepImpactSummary(changes: TemporaryDeliveryChange[], date: string): {
     affectedCount: number;
     tagChangedCount: number;

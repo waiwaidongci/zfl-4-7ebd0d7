@@ -112,10 +112,32 @@ export type TemporaryDeliveryChange = {
   createdAt: string;
 };
 
+export type TaskStage = '任务生成' | '自动分配' | '备餐阶段' | '配送阶段' | '异常处置' | '回访关注';
+
 export type PrepStatus = '待备餐' | '备餐中' | '已完成' | '缺餐异常';
+
 export type DeliveryStatus = '待配送' | '配送中' | '已送达' | '异常' | '未接通';
 
-export type TaskStage = '任务生成' | '自动分配' | '备餐阶段' | '配送阶段' | '异常处置' | '回访关注';
+export type PrepStorageData = Record<string, Record<string, {
+  status: PrepStatus;
+  missingNote: string;
+  exceptionRecorded: boolean;
+  notificationAdded: boolean;
+}>>;
+
+export type DeliveryStorageData = Record<
+  string,
+  Record<
+    string,
+    {
+      status: DeliveryStatus;
+      exceptionNote: string;
+      statusUpdatedAt: string;
+      exceptionRecorded: boolean;
+      notificationAdded: boolean;
+    }
+  >
+>;
 
 export type ClosureTaskRow = {
   taskId: string;
@@ -131,7 +153,7 @@ export type ClosureTaskRow = {
   volunteerName: string;
   volunteerPhone: string;
   volunteerArea: string;
-  taskStatus: MealTask['status'];
+  taskStatus: '待分配' | '配送中' | '已送达' | '异常';
   taskException: string;
   isManuallyModified: boolean;
   hasTempChange: boolean;
@@ -146,7 +168,7 @@ export type ClosureTaskRow = {
   phoneNotifications: PhoneNotification[];
   callbackTasks: CallbackTask[];
   hasPendingCallback: boolean;
-  lastVisit?: VisitRecord;
+  lastVisit: VisitRecord | undefined;
   visitReminder: boolean;
   createdAt: string;
   assignedAt: string;
@@ -200,24 +222,9 @@ export type StageTimelineItem = {
   bgColor: string;
 };
 
-export type PrepStorageData = Record<string, Record<string, {
-  status: PrepStatus;
-  missingNote: string;
-  exceptionRecorded: boolean;
-  notificationAdded: boolean;
-}>>;
-
-export type DeliveryStorageData = Record<string, Record<string, {
-  status: DeliveryStatus;
-  exceptionNote: string;
-  statusUpdatedAt: string;
-  exceptionRecorded: boolean;
-  notificationAdded: boolean;
-}>>;
-
 export type TaskStatusUpdatePayload = {
   taskId: string;
-  type: 'volunteer' | 'prep' | 'delivery' | 'exception' | 'notification' | 'callback';
-  status: string;
-  note?: string;
+  field: string;
+  newValue: any;
+  oldValue?: any;
 };

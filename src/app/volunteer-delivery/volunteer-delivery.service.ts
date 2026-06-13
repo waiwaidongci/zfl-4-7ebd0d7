@@ -205,6 +205,39 @@ export class VolunteerDeliveryService implements OnDestroy {
     this.saveStorage();
   }
 
+  clearDeliveryStateForTaskIds(date: string, taskIds: string[]): void {
+    for (const taskId of taskIds) {
+      const stored = this.getStoredStatus(date, taskId);
+      if (stored.status !== '已送达') {
+        this.setStoredStatus(date, taskId, {
+          status: '待配送',
+          exceptionNote: '',
+          statusUpdatedAt: '',
+          exceptionRecorded: stored.exceptionRecorded,
+          notificationAdded: stored.notificationAdded,
+        });
+      }
+    }
+  }
+
+  cleanupOrphanedStorageForDate(date: string, validTaskIds: Set<string>): void {
+    if (!this.storageData[date]) return;
+    const storedIds = Object.keys(this.storageData[date]);
+    let changed = false;
+    for (const taskId of storedIds) {
+      if (!validTaskIds.has(taskId)) {
+        delete this.storageData[date][taskId];
+        changed = true;
+      }
+    }
+    if (changed) {
+      if (Object.keys(this.storageData[date]).length === 0) {
+        delete this.storageData[date];
+      }
+      this.saveStorage();
+    }
+  }
+
   getElderLastVisit(elderId: string, visits: VisitRecord[]) {
     const elderVisits = visits.filter(v => v.elderId === elderId);
     if (elderVisits.length === 0) return undefined;
