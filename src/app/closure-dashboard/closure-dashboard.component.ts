@@ -128,6 +128,7 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
 
   private sync = SYNC_INSTANCE();
   private syncUnsub?: () => void;
+  private boundCloseAllDropdowns!: () => void;
 
   constructor(
     private dashboardService: ClosureDashboardService,
@@ -137,8 +138,9 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
 
   ngOnInit() {
     this.dashboardDate = this.date;
+    this.boundCloseAllDropdowns = this.closeAllDropdowns.bind(this);
     this.syncUnsub = this.sync.subscribe((n) => this.handleSyncNotification(n));
-    document.addEventListener('click', this.closeAllDropdowns.bind(this));
+    document.addEventListener('click', this.boundCloseAllDropdowns);
     this.refresh();
   }
 
@@ -164,7 +166,7 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
 
   ngOnDestroy() {
     if (this.syncUnsub) this.syncUnsub();
-    document.removeEventListener('click', this.closeAllDropdowns.bind(this));
+    document.removeEventListener('click', this.boundCloseAllDropdowns);
   }
 
   private emptySummary(): DashboardSummaryStats {

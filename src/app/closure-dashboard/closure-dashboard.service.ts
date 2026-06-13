@@ -58,7 +58,7 @@ export class ClosureDashboardService {
 
     for (const elder of elders) {
       const isPaused = elder.pauseDates?.includes(date);
-      const elderMealTags = this.getElderMealTags(elder.id, date, mealTags, dayTempChanges);
+      const elderMealTags = this.getElderMealTags(elder.id, date, elders, mealTags, dayTempChanges);
       const elderSpecialNote = this.getElderSpecialNote(elder.id, date, elders, dayTempChanges);
       const tempChange = dayTempChanges.find((tc) => tc.elderId === elder.id);
       const task = dayTasks.find((t) => t.elderId === elder.id);
@@ -119,18 +119,18 @@ export class ClosureDashboardService {
   private getElderMealTags(
     elderId: string,
     date: string,
+    elders: Elder[],
     allTags: MealTag[],
     tempChanges: TemporaryDeliveryChange[]
   ): MealTag[] {
-    const elder = { mealTags: [] as string[] };
+    const elder = elders.find((e) => e.id === elderId);
     const tempChange = tempChanges.find((tc) => tc.elderId === elderId);
 
     let tagIds: string[] = [];
     if (tempChange?.mealTagIds && tempChange.mealTagIds.length > 0) {
       tagIds = tempChange.mealTagIds;
     } else {
-      const e = { mealTags: [] as string[] };
-      tagIds = e.mealTags;
+      tagIds = elder?.mealTags || [];
     }
 
     return allTags.filter((t) => tagIds.includes(t.id));

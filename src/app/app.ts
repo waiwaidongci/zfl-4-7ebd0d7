@@ -2722,10 +2722,6 @@ export class App implements AfterViewChecked, OnInit {
   }
 
   onDashboardStatusChanged(result: ClosureStatusUpdateResult) {
-    if (result.volunteerAssigned) {
-      this.assignTask(result.volunteerAssigned.taskId, result.volunteerAssigned.volunteerId);
-    }
-
     if (result.taskUpdated && result.taskUpdated.id) {
       const taskId = result.taskUpdated.id;
       this.tasks = this.tasks.map(t => {
@@ -2739,6 +2735,10 @@ export class App implements AfterViewChecked, OnInit {
         };
       });
       this.save();
+    }
+
+    if (result.volunteerAssigned) {
+      this.assignTask(result.volunteerAssigned.taskId, result.volunteerAssigned.volunteerId);
     }
 
     if (result.exceptionCreated) {

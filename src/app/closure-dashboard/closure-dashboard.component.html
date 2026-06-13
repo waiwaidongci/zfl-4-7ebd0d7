@@ -143,7 +143,7 @@
             <span class="filter-badge" *ngIf="filters.elderIds.length > 0">{{ filters.elderIds.length }}</span>
             <span class="dd-arrow">▼</span>
           </button>
-          <div class="dropdown-panel elder-panel">
+          <div class="dropdown-panel elder-panel" *ngIf="dropdownOpen.elder">
             <label class="chk-item" *ngFor="let e of availableFilters.elders">
               <input type="checkbox" [checked]="filters.elderIds.includes(e.id)" (change)="toggleElderFilter(e.id)" />
               <span>{{ e.name }}</span>
