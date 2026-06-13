@@ -3,6 +3,7 @@ import { Component, ViewChild, ElementRef, AfterViewChecked, ChangeDetectorRef, 
 import { FormsModule } from '@angular/forms';
 import { MealPrepComponent } from './meal-prep/meal-prep.component';
 import { VolunteerDeliveryComponent } from './volunteer-delivery/volunteer-delivery.component';
+import { ClosureDashboardComponent, ClosureStatusUpdateResult } from './closure-dashboard/closure-dashboard.component';
 import { MealPrepService } from './meal-prep/meal-prep.service';
 import { VolunteerDeliveryService } from './volunteer-delivery/volunteer-delivery.service';
 import {
@@ -18,7 +19,7 @@ import {
   PhoneNotification as PrepPhoneNotification,
 } from './meal-prep/meal-prep.service';
 
-type AppViewMode = 'schedule' | 'meal-prep' | 'volunteer-delivery';
+type AppViewMode = 'schedule' | 'meal-prep' | 'volunteer-delivery' | 'closure-dashboard';
 
 type MealTag = {
   id: string;
@@ -252,7 +253,7 @@ type SimulationData = {
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule, MealPrepComponent, VolunteerDeliveryComponent],
+  imports: [CommonModule, FormsModule, MealPrepComponent, VolunteerDeliveryComponent, ClosureDashboardComponent],
   template: `
     <main>
       <header class="hero">
@@ -264,6 +265,7 @@ type SimulationData = {
           <button type="button" [class.active-view]="viewMode === 'schedule'" (click)="setViewMode('schedule')">📋 每日排班</button>
           <button type="button" [class.active-view]="viewMode === 'meal-prep'" (click)="setViewMode('meal-prep')">🍳 备餐产能与出餐核对</button>
           <button type="button" [class.active-view]="viewMode === 'volunteer-delivery'" (click)="setViewMode('volunteer-delivery')">🚴 志愿者配送</button>
+          <button type="button" [class.active-view]="viewMode === 'closure-dashboard'" (click)="setViewMode('closure-dashboard')">📊 闭环仪表盘</button>
         </div>
         <div class="stats">
           <span>{{ elders.length }}位老人</span>
@@ -714,6 +716,25 @@ type SimulationData = {
         (statusUpdated)="onDeliveryStatusUpdated($event)"
         (backToSchedule)="setViewMode('schedule')"
       ></app-volunteer-delivery>
+
+      <app-closure-dashboard
+        *ngIf="viewMode === 'closure-dashboard'"
+        class="view-container"
+        [date]="taskDate"
+        [tasks]="tasks"
+        [elders]="elders"
+        [volunteers]="volunteers"
+        [mealTags]="mealTags"
+        [exceptionRecords]="exceptionRecords"
+        [visitRecords]="visitRecords"
+        [phoneNotifications]="phoneNotifications"
+        [callbackTasks]="callbackTasks"
+        [temporaryDeliveryChanges]="temporaryDeliveryChanges"
+        [volunteersInput]="volunteers"
+        (goBack)="setViewMode('schedule')"
+        (refreshData)="refreshDashboardData()"
+        (statusChanged)="onDashboardStatusChanged($event)"
+      ></app-closure-dashboard>
 
       <div class="modal-overlay" *ngIf="visitPanelVisible" (click)="closeVisitPanel()">
         <div class="modal-panel" (click)="$event.stopPropagation()">
@@ -2497,6 +2518,7 @@ export class App implements AfterViewChecked, OnInit {
       case 'schedule': return '排班前端';
       case 'meal-prep': return '备餐产能与出餐核对';
       case 'volunteer-delivery': return '志愿者配送';
+      case 'closure-dashboard': return '当日闭环仪表盘';
       default: return '排班前端';
     }
   }
@@ -2692,6 +2714,106 @@ export class App implements AfterViewChecked, OnInit {
         }
       }
     }
+  }
+
+  refreshDashboardData() {
+    this.save();
+    this.showSyncToast('数据已刷新', 'info');
+  }
+
+  onDashboardStatusChanged(result: ClosureStatusUpdateResult) {
+    if (result.volunteerAssigned) {
+      this.assignTask(result.volunteerAssigned.taskId, result.volunteerAssigned.volunteerId);
+    }
+
+    if (result.taskUpdated && result.taskUpdated.id) {
+      const taskId = result.taskUpdated.id;
+      this.tasks = this.tasks.map(t => {
+        if (t.id !== taskId) return t;
+        return {
+          ...t,
+          ...(result.taskUpdated!.status ? { status: result.taskUpdated!.status } : {}),
+          ...(result.taskUpdated!.exception !== undefined ? { exception: result.taskUpdated!.exception } : {}),
+          ...(result.taskUpdated!.volunteerId !== undefined ? { volunteerId: result.taskUpdated!.volunteerId } : {}),
+          ...(result.taskUpdated!.isManuallyModified !== undefined ? { isManuallyModified: result.taskUpdated!.isManuallyModified } : {}),
+        };
+      });
+      this.save();
+    }
+
+    if (result.exceptionCreated) {
+      const exc = result.exceptionCreated;
+      if (!this.isExceptionDuplicate(exc.taskId, exc.source, exc.category)) {
+        const exists = this.exceptionRecords.some(r => r.id === exc.id);
+        if (!exists) {
+          this.exceptionRecords = [exc, ...this.exceptionRecords];
+          this.saveExceptions();
+        }
+      }
+    }
+
+    if (result.exceptionUpdated) {
+      const excId = result.exceptionUpdated.id;
+      const existingIdx = this.exceptionRecords.findIndex(r => r.id === excId);
+      if (existingIdx !== -1) {
+        if (result.exceptionUpdated.status === undefined && !result.exceptionUpdated.category) {
+          this.exceptionRecords = this.exceptionRecords.filter(r => r.id !== excId);
+        } else {
+          this.exceptionRecords = this.exceptionRecords.map(r =>
+            r.id === excId ? { ...r, ...result.exceptionUpdated! } : r
+          );
+        }
+        this.saveExceptions();
+      }
+    }
+
+    if (result.notificationCreated) {
+      const n = result.notificationCreated;
+      if (!this.isNotificationDuplicate(n.taskId, n.source, n.targetId)) {
+        const exists = this.phoneNotifications.some(pn => pn.id === n.id);
+        if (!exists) {
+          this.phoneNotifications = [n, ...this.phoneNotifications];
+          this.savePhoneNotifications();
+          if (this.shouldCreateAutoCallback(n)) {
+            this.createAutoCallbackTask(n, 2);
+          }
+        }
+      }
+    }
+
+    if (result.notificationUpdated) {
+      const nId = result.notificationUpdated.id;
+      this.phoneNotifications = this.phoneNotifications.map(n =>
+        n.id === nId ? { ...n, ...result.notificationUpdated! } : n
+      );
+      this.savePhoneNotifications();
+    }
+
+    if (result.callbackCreated) {
+      const cb = result.callbackCreated;
+      const exists = this.callbackTasks.some(c => c.id === cb.id);
+      if (!exists) {
+        this.callbackTasks = [cb, ...this.callbackTasks];
+        this.saveCallbackTasks();
+      }
+    }
+
+    if (result.callbackUpdated) {
+      const cbId = result.callbackUpdated.id;
+      const existingIdx = this.callbackTasks.findIndex(c => c.id === cbId);
+      if (existingIdx !== -1) {
+        if (result.callbackUpdated.status === undefined && !result.callbackUpdated.result) {
+          this.callbackTasks = this.callbackTasks.filter(c => c.id !== cbId);
+        } else {
+          this.callbackTasks = this.callbackTasks.map(c =>
+            c.id === cbId ? { ...c, ...result.callbackUpdated! } : c
+          );
+        }
+        this.saveCallbackTasks();
+      }
+    }
+
+    this.showSyncToast('状态已同步更新', 'info');
   }
 
   private isExceptionDuplicate(taskId: string, source: ExceptionSource, category?: ExceptionCategory): boolean {

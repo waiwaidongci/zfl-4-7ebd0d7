@@ -1,0 +1,703 @@
+<section class="dashboard-wrap no-print">
+  <header class="dashboard-toolbar">
+    <div class="toolbar-left">
+      <button type="button" class="ghost back-btn" (click)="goBack.emit()">← 返回排班</button>
+      <div class="date-picker-wrap">
+        <label>📅 日期</label>
+        <input type="date" [(ngModel)]="dashboardDate" (change)="onDateChange()" />
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <div class="search-wrap">
+        <input type="text" placeholder="搜索老人/志愿者/地址/电话..." [(ngModel)]="searchText" (input)="onSearchChange()" class="search-input" />
+        <span class="search-icon">🔍</span>
+      </div>
+      <button type="button" class="refresh-btn" (click)="refreshData.emit()">🔄 刷新数据</button>
+    </div>
+  </header>
+
+  <section class="summary-grid">
+    <div class="summary-card total">
+      <div class="sc-icon">📋</div>
+      <div class="sc-content">
+        <strong>{{ summary.totalTasks }}</strong>
+        <span>总任务</span>
+        <div class="sc-sub">
+          <span>已分配 {{ summary.assignedTasks }}</span>
+          <span>待分配 {{ summary.unassignedTasks }}</span>
+          <span>暂停 {{ summary.pausedTasks }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="summary-card prep">
+      <div class="sc-icon">🍳</div>
+      <div class="sc-content">
+        <strong>{{ summary.prepCompleted }}/{{ summary.totalTasks - summary.pausedTasks }}</strong>
+        <span>备餐进度</span>
+        <div class="sc-sub">
+          <span class="done">已完成 {{ summary.prepCompleted }}</span>
+          <span class="doing">备餐中 {{ summary.prepInProgress }}</span>
+          <span class="warn">待备餐 {{ summary.prepPending }}</span>
+          <span class="danger" *ngIf="summary.prepMissing > 0">缺餐 {{ summary.prepMissing }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="summary-card delivery">
+      <div class="sc-icon">🚴</div>
+      <div class="sc-content">
+        <strong>{{ summary.deliveryCompleted }}/{{ summary.totalTasks - summary.pausedTasks }}</strong>
+        <span>配送进度</span>
+        <div class="sc-sub">
+          <span class="done">已送达 {{ summary.deliveryCompleted }}</span>
+          <span class="doing">配送中 {{ summary.deliveryInProgress }}</span>
+          <span class="warn">待配送 {{ summary.deliveryPending }}</span>
+          <span class="danger" *ngIf="summary.deliveryException > 0">异常 {{ summary.deliveryException }}</span>
+          <span class="warn" *ngIf="summary.deliveryUnreachable > 0">未接通 {{ summary.deliveryUnreachable }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="summary-card exception">
+      <div class="sc-icon">⚠️</div>
+      <div class="sc-content">
+        <strong>{{ summary.totalExceptions }}</strong>
+        <span>异常记录</span>
+        <div class="sc-sub">
+          <span class="danger">待处理 {{ summary.pendingExceptions }}</span>
+          <span class="doing">处理中 {{ summary.inProgressExceptions }}</span>
+          <span class="done">已解决 {{ summary.resolvedExceptions }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="summary-card phone">
+      <div class="sc-icon">☎️</div>
+      <div class="sc-content">
+        <strong>{{ summary.pendingNotifications }}</strong>
+        <span>电话通知待处理</span>
+        <div class="sc-sub">
+          <span class="warn">待回拨 {{ summary.pendingCallbacks }}</span>
+          <span class="doing">回拨中 {{ summary.activeCallbacks }}</span>
+          <span class="done">已完成 {{ summary.completedCallbacks }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="summary-card visit">
+      <div class="sc-icon">❤️</div>
+      <div class="sc-content">
+        <strong>{{ summary.visitReminderCount }}</strong>
+        <span>需回访关注</span>
+        <div class="sc-sub">
+          <span class="special">超过7天未回访</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="stage-timeline">
+    <div class="timeline-title">闭环阶段分布（点击筛选）</div>
+    <div class="timeline-bar">
+      <button
+        type="button"
+        *ngFor="let item of stageTimeline"
+        class="timeline-segment"
+        [class.selected]="filters.taskStages.includes(item.stage)"
+        [style.flex]="item.percentage > 0 ? item.percentage : 1"
+        [style.background]="item.bgColor"
+        [style.borderColor]="item.color"
+        (click)="toggleStageFilter(item.stage)"
+      >
+        <span class="tl-icon">{{ item.icon }}</span>
+        <span class="tl-label">{{ item.label }}</span>
+        <span class="tl-count">{{ item.count }} ({{ item.percentage }}%)</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="filters-section">
+    <div class="filters-header" (click)="toggleFiltersExpanded = !toggleFiltersExpanded">
+      <strong>🔍 交叉筛选</strong>
+      <span class="filter-count">已启用 {{ activeFilterCount }} 个筛选条件</span>
+      <button type="button" class="expand-btn">{{ toggleFiltersExpanded ? '收起' : '展开' }}</button>
+    </div>
+
+    <div class="filters-body" *ngIf="toggleFiltersExpanded">
+      <div class="filter-row">
+        <div class="filter-group" (click)="$event.stopPropagation()">
+          <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('volunteer')">
+            👤 志愿者
+            <span class="filter-badge" *ngIf="filters.volunteerIds.length > 0">{{ filters.volunteerIds.length }}</span>
+            <span class="dd-arrow">▼</span>
+          </button>
+          <div class="dropdown-panel" *ngIf="dropdownOpen.volunteer">
+            <label class="chk-item" *ngFor="let v of availableFilters.volunteers">
+              <input type="checkbox" [checked]="filters.volunteerIds.includes(v.id)" (change)="toggleVolunteerFilter(v.id)" />
+              <span>{{ v.name }}</span>
+              <small>· {{ assignedCount(v.id) }}单</small>
+            </label>
+            <p class="dropdown-empty" *ngIf="availableFilters.volunteers.length === 0">暂无数据</p>
+          </div>
+        </div>
+
+        <div class="filter-group" (click)="$event.stopPropagation()">
+          <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('elder')">
+            👵 老人
+            <span class="filter-badge" *ngIf="filters.elderIds.length > 0">{{ filters.elderIds.length }}</span>
+            <span class="dd-arrow">▼</span>
+          </button>
+          <div class="dropdown-panel elder-panel">
+            <label class="chk-item" *ngFor="let e of availableFilters.elders">
+              <input type="checkbox" [checked]="filters.elderIds.includes(e.id)" (change)="toggleElderFilter(e.id)" />
+              <span>{{ e.name }}</span>
+            </label>
+            <p class="dropdown-empty" *ngIf="availableFilters.elders.length === 0">暂无数据</p>
+          </div>
+        </div>
+
+        <div class="filter-group" (click)="$event.stopPropagation()">
+          <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('mealTag')">
+            🏷️ 餐食标签
+            <span class="filter-badge" *ngIf="filters.mealTagIds.length > 0">{{ filters.mealTagIds.length }}</span>
+            <span class="dd-arrow">▼</span>
+          </button>
+          <div class="dropdown-panel">
+            <label class="chk-item" *ngFor="let tag of availableFilters.mealTags">
+              <input type="checkbox" [checked]="filters.mealTagIds.includes(tag.id)" (change)="toggleMealTagFilter(tag.id)" />
+              <span class="tag-chip sm" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+            </label>
+            <p class="dropdown-empty" *ngIf="availableFilters.mealTags.length === 0">暂无数据</p>
+          </div>
+        </div>
+
+        <div class="filter-group" (click)="$event.stopPropagation()">
+          <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('excSource')">
+            📡 异常来源
+            <span class="filter-badge" *ngIf="filters.exceptionSources.length > 0">{{ filters.exceptionSources.length }}</span>
+            <span class="dd-arrow">▼</span>
+          </button>
+          <div class="dropdown-panel">
+            <label class="chk-item" *ngFor="let src of availableFilters.exceptionSources">
+              <input type="checkbox" [checked]="filters.exceptionSources.includes(src)" (change)="toggleExceptionSource(src)" />
+              <span>{{ src }}</span>
+            </label>
+            <p class="dropdown-empty" *ngIf="availableFilters.exceptionSources.length === 0">暂无数据</p>
+          </div>
+        </div>
+
+        <div class="filter-group" (click)="$event.stopPropagation()">
+          <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('excStatus')">
+            📊 处理状态
+            <span class="filter-badge" *ngIf="filters.exceptionStatuses.length > 0">{{ filters.exceptionStatuses.length }}</span>
+            <span class="dd-arrow">▼</span>
+          </button>
+          <div class="dropdown-panel">
+            <label class="chk-item" *ngFor="let st of availableFilters.exceptionStatuses">
+              <input type="checkbox" [checked]="filters.exceptionStatuses.includes(st)" (change)="toggleExceptionStatus(st)" />
+              <span>{{ st }}</span>
+            </label>
+            <p class="dropdown-empty" *ngIf="availableFilters.exceptionStatuses.length === 0">暂无数据</p>
+          </div>
+        </div>
+
+        <div class="filter-group" (click)="$event.stopPropagation()">
+          <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('prepStatus')">
+            🍳 备餐状态
+            <span class="filter-badge" *ngIf="filters.prepStatuses.length > 0">{{ filters.prepStatuses.length }}</span>
+            <span class="dd-arrow">▼</span>
+          </button>
+          <div class="dropdown-panel">
+            <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('待备餐')" (change)="togglePrepStatus('待备餐')" /><span>待备餐</span></label>
+            <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('备餐中')" (change)="togglePrepStatus('备餐中')" /><span>备餐中</span></label>
+            <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('已完成')" (change)="togglePrepStatus('已完成')" /><span>已完成</span></label>
+            <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('缺餐异常')" (change)="togglePrepStatus('缺餐异常')" /><span>缺餐异常</span></label>
+          </div>
+        </div>
+
+        <div class="filter-group" (click)="$event.stopPropagation()">
+          <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('deliveryStatus')">
+            🚴 配送状态
+            <span class="filter-badge" *ngIf="filters.deliveryStatuses.length > 0">{{ filters.deliveryStatuses.length }}</span>
+            <span class="dd-arrow">▼</span>
+          </button>
+          <div class="dropdown-panel">
+            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('待配送')" (change)="toggleDeliveryStatus('待配送')" /><span>待配送</span></label>
+            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('配送中')" (change)="toggleDeliveryStatus('配送中')" /><span>配送中</span></label>
+            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('已送达')" (change)="toggleDeliveryStatus('已送达')" /><span>已送达</span></label>
+            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('异常')" (change)="toggleDeliveryStatus('异常')" /><span>异常</span></label>
+            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('未接通')" (change)="toggleDeliveryStatus('未接通')" /><span>未接通</span></label>
+          </div>
+        </div>
+
+        <button type="button" class="clear-filters-btn" (click)="clearAllFilters()">清除全部</button>
+      </div>
+    </div>
+
+    <div class="active-chips-row" *ngIf="activeFilterChips.length > 0">
+      <span class="chips-label">当前筛选：</span>
+      <span
+        *ngFor="let chip of activeFilterChips"
+        class="filter-chip"
+        (click)="removeFilterChip(chip)"
+      >
+        {{ chip.label }}: {{ chip.value }} ×
+      </span>
+    </div>
+  </section>
+
+  <section class="results-section">
+    <div class="results-header">
+      <h2>筛选结果 · 共 {{ searchedRows.length }} 条</h2>
+      <span class="muted">点击任意行查看详情并编辑状态</span>
+    </div>
+
+    <div class="result-empty" *ngIf="searchedRows.length === 0">
+      <div class="empty-icon">📭</div>
+      <h3>暂无符合条件的任务</h3>
+      <p class="muted">请尝试调整筛选条件或搜索关键字</p>
+      <button type="button" class="ghost" (click)="clearAllFilters()">清除所有筛选</button>
+    </div>
+
+    <div class="result-table" *ngIf="searchedRows.length > 0">
+      <div class="table-header">
+        <span class="th-elder">老人</span>
+        <span class="th-volunteer">志愿者</span>
+        <span class="th-tags">餐食标签</span>
+        <span class="th-stage">当前阶段</span>
+        <span class="th-prep">备餐</span>
+        <span class="th-delivery">配送</span>
+        <span class="th-exception">异常</span>
+        <span class="th-actions">操作</span>
+      </div>
+
+      <div
+        *ngFor="let row of searchedRows; trackBy: trackByTaskId"
+        class="result-row"
+        [class.selected]="selectedRow?.taskId === row.taskId"
+        [class.paused-row]="row.taskId.startsWith('paused-')"
+        [class.has-exception]="row.hasUnresolvedException"
+        [class.has-callback]="row.hasPendingCallback"
+        [class.needs-visit]="row.visitReminder"
+        (click)="openDetail(row)"
+      >
+        <div class="td-elder">
+          <strong>{{ row.elderName }}</strong>
+          <small>{{ row.elderAddress }}</small>
+          <small class="contact-row">📞 {{ row.elderContact }}</small>
+          <div class="row-badges">
+            <span class="row-badge temp" *ngIf="row.hasTempChange">📋 {{ row.tempChangeSummary }}</span>
+            <span class="row-badge special" *ngIf="row.elderSpecialNote">📝 {{ row.elderSpecialNote }}</span>
+            <span class="row-badge visit" *ngIf="row.visitReminder">❤️ 需回访</span>
+          </div>
+        </div>
+        <div class="td-volunteer">
+          <span class="vol-name">{{ row.volunteerName }}</span>
+          <small *ngIf="row.volunteerArea">{{ row.volunteerArea }}</small>
+          <small *ngIf="row.volunteerPhone">📞 {{ row.volunteerPhone }}</small>
+          <small *ngIf="row.isManuallyModified" class="manual-badge">✋ 人工调整</small>
+        </div>
+        <div class="td-tags">
+          <span
+            *ngFor="let tag of row.elderMealTags"
+            class="tag-chip sm"
+            [style.background]="tag.color + '20'"
+            [style.color]="tag.color"
+            [style.borderColor]="tag.color + '50'"
+          >{{ tag.name }}</span>
+          <span *ngIf="row.elderMealTags.length === 0" class="muted">—</span>
+        </div>
+        <div class="td-stage">
+          <span class="stage-badge" [ngStyle]="{ color: getStageItem(row.currentStage)?.color, background: getStageItem(row.currentStage)?.bgColor, borderColor: getStageItem(row.currentStage)?.color + '50' }">
+            {{ getStageItem(row.currentStage)?.icon }} {{ row.currentStage }}
+          </span>
+        </div>
+        <div class="td-prep">
+          <span
+            *ngIf="row.prepStatus"
+            class="status-tag"
+            [ngStyle]="getStatusBadgeStyle('prep', row.prepStatus)"
+          >{{ row.prepStatus }}</span>
+          <span *ngIf="!row.prepStatus && !row.taskId.startsWith('paused-')" class="muted">待备餐</span>
+          <span *ngIf="row.taskId.startsWith('paused-')" class="muted">—</span>
+          <small *ngIf="row.prepMissingNote" class="note-text danger">{{ row.prepMissingNote }}</small>
+        </div>
+        <div class="td-delivery">
+          <span
+            *ngIf="row.deliveryStatus"
+            class="status-tag"
+            [ngStyle]="getStatusBadgeStyle('delivery', row.deliveryStatus)"
+          >{{ row.deliveryStatus }}</span>
+          <span *ngIf="!row.deliveryStatus && !row.taskId.startsWith('paused-')" class="muted">待配送</span>
+          <span *ngIf="row.taskId.startsWith('paused-')" class="muted">—</span>
+          <small *ngIf="row.deliveryExceptionNote" class="note-text danger">{{ row.deliveryExceptionNote }}</small>
+        </div>
+        <div class="td-exception">
+          <div *ngIf="row.exceptionRecords.length > 0">
+            <span
+              *ngFor="let exc of row.exceptionRecords.slice(0, 2)"
+              class="status-tag exc-tag"
+              [ngStyle]="getStatusBadgeStyle('exception', exc.status, row.hasUnresolvedException)"
+            >
+              {{ exc.status }}
+            </span>
+            <span *ngIf="row.exceptionRecords.length > 2" class="muted more-count">+{{ row.exceptionRecords.length - 2 }}</span>
+          </div>
+          <div *ngIf="row.phoneNotifications.length > 0">
+            <span
+              *ngFor="let n of row.phoneNotifications.slice(0, 1)"
+              class="status-tag"
+              [ngStyle]="getStatusBadgeStyle('notification', n.notificationStatus)"
+            >📞 {{ n.notificationStatus }}</span>
+          </div>
+          <div *ngIf="row.callbackTasks.length > 0">
+            <span
+              *ngFor="let cb of row.callbackTasks.slice(0, 1)"
+              class="status-tag"
+              [ngStyle]="getStatusBadgeStyle('callback', cb.status)"
+            >🔄 {{ cb.status }}</span>
+          </div>
+          <span *ngIf="row.exceptionRecords.length === 0 && row.phoneNotifications.length === 0 && row.callbackTasks.length === 0" class="muted">—</span>
+        </div>
+        <div class="td-actions no-print">
+          <button type="button" class="row-actions-btn" (click)="$event.stopPropagation(); selectRow(row)">
+            详情 →
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+</section>
+
+<aside class="detail-panel no-print" *ngIf="selectedRow" [class.open]="selectedRow">
+  <div class="detail-panel-inner" (click)="$event.stopPropagation()">
+    <div class="detail-header">
+      <div>
+        <h2>{{ selectedRow.elderName }} <small class="muted">· {{ selectedRow.date }}</small></h2>
+        <p class="muted">📌 {{ selectedRow.elderAddress }} · 📞 {{ selectedRow.elderContact }}</p>
+        <div class="tag-row" *ngIf="selectedRow.elderMealTags.length > 0 || selectedRow.elderSpecialNote">
+          <span
+            *ngFor="let tag of selectedRow.elderMealTags"
+            class="tag-chip"
+            [style.background]="tag.color + '20'"
+            [style.color]="tag.color"
+            [style.borderColor]="tag.color + '50'"
+          >{{ tag.name }}</span>
+          <span class="special-note-tag" *ngIf="selectedRow.elderSpecialNote">📝 {{ selectedRow.elderSpecialNote }}</span>
+        </div>
+      </div>
+      <button type="button" class="close-detail-btn" (click)="closeDetail()">×</button>
+    </div>
+
+    <div class="detail-body">
+      <div class="detail-stage-banner" [ngStyle]="{ background: getStageItem(selectedRow.currentStage)?.bgColor, color: getStageItem(selectedRow.currentStage)?.color, borderColor: getStageItem(selectedRow.currentStage)?.color + '50' }">
+        <span class="banner-icon">{{ getStageItem(selectedRow.currentStage)?.icon }}</span>
+        <span>当前阶段：<strong>{{ selectedRow.currentStage }}</strong></span>
+        <span class="banner-right">
+          <span *ngIf="selectedRow.visitReminder" class="visit-reminder-badge">❤️ 需回访关注</span>
+          <span *ngIf="selectedRow.hasTempChange" class="temp-badge">📋 {{ selectedRow.tempChangeSummary }}</span>
+        </span>
+      </div>
+
+      <section class="detail-section">
+        <h3>👤 任务分配</h3>
+        <div class="detail-row">
+          <label>分配志愿者</label>
+          <div class="field-group">
+            <select [(ngModel)]="detailVolunteerId" (change)="quickAssignVolunteer(selectedRow)">
+              <option value="">未分配</option>
+              <option *ngFor="let v of volunteers" [value]="v.id">
+                {{ v.name }} · {{ v.area }} ({{ assignedCount(v.id) }}单)
+              </option>
+            </select>
+            <button
+              type="button"
+              class="primary-btn"
+              [disabled]="!detailVolunteerId || detailVolunteerId === selectedRow.volunteerId || selectedRow.taskId.startsWith('paused-')"
+              (click)="confirmAssignVolunteer(selectedRow)"
+            >确认分配</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section">
+        <h3>🍳 备餐状态</h3>
+        <div class="detail-row">
+          <label>当前状态</label>
+          <div class="status-btns-row">
+            <button
+              type="button"
+              class="status-btn"
+              [class.active]="detailPrepStatus === '待备餐'"
+              [disabled]="selectedRow.taskId.startsWith('paused-')"
+              (click)="updatePrepStatus(selectedRow, '待备餐')"
+            >待备餐</button>
+            <button
+              type="button"
+              class="status-btn doing"
+              [class.active]="detailPrepStatus === '备餐中'"
+              [disabled]="selectedRow.taskId.startsWith('paused-')"
+              (click)="updatePrepStatus(selectedRow, '备餐中')"
+            >备餐中</button>
+            <button
+              type="button"
+              class="status-btn done"
+              [class.active]="detailPrepStatus === '已完成'"
+              [disabled]="selectedRow.taskId.startsWith('paused-')"
+              (click)="updatePrepStatus(selectedRow, '已完成')"
+            >已完成</button>
+            <button
+              type="button"
+              class="status-btn danger"
+              [class.active]="detailPrepStatus === '缺餐异常'"
+              [disabled]="selectedRow.taskId.startsWith('paused-')"
+              (click)="markPrepMissing(selectedRow)"
+            >缺餐异常</button>
+          </div>
+        </div>
+        <div class="detail-row" *ngIf="detailPrepStatus === '缺餐异常'">
+          <label>缺餐说明</label>
+          <div class="field-group">
+            <textarea
+              [(ngModel)]="detailPrepMissingNote"
+              rows="2"
+              placeholder="请描述缺餐原因，保存后将自动生成异常记录和电话通知"
+            ></textarea>
+            <button
+              type="button"
+              class="danger-btn"
+              [disabled]="!detailPrepMissingNote.trim()"
+              (click)="confirmPrepStatusChange(selectedRow)"
+            >记录缺餐</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section">
+        <h3>🚴 配送状态</h3>
+        <div class="detail-row">
+          <label>当前状态</label>
+          <div class="status-btns-row">
+            <button
+              type="button"
+              class="status-btn"
+              [class.active]="detailDeliveryStatus === '待配送'"
+              [disabled]="selectedRow.taskId.startsWith('paused-')"
+              (click)="updateDeliveryStatus(selectedRow, '待配送')"
+            >待配送</button>
+            <button
+              type="button"
+              class="status-btn doing"
+              [class.active]="detailDeliveryStatus === '配送中'"
+              [disabled]="selectedRow.taskId.startsWith('paused-')"
+              (click)="updateDeliveryStatus(selectedRow, '配送中')"
+            >配送中</button>
+            <button
+              type="button"
+              class="status-btn done"
+              [class.active]="detailDeliveryStatus === '已送达'"
+              [disabled]="selectedRow.taskId.startsWith('paused-')"
+              (click)="updateDeliveryStatus(selectedRow, '已送达')"
+            >已送达</button>
+            <button
+              type="button"
+              class="status-btn warn"
+              [class.active]="detailDeliveryStatus === '未接通'"
+              [disabled]="selectedRow.taskId.startsWith('paused-')"
+              (click)="updateDeliveryStatus(selectedRow, '未接通')"
+            >未接通</button>
+            <button
+              type="button"
+              class="status-btn danger"
+              [class.active]="detailDeliveryStatus === '异常'"
+              [disabled]="selectedRow.taskId.startsWith('paused-')"
+              (click)="updateDeliveryStatus(selectedRow, '异常')"
+            >配送异常</button>
+          </div>
+        </div>
+        <div class="detail-row" *ngIf="detailDeliveryStatus === '异常' || detailDeliveryStatus === '未接通'">
+          <label>异常说明</label>
+          <div class="field-group">
+            <textarea
+              [(ngModel)]="detailDeliveryExceptionNote"
+              rows="2"
+              placeholder="请描述配送异常情况，保存后将自动生成异常记录和电话通知"
+            ></textarea>
+            <button
+              type="button"
+              class="danger-btn"
+              [disabled]="!detailDeliveryExceptionNote.trim()"
+              (click)="confirmDeliveryStatusChange(selectedRow)"
+            >记录异常</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section" *ngIf="selectedRow.exceptionRecords.length > 0">
+        <h3>⚠️ 异常处置记录 ({{ selectedRow.exceptionRecords.length }})</h3>
+        <div class="record-list">
+          <div *ngFor="let exc of selectedRow.exceptionRecords" class="record-card">
+            <div class="record-header">
+              <span class="record-severity" [style.color]="severityColor(exc.severity)" [style.borderColor]="severityColor(exc.severity)">
+                {{ exc.severity }}
+              </span>
+              <span class="status-tag exc-tag" [ngStyle]="getStatusBadgeStyle('exception', exc.status)">
+                {{ exc.status }}
+              </span>
+              <span class="record-source">{{ exc.source }}</span>
+              <span class="record-category">{{ exc.category }}</span>
+              <span class="record-time muted">{{ exc.createdAt }}</span>
+            </div>
+            <p class="record-desc">{{ exc.description }}</p>
+            <div class="record-result" *ngIf="exc.result">
+              <label>处理结果：</label>
+              <span>{{ exc.result }}</span>
+            </div>
+            <div class="record-handler" *ngIf="exc.handler">
+              <label>负责人：</label>
+              <span>{{ exc.handler }}</span>
+            </div>
+            <div class="record-actions no-print">
+              <button
+                type="button"
+                class="ghost sm"
+                *ngIf="exc.status === '待处理'"
+                (click)="updateExceptionRecordStatus(exc.id, '处理中')"
+              >开始处理</button>
+              <button
+                type="button"
+                class="sm"
+                *ngIf="exc.status === '处理中'"
+                (click)="updateExceptionRecordStatus(exc.id, '已解决')"
+              >标记已解决</button>
+              <button
+                type="button"
+                class="ghost sm"
+                *ngIf="exc.status === '处理中'"
+                (click)="updateExceptionRecordStatus(exc.id, '待处理')"
+              >退回待处理</button>
+              <button
+                type="button"
+                class="ghost sm danger-txt"
+                *ngIf="exc.status === '已解决'"
+                (click)="updateExceptionRecordStatus(exc.id, '处理中')"
+              >重新处理</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section" *ngIf="selectedRow.phoneNotifications.length > 0">
+        <h3>☎️ 电话通知 ({{ selectedRow.phoneNotifications.length }})</h3>
+        <div class="record-list">
+          <div *ngFor="let n of selectedRow.phoneNotifications" class="record-card">
+            <div class="record-header">
+              <span class="status-tag" [ngStyle]="getStatusBadgeStyle('notification', n.notificationStatus)">
+                {{ n.notificationStatus }}
+              </span>
+              <span class="record-source">{{ n.source }}</span>
+              <span class="record-phone">📞 {{ n.phone }}</span>
+              <span class="record-time muted">{{ n.updatedAt }}</span>
+            </div>
+            <p class="record-desc">{{ n.remark }}</p>
+            <div class="record-actions no-print">
+              <button
+                type="button"
+                class="sm"
+                *ngIf="n.notificationStatus === '未通知'"
+                (click)="updateNotificationStatus(n.id, '已通知')"
+              >标记已通知</button>
+              <button
+                type="button"
+                class="ghost sm"
+                *ngIf="n.notificationStatus === '未通知'"
+                (click)="updateNotificationStatus(n.id, '未接通')"
+              >未接通</button>
+              <button
+                type="button"
+                class="ghost sm"
+                *ngIf="n.notificationStatus === '未接通'"
+                (click)="updateNotificationStatus(n.id, '稍后再拨')"
+              >稍后再拨</button>
+              <button
+                type="button"
+                class="sm"
+                *ngIf="n.notificationStatus === '稍后再拨' || n.notificationStatus === '未接通'"
+                (click)="updateNotificationStatus(n.id, '已通知')"
+              >已联系上</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section" *ngIf="selectedRow.callbackTasks.length > 0">
+        <h3>🔄 回拨任务 ({{ selectedRow.callbackTasks.length }})</h3>
+        <div class="record-list">
+          <div *ngFor="let cb of selectedRow.callbackTasks" class="record-card">
+            <div class="record-header">
+              <span class="status-tag" [ngStyle]="getStatusBadgeStyle('callback', cb.status)">
+                {{ cb.status }}
+              </span>
+              <span class="record-phone">📞 {{ cb.phone }}</span>
+              <span class="record-time muted" *ngIf="cb.nextCallbackTime">⏰ {{ cb.nextCallbackTime }}</span>
+              <span class="record-count">回拨 {{ cb.callbackCount }} 次</span>
+            </div>
+            <p class="record-desc" *ngIf="cb.remark">{{ cb.remark }}</p>
+            <p class="record-result" *ngIf="cb.result"><label>结果：</label>{{ cb.result }}</p>
+            <div class="record-actions no-print">
+              <button
+                type="button"
+                class="sm"
+                *ngIf="cb.status === '待回拨'"
+                (click)="updateCallbackStatus(cb.id, '回拨中')"
+              >开始回拨</button>
+              <button
+                type="button"
+                class="sm done-btn"
+                *ngIf="cb.status === '回拨中'"
+                (click)="updateCallbackStatus(cb.id, '已完成')"
+              >完成回拨</button>
+              <button
+                type="button"
+                class="ghost sm"
+                *ngIf="cb.status !== '已完成' && cb.status !== '已取消'"
+                (click)="updateCallbackStatus(cb.id, '已取消')"
+              >取消</button>
+              <button
+                type="button"
+                class="ghost sm"
+                *ngIf="cb.status === '已完成'"
+                (click)="updateCallbackStatus(cb.id, '待回拨')"
+              >重置</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section" *ngIf="selectedRow.lastVisit">
+        <h3>❤️ 最近回访</h3>
+        <div class="record-card">
+          <div class="record-header">
+            <span class="status-tag visit-tag">📅 {{ selectedRow.lastVisit.visitDate }}</span>
+            <span class="record-source">{{ selectedRow.lastVisit.visitMethod }}</span>
+          </div>
+          <p class="record-desc" *ngIf="selectedRow.lastVisit.healthFeedback">
+            <strong>健康状况：</strong>{{ selectedRow.lastVisit.healthFeedback }}
+          </p>
+          <p class="record-desc" *ngIf="selectedRow.lastVisit.mealFeedback">
+            <strong>用餐反馈：</strong>{{ selectedRow.lastVisit.mealFeedback }}
+          </p>
+          <p class="record-desc attention" *ngIf="selectedRow.lastVisit.nextAttention">
+            <strong>下次关注：</strong>{{ selectedRow.lastVisit.nextAttention }}
+          </p>
+        </div>
+        <div class="section-actions no-print" *ngIf="selectedRow.visitReminder">
+          <button type="button" class="primary-btn" (click)="openElderVisit(selectedRow)">前往回访记录</button>
+        </div>
+      </section>
+      <section class="detail-section" *ngIf="!selectedRow.lastVisit">
+        <div class="empty-hint">
+          <p>📭 暂无回访记录</p>
+          <button type="button" class="primary-btn" (click)="openElderVisit(selectedRow)">新增回访记录</button>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="detail-overlay" *ngIf="selectedRow" (click)="closeDetail()"></div>
+</aside>
