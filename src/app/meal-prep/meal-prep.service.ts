@@ -18,6 +18,19 @@ import {
 } from './meal-prep.types';
 import { SYNC_INSTANCE, SyncConflictGroup, SyncNotification } from '../sync.service';
 
+export type TemporaryDeliveryChange = {
+  id: string;
+  elderId: string;
+  date: string;
+  address?: string;
+  contact?: string;
+  mealTagIds?: string[];
+  specialMealNote?: string;
+  volunteerId?: string;
+  reason: string;
+  createdAt: string;
+};
+
 export type MealTag = {
   id: string;
   name: string;
@@ -194,16 +207,36 @@ export class MealPrepService {
     elders: Elder[],
     mealTags: MealTag[],
     volunteers: Volunteer[] = [],
+    temporaryDeliveryChanges: TemporaryDeliveryChange[] = [],
   ): DailyPrepSummary {
     const elderMap = new Map(elders.map(e => [e.id, e]));
     const tagMap = new Map(mealTags.map(t => [t.id, t]));
     const volunteerMap = new Map(volunteers.map(v => [v.id, v]));
+    const tempChangeMap = new Map<string, TemporaryDeliveryChange>();
+    for (const tc of temporaryDeliveryChanges) {
+      if (tc.date === date) {
+        tempChangeMap.set(tc.elderId, tc);
+      }
+    }
     const dateTasks = tasks.filter(t => t.date === date);
     const dateTaskElderIds = new Set(dateTasks.map(t => t.elderId));
 
+    const applyTempChange = (elder: Elder): Elder => {
+      const change = tempChangeMap.get(elder.id);
+      if (!change) return elder;
+      return {
+        ...elder,
+        address: change.address !== undefined ? change.address : elder.address,
+        contact: change.contact !== undefined ? change.contact : elder.contact,
+        mealTags: change.mealTagIds !== undefined ? change.mealTagIds : elder.mealTags,
+        specialMealNote: change.specialMealNote !== undefined ? change.specialMealNote : elder.specialMealNote,
+      };
+    };
+
     const taskItems: PrepItem[] = dateTasks.map(task => {
-      const elder = elderMap.get(task.elderId);
-      if (!elder) return null;
+      const rawElder = elderMap.get(task.elderId);
+      if (!rawElder) return null;
+      const elder = applyTempChange(rawElder);
 
       const stored = this.getStoredStatus(date, task.id);
       const isPaused = elder.pauseDates?.includes(date) || false;
@@ -214,7 +247,8 @@ export class MealPrepService {
         contact: elder.contact,
       };
 
-      const volunteerRaw = volunteerMap.get(task.volunteerId);
+      const effectiveVolunteerId = tempChangeMap.get(elder.id)?.volunteerId || task.volunteerId;
+      const volunteerRaw = volunteerMap.get(effectiveVolunteerId);
       const volunteerRef: VolunteerRef | undefined = volunteerRaw ? {
         id: volunteerRaw.id,
         name: volunteerRaw.name,
@@ -239,23 +273,26 @@ export class MealPrepService {
 
     const pausedOnlyItems: PrepItem[] = elders
       .filter(elder => elder.pauseDates?.includes(date) && !dateTaskElderIds.has(elder.id))
-      .map(elder => ({
-        id: `paused-${date}-${elder.id}`,
-        taskId: `paused-${date}-${elder.id}`,
-        elder: {
-          id: elder.id,
-          name: elder.name,
-          address: elder.address,
-          contact: elder.contact,
-        },
-        mealTagIds: elder.mealTags || [],
-        specialMealNote: elder.specialMealNote || '',
-        isPaused: true,
-        status: '待备餐' as PrepStatus,
-        missingNote: '',
-        exceptionRecorded: false,
-        notificationAdded: false,
-      }));
+      .map(rawElder => {
+        const elder = applyTempChange(rawElder);
+        return {
+          id: `paused-${date}-${elder.id}`,
+          taskId: `paused-${date}-${elder.id}`,
+          elder: {
+            id: elder.id,
+            name: elder.name,
+            address: elder.address,
+            contact: elder.contact,
+          },
+          mealTagIds: elder.mealTags || [],
+          specialMealNote: elder.specialMealNote || '',
+          isPaused: true,
+          status: '待备餐' as PrepStatus,
+          missingNote: '',
+          exceptionRecorded: false,
+          notificationAdded: false,
+        };
+      });
 
     const items = [...taskItems, ...pausedOnlyItems];
 

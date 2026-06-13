@@ -18,6 +18,7 @@ import {
   ExceptionRecord,
   PhoneNotification,
   KanbanSortMap,
+  TemporaryDeliveryChange,
 } from './volunteer-delivery.service';
 import { VolunteerSelectorComponent } from './volunteer-selector.component';
 import { DeliveryDetailComponent } from './delivery-detail.component';
@@ -48,6 +49,7 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
   @Input() mealTags: MealTag[] = [];
   @Input() visitRecords: VisitRecord[] = [];
   @Input() kanbanSort: KanbanSortMap = {};
+  @Input() temporaryDeliveryChanges: TemporaryDeliveryChange[] = [];
 
   @Output() statusUpdated = new EventEmitter<DeliveryWritebackResult>();
   @Output() backToSchedule = new EventEmitter<void>();
@@ -76,7 +78,7 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['date'] || changes['volunteerId'] || changes['tasks'] || changes['elders'] || changes['volunteers'] || changes['mealTags'] || changes['visitRecords'] || changes['kanbanSort']) {
+    if (changes['date'] || changes['volunteerId'] || changes['tasks'] || changes['elders'] || changes['volunteers'] || changes['mealTags'] || changes['visitRecords'] || changes['kanbanSort'] || changes['temporaryDeliveryChanges']) {
       if (changes['volunteerId'] && this.volunteerId) {
         this.selectedVolunteerId = this.volunteerId;
         this.viewMode = 'delivery';
@@ -100,6 +102,7 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
       this.mealTags,
       this.visitRecords,
       this.kanbanSort,
+      this.temporaryDeliveryChanges,
     );
     if (this.summary && this.selectedTaskIndex >= this.summary.tasks.length) {
       this.selectedTaskIndex = Math.max(0, this.summary.tasks.length - 1);

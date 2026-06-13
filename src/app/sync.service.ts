@@ -13,7 +13,8 @@ export type SyncDataType =
   | 'callbackTasks'
   | 'kanbanSort'
   | 'prepData'
-  | 'deliveryData';
+  | 'deliveryData'
+  | 'temporaryDeliveryChanges';
 
 export const LS_KEY_MAP: Record<SyncDataType, string> = {
   elders: 'zfl-4-elders',
@@ -27,6 +28,7 @@ export const LS_KEY_MAP: Record<SyncDataType, string> = {
   kanbanSort: 'zfl-4-kanban-sort',
   prepData: LS_PREP_DATA_KEY,
   deliveryData: LS_DELIVERY_DATA_KEY,
+  temporaryDeliveryChanges: 'zfl-4-temp-delivery-changes',
 };
 
 export type ConflictResolution = 'keep-local' | 'adopt-remote' | 'field-level';
@@ -84,6 +86,7 @@ const DATA_TYPE_LABELS: Record<SyncDataType, string> = {
   kanbanSort: '看板路线排序',
   prepData: '备餐本地状态',
   deliveryData: '配送本地状态',
+  temporaryDeliveryChanges: '临时送餐变更',
 };
 
 @Injectable({ providedIn: 'root' })

@@ -11,6 +11,19 @@ import {
 } from './volunteer-delivery.types';
 import { SYNC_INSTANCE, SyncConflictGroup, SyncNotification } from '../sync.service';
 
+export type TemporaryDeliveryChange = {
+  id: string;
+  elderId: string;
+  date: string;
+  address?: string;
+  contact?: string;
+  mealTagIds?: string[];
+  specialMealNote?: string;
+  volunteerId?: string;
+  reason: string;
+  createdAt: string;
+};
+
 export type MealTag = {
   id: string;
   name: string;
@@ -218,6 +231,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     mealTags: MealTag[],
     visitRecords: VisitRecord[],
     kanbanSort?: KanbanSortMap,
+    temporaryDeliveryChanges: TemporaryDeliveryChange[] = [],
   ): VolunteerDailySummary | null {
     const volunteer = volunteers.find(v => v.id === volunteerId);
     if (!volunteer) return null;
@@ -229,7 +243,33 @@ export class VolunteerDeliveryService implements OnDestroy {
       area: volunteer.area,
     };
 
-    const dateTasks = tasks.filter(t => t.date === date && t.volunteerId === volunteerId);
+    const tempChangeMap = new Map<string, TemporaryDeliveryChange>();
+    for (const tc of temporaryDeliveryChanges) {
+      if (tc.date === date) {
+        tempChangeMap.set(tc.elderId, tc);
+      }
+    }
+
+    const applyTempChange = (elder: Elder): Elder => {
+      const change = tempChangeMap.get(elder.id);
+      if (!change) return elder;
+      return {
+        ...elder,
+        address: change.address !== undefined ? change.address : elder.address,
+        contact: change.contact !== undefined ? change.contact : elder.contact,
+        mealTags: change.mealTagIds !== undefined ? change.mealTagIds : elder.mealTags,
+        specialMealNote: change.specialMealNote !== undefined ? change.specialMealNote : elder.specialMealNote,
+      };
+    };
+
+    const allTempChangeElderIds = new Set<string>();
+    for (const tc of temporaryDeliveryChanges) {
+      if (tc.date === date && tc.volunteerId === volunteerId) {
+        allTempChangeElderIds.add(tc.elderId);
+      }
+    }
+
+    const dateTasks = tasks.filter(t => t.date === date && (t.volunteerId === volunteerId || allTempChangeElderIds.has(t.elderId)));
     const elderMap = new Map(elders.map(e => [e.id, e]));
     const tagMap = new Map(mealTags.map(t => [t.id, t]));
 
@@ -247,8 +287,9 @@ export class VolunteerDeliveryService implements OnDestroy {
     }
 
     const deliveryTasks: DeliveryTask[] = orderedTasks.map((task, index) => {
-      const elder = elderMap.get(task.elderId);
-      if (!elder) return null;
+      const rawElder = elderMap.get(task.elderId);
+      if (!rawElder) return null;
+      const elder = applyTempChange(rawElder);
 
       const stored = this.getStoredStatus(date, task.id);
       const lastVisit = this.getElderLastVisit(elder.id, visitRecords);
@@ -258,11 +299,19 @@ export class VolunteerDeliveryService implements OnDestroy {
         .map(tid => tagMap.get(tid))
         .filter((t): t is MealTag => !!t);
 
+      const effectiveVolunteerId = tempChangeMap.get(elder.id)?.volunteerId || task.volunteerId;
+      const effectiveVolunteer = effectiveVolunteerId === volunteerId ? volunteer : volunteers.find(v => v.id === effectiveVolunteerId);
+
       return {
         id: `delivery-${date}-${task.id}`,
         taskId: task.id,
         routeOrder: index + 1,
-        volunteer: volunteerRef,
+        volunteer: effectiveVolunteer ? {
+          id: effectiveVolunteer.id,
+          name: effectiveVolunteer.name,
+          phone: effectiveVolunteer.phone,
+          area: effectiveVolunteer.area,
+        } : volunteerRef,
         elder: {
           id: elder.id,
           name: elder.name,

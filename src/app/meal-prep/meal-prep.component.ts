@@ -17,6 +17,7 @@ import {
   Volunteer,
   ExceptionRecord,
   PhoneNotification,
+  TemporaryDeliveryChange,
 } from './meal-prep.service';
 import { KitchenPrintComponent } from './kitchen-print.component';
 
@@ -33,6 +34,7 @@ export class MealPrepComponent implements OnInit, OnChanges {
   @Input() elders: Elder[] = [];
   @Input() mealTags: MealTag[] = [];
   @Input() volunteers: Volunteer[] = [];
+  @Input() temporaryDeliveryChanges: TemporaryDeliveryChange[] = [];
 
   @Output() exceptionCreated = new EventEmitter<ExceptionRecord>();
   @Output() notificationCreated = new EventEmitter<PhoneNotification>();
@@ -53,7 +55,7 @@ export class MealPrepComponent implements OnInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['date'] || changes['tasks'] || changes['elders'] || changes['mealTags'] || changes['volunteers']) {
+    if (changes['date'] || changes['tasks'] || changes['elders'] || changes['mealTags'] || changes['volunteers'] || changes['temporaryDeliveryChanges']) {
       this.refresh();
     }
   }
@@ -66,6 +68,7 @@ export class MealPrepComponent implements OnInit, OnChanges {
       this.elders,
       this.mealTags,
       this.volunteers,
+      this.temporaryDeliveryChanges,
     );
   }
 

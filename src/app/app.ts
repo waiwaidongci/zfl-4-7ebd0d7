@@ -104,6 +104,19 @@ type PhoneNotification = {
   updatedAt: string;
 };
 
+type TemporaryDeliveryChange = {
+  id: string;
+  elderId: string;
+  date: string;
+  address?: string;
+  contact?: string;
+  mealTagIds?: string[];
+  specialMealNote?: string;
+  volunteerId?: string;
+  reason: string;
+  createdAt: string;
+};
+
 type CallbackTask = {
   id: string;
   notificationId: string;
@@ -179,6 +192,7 @@ type BackupData = {
   kanbanSort: KanbanSortMap;
   prepData?: any;
   deliveryData?: any;
+  temporaryDeliveryChanges?: TemporaryDeliveryChange[];
 };
 
 type ImportPreviewItem<T> = {
@@ -195,6 +209,7 @@ type ImportPreview = {
   visitRecords: ImportPreviewItem<VisitRecord>[];
   phoneNotifications: ImportPreviewItem<PhoneNotification>[];
   callbackTasks: ImportPreviewItem<CallbackTask>[];
+  temporaryDeliveryChanges: ImportPreviewItem<TemporaryDeliveryChange>[];
 };
 
 type ImportError = {
@@ -293,12 +308,16 @@ type SimulationData = {
                     <strong>{{ elder.name }}</strong>
                     <div class="elder-card-btns">
                       <button type="button" class="ghost sm visit-btn" (click)="$event.stopPropagation(); startEditElder(elder)">编辑</button>
+                      <button type="button" class="ghost sm visit-btn" (click)="$event.stopPropagation(); openTempChangePanel(elder.id)">临时变更</button>
                       <button type="button" class="ghost sm visit-btn" (click)="$event.stopPropagation(); openVisitPanel(elder.id)">回访</button>
                     </div>
                   </div>
                   <small>{{ elder.address }}</small>
                   <div class="tag-row" *ngIf="elderMealTags(elder.id).length > 0">
                     <span class="tag-chip sm" *ngFor="let tag of elderMealTags(elder.id)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                  </div>
+                  <div class="temp-change-indicator" *ngIf="getElderTempChanges(elder.id).length > 0">
+                    <span class="temp-change-badge" *ngFor="let tc of getElderTempChanges(elder.id)">📋 {{ tc.date }} {{ tempChangeSummary(elder.id, tc.date) }}</span>
                   </div>
                   <div class="last-visit" *ngIf="getLastVisit(elder.id)">
                     <span class="visit-dot"></span>
@@ -611,11 +630,12 @@ type SimulationData = {
               <span>{{ group.tasks.length }}单 · {{ group.volunteer.area }}</span>
             </div>
             <div class="kanban-cards">
-              <div class="kanban-card" *ngFor="let task of group.tasks; let i = index">
+              <div class="kanban-card" *ngFor="let task of group.tasks; let i = index" [class.temp-change-card]="hasTempChangeOnDate(task.elderId, task.date)">
                 <div class="kanban-card-info">
-                  <strong>{{ elderName(task.elderId) }}</strong>
+                  <strong>{{ elderName(task.elderId) }} <span class="temp-change-badge" *ngIf="hasTempChangeOnDate(task.elderId, task.date)">临时变更</span></strong>
                   <span>{{ elderAddress(task.elderId) }}</span>
                   <small>{{ elderPreference(task.elderId) }}</small>
+                  <small class="temp-change-detail" *ngIf="hasTempChangeOnDate(task.elderId, task.date)">{{ tempChangeSummary(task.elderId, task.date) }}</small>
                   <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
                     <span class="tag-chip sm" *ngFor="let tag of elderMealTags(task.elderId)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
                   </div>
@@ -636,9 +656,9 @@ type SimulationData = {
               <span>{{ unassignedKanbanTasks().length }}单</span>
             </div>
             <div class="kanban-cards">
-              <div class="kanban-card" *ngFor="let task of unassignedKanbanTasks()">
+              <div class="kanban-card" *ngFor="let task of unassignedKanbanTasks()" [class.temp-change-card]="hasTempChangeOnDate(task.elderId, task.date)">
                 <div class="kanban-card-info">
-                  <strong>{{ elderName(task.elderId) }}</strong>
+                  <strong>{{ elderName(task.elderId) }} <span class="temp-change-badge" *ngIf="hasTempChangeOnDate(task.elderId, task.date)">临时变更</span></strong>
                   <span>{{ elderAddress(task.elderId) }}</span>
                   <small>{{ elderPreference(task.elderId) }}</small>
                   <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
@@ -663,6 +683,7 @@ type SimulationData = {
         [elders]="elders"
         [mealTags]="mealTags"
         [volunteers]="volunteers"
+        [temporaryDeliveryChanges]="temporaryDeliveryChanges"
         (exceptionCreated)="onPrepExceptionCreated($event)"
         (notificationCreated)="onPrepNotificationCreated($event)"
         (taskUpdated)="onPrepTaskUpdated($event)"
@@ -678,6 +699,7 @@ type SimulationData = {
         [mealTags]="mealTags"
         [visitRecords]="visitRecords"
         [kanbanSort]="kanbanSort"
+        [temporaryDeliveryChanges]="temporaryDeliveryChanges"
         (statusUpdated)="onDeliveryStatusUpdated($event)"
         (backToSchedule)="setViewMode('schedule')"
       ></app-volunteer-delivery>
@@ -778,6 +800,105 @@ type SimulationData = {
                 暂无回访记录，点击上方"新增回访"开始记录
               </p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" *ngIf="tempChangePanelVisible" (click)="closeTempChangePanel()">
+        <div class="modal-panel temp-change-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>临时送餐变更</h2>
+              <p class="muted" *ngIf="tempChangeFormElderId">
+                {{ tempChangeFormElderName }} · {{ tempChangeFormElderAddress }}
+              </p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeTempChangePanel()">关闭</button>
+          </div>
+
+          <div class="modal-body">
+            <div *ngIf="getElderTempChanges(tempChangeFormElderId!).length > 0 && !editingTempChangeId" class="temp-change-existing">
+              <h3>已有临时变更</h3>
+              <div class="temp-change-list-item" *ngFor="let tc of getElderTempChanges(tempChangeFormElderId!)">
+                <div class="temp-change-list-info">
+                  <strong>{{ tc.date }}</strong>
+                  <span class="temp-change-list-summary">{{ tempChangeSummary(tc.elderId, tc.date) }}</span>
+                  <small class="muted">{{ tc.reason }}</small>
+                </div>
+                <div class="temp-change-list-actions">
+                  <button type="button" class="ghost sm" (click)="editTempChange(tc)">编辑</button>
+                  <button type="button" class="ghost sm" (click)="deleteTempChange(tc.id)">删除</button>
+                </div>
+              </div>
+            </div>
+
+            <form class="temp-change-form" (ngSubmit)="saveTempChange()">
+              <h3 *ngIf="!editingTempChangeId">新增临时变更</h3>
+              <h3 *ngIf="editingTempChangeId">编辑临时变更</h3>
+              <div class="form-row">
+                <label>变更日期 <span class="required">*</span></label>
+                <input type="date" name="tempChangeDate" [(ngModel)]="tempChangeForm.date" required />
+              </div>
+              <div class="form-row">
+                <label>变更原因 <span class="required">*</span></label>
+                <input name="tempChangeReason" [(ngModel)]="tempChangeForm.reason" placeholder="如：老人临时住女儿家" required />
+              </div>
+              <div class="form-row">
+                <label>临时送餐地址</label>
+                <input name="tempChangeAddress" [(ngModel)]="tempChangeForm.address" placeholder="留空则使用长期档案地址" />
+              </div>
+              <div class="form-row">
+                <label>临时联系方式</label>
+                <input name="tempChangeContact" [(ngModel)]="tempChangeForm.contact" placeholder="留空则使用长期档案联系方式" />
+              </div>
+              <div class="form-row">
+                <label class="tag-select-label">临时餐食标签</label>
+                <div class="tag-select-grid">
+                  <label class="tag-check" *ngFor="let tag of mealTags">
+                    <input type="checkbox" [checked]="(tempChangeForm.mealTagIds || []).includes(tag.id)" (change)="toggleTempChangeFormTag(tag.id)" />
+                    <span>{{ tag.name }}</span>
+                  </label>
+                </div>
+                <small class="muted">勾选则覆盖长期档案的餐食标签，不勾选则使用长期档案</small>
+              </div>
+              <div class="form-row">
+                <label>临时特殊餐食备注</label>
+                <input name="tempChangeSpecialNote" [(ngModel)]="tempChangeForm.specialMealNote" placeholder="留空则使用长期档案备注" />
+              </div>
+              <div class="form-row">
+                <label>指定志愿者</label>
+                <select name="tempChangeVolunteer" [(ngModel)]="tempChangeForm.volunteerId">
+                  <option value="">不指定（使用排班分配）</option>
+                  <option *ngFor="let v of volunteers" [value]="v.id">{{ v.name }} ({{ v.area }})</option>
+                </select>
+              </div>
+
+              <div class="temp-change-conflict" *ngIf="tempChangeConflictInfo">
+                <div class="conflict-warning">
+                  <strong>检测到冲突</strong>
+                  <p *ngFor="let line of tempChangeConflictInfo.split('\\n')">{{ line }}</p>
+                </div>
+                <div class="conflict-resolution">
+                  <label>
+                    <input type="radio" name="conflictResolution" [(ngModel)]="tempChangeConflictResolution" value="overwrite-task" />
+                    <span>覆盖任务变更</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="conflictResolution" [(ngModel)]="tempChangeConflictResolution" value="keep-both" />
+                    <span>保留两者（临时变更仅影响当日）</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="conflictResolution" [(ngModel)]="tempChangeConflictResolution" value="cancel" />
+                    <span>取消保存</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button type="button" class="ghost" (click)="editingTempChangeId = null; tempChangeForm = { date: todayStr, reason: '' }; tempChangeConflictInfo = null" *ngIf="editingTempChangeId">取消编辑</button>
+                <button type="submit">{{ editingTempChangeId ? '保存修改' : '添加临时变更' }}</button>
+              </div>
+            </form>
           </div>
         </div>
       </div>
@@ -2133,6 +2254,26 @@ type SimulationData = {
 
     .center { text-align: center; }
 
+    .temp-change-indicator { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+    .temp-change-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #fff3e0; color: #b36a2e; border: 1px solid #f0c78a; }
+    .temp-change-existing { margin-bottom: 16px; }
+    .temp-change-existing h3 { font-size: 14px; margin: 0 0 8px; color: #65715f; }
+    .temp-change-list-item { display: flex; justify-content: space-between; align-items: flex-start; padding: 10px; border: 1px solid #e8ede1; border-radius: 6px; margin-bottom: 6px; background: #fffdf5; }
+    .temp-change-list-info { display: flex; flex-direction: column; gap: 2px; }
+    .temp-change-list-info strong { font-size: 13px; }
+    .temp-change-list-summary { font-size: 12px; color: #b36a2e; }
+    .temp-change-list-actions { display: flex; gap: 4px; }
+    .temp-change-form h3 { font-size: 14px; margin: 0 0 10px; color: #315448; }
+    .temp-change-conflict { margin: 12px 0; padding: 12px; border-radius: 8px; background: #fff7ef; border: 1px solid #d78b63; }
+    .conflict-warning strong { color: #c75454; }
+    .conflict-warning p { margin: 4px 0 0; font-size: 13px; color: #65715f; }
+    .conflict-resolution { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .conflict-resolution label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+    .temp-change-modal .modal-body { max-height: 70vh; overflow-y: auto; }
+    .required { color: #c75454; }
+    .temp-change-card { border-left: 3px solid #d9a84a !important; background: #fffdf5 !important; }
+    .temp-change-detail { color: #b36a2e; font-size: 11px; }
+
     @media (max-width: 900px) {
       .simulation-summary { grid-template-columns: repeat(2, 1fr); }
       .sim-stat-grid { grid-template-columns: repeat(2, 1fr); }
@@ -2159,6 +2300,7 @@ export class App implements AfterViewChecked, OnInit {
     this.loadExceptions();
     this.loadPhoneNotifications();
     this.loadCallbackTasks();
+    this.loadTempChanges();
     if (this.tasks.length === 0) this.generateTasks();
   }
 
@@ -2183,6 +2325,7 @@ export class App implements AfterViewChecked, OnInit {
     this.sync.captureLocalSnapshot('phoneNotifications', this.phoneNotifications);
     this.sync.captureLocalSnapshot('callbackTasks', this.callbackTasks);
     this.sync.captureLocalSnapshot('kanbanSort', this.kanbanSort);
+    this.sync.captureLocalSnapshot('temporaryDeliveryChanges', this.temporaryDeliveryChanges);
   }
 
   private pendingConflictGroups: SyncConflictGroup[] = [];
@@ -2227,6 +2370,7 @@ export class App implements AfterViewChecked, OnInit {
       case 'phoneNotifications': this.phoneNotifications = this.sync.readLocalData<PhoneNotification[]>('phoneNotifications') || this.phoneNotifications; this.sync.captureLocalSnapshot('phoneNotifications', this.phoneNotifications); break;
       case 'callbackTasks': this.callbackTasks = this.sync.readLocalData<CallbackTask[]>('callbackTasks') || this.callbackTasks; this.sync.captureLocalSnapshot('callbackTasks', this.callbackTasks); break;
       case 'kanbanSort': this.kanbanSort = this.sync.readLocalData<KanbanSortMap>('kanbanSort') || this.kanbanSort; this.sync.captureLocalSnapshot('kanbanSort', this.kanbanSort); break;
+      case 'temporaryDeliveryChanges': this.temporaryDeliveryChanges = this.sync.readLocalData<TemporaryDeliveryChange[]>('temporaryDeliveryChanges') || this.temporaryDeliveryChanges; this.sync.captureLocalSnapshot('temporaryDeliveryChanges', this.temporaryDeliveryChanges); break;
     }
     this.showSyncToast('数据已同步更新', 'info');
     this.cdr.markForCheck();
@@ -2338,6 +2482,19 @@ export class App implements AfterViewChecked, OnInit {
   importedData: BackupData | null = null;
   importSuccess = false;
 
+  temporaryDeliveryChanges: TemporaryDeliveryChange[] = [];
+  tempChangePanelVisible = false;
+  tempChangeFormElderId: string | null = null;
+  tempChangeForm: Omit<TemporaryDeliveryChange, 'id' | 'elderId' | 'createdAt'> = {
+    date: today,
+    reason: '',
+  };
+  tempChangeConflictInfo: string | null = null;
+  tempChangeConflictResolution: 'overwrite-task' | 'keep-both' | 'cancel' = 'keep-both';
+  editingTempChangeId: string | null = null;
+
+  readonly todayStr = today;
+
   private readonly BACKUP_VERSION = '1.0.0';
 
   EXCEPTION_CATEGORIES: ExceptionCategory[] = ['无人应答', '地址错误', '老人拒收', '餐食问题', '配送延误', '老人身体不适', '其他'];
@@ -2346,6 +2503,16 @@ export class App implements AfterViewChecked, OnInit {
 
   get selectedElderForVisit(): Elder | undefined {
     return this.elders.find((e) => e.id === this.selectedElderIdForVisit);
+  }
+
+  get tempChangeFormElderName(): string {
+    if (!this.tempChangeFormElderId) return '';
+    return this.elders.find(e => e.id === this.tempChangeFormElderId)?.name || '';
+  }
+
+  get tempChangeFormElderAddress(): string {
+    if (!this.tempChangeFormElderId) return '';
+    return this.elders.find(e => e.id === this.tempChangeFormElderId)?.address || '';
   }
 
   setViewMode(mode: AppViewMode) {
@@ -2496,7 +2663,20 @@ export class App implements AfterViewChecked, OnInit {
     const existing = new Set(this.tasks.filter((task) => task.date === this.taskDate).map((task) => task.elderId));
     const created = this.elders
       .filter((elder) => !existing.has(elder.id))
-      .map((elder) => ({ id: crypto.randomUUID(), elderId: elder.id, date: this.taskDate, volunteerId: '', status: '待分配' as const, exception: '', isManuallyModified: false, specialMealNote: elder.specialMealNote || '' }));
+      .map((elder) => {
+        const effectiveElder = this.applyTempChangeToElderRef(elder, this.taskDate);
+        const tempChange = this.getTempChangeForElderDate(elder.id, this.taskDate);
+        return {
+          id: crypto.randomUUID(),
+          elderId: elder.id,
+          date: this.taskDate,
+          volunteerId: tempChange?.volunteerId || '',
+          status: (tempChange?.volunteerId ? '配送中' : '待分配') as '配送中' | '待分配',
+          exception: '',
+          isManuallyModified: !!tempChange,
+          specialMealNote: effectiveElder.specialMealNote || '',
+        };
+      });
     this.tasks = [...created, ...this.tasks];
     this.save();
   }
@@ -2574,6 +2754,7 @@ export class App implements AfterViewChecked, OnInit {
 
   autoAssignTasks() {
     const dateTasks = this.filteredTasks();
+    const date = this.currentScheduleDate();
     const unassigned = dateTasks.filter((t) => !t.volunteerId && t.status === '待分配');
     if (unassigned.length === 0) {
       this.autoAssignResult = { assigned: [], failed: [] };
@@ -2589,11 +2770,12 @@ export class App implements AfterViewChecked, OnInit {
     const failed: AutoAssignFailure[] = [];
 
     for (const task of unassigned) {
-      const elder = this.elders.find((e) => e.id === task.elderId);
-      if (!elder) {
+      const rawElder = this.elders.find((e) => e.id === task.elderId);
+      if (!rawElder) {
         failed.push({ taskId: task.id, elderId: task.elderId, elderName: '未知老人', elderAddress: '', reason: '老人档案不存在' });
         continue;
       }
+      const elder = this.applyTempChangeToElderRef(rawElder, date);
 
       const candidates = this.volunteers
         .filter((v) => {
@@ -3459,6 +3641,199 @@ export class App implements AfterViewChecked, OnInit {
     this.elderEditForm = { name: '', preference: '', mealTags: [], address: '', contact: '', note: '', deliveryDays: [1, 2, 3, 4, 5, 6, 7], pauseDates: [], specialMealNote: '' };
   }
 
+  openTempChangePanel(elderId: string) {
+    this.tempChangeFormElderId = elderId;
+    this.tempChangePanelVisible = true;
+    this.tempChangeConflictInfo = null;
+    this.editingTempChangeId = null;
+    const elder = this.elders.find(e => e.id === elderId);
+    this.tempChangeForm = {
+      date: today,
+      reason: '',
+      address: '',
+      contact: '',
+      mealTagIds: undefined,
+      specialMealNote: '',
+      volunteerId: '',
+    };
+  }
+
+  closeTempChangePanel() {
+    this.tempChangePanelVisible = false;
+    this.tempChangeFormElderId = null;
+    this.tempChangeConflictInfo = null;
+    this.editingTempChangeId = null;
+  }
+
+  editTempChange(change: TemporaryDeliveryChange) {
+    this.editingTempChangeId = change.id;
+    this.tempChangeForm = {
+      date: change.date,
+      reason: change.reason,
+      address: change.address || '',
+      contact: change.contact || '',
+      mealTagIds: change.mealTagIds ? [...change.mealTagIds] : undefined,
+      specialMealNote: change.specialMealNote || '',
+      volunteerId: change.volunteerId || '',
+    };
+    this.tempChangeConflictInfo = null;
+  }
+
+  toggleTempChangeFormTag(tagId: string) {
+    const tags = this.tempChangeForm.mealTagIds || [];
+    if (tags.includes(tagId)) {
+      this.tempChangeForm = { ...this.tempChangeForm, mealTagIds: tags.filter(t => t !== tagId) };
+    } else {
+      this.tempChangeForm = { ...this.tempChangeForm, mealTagIds: [...tags, tagId] };
+    }
+  }
+
+  getElderTempChanges(elderId: string): TemporaryDeliveryChange[] {
+    return this.temporaryDeliveryChanges.filter(c => c.elderId === elderId);
+  }
+
+  getTempChangeForElderDate(elderId: string, date: string): TemporaryDeliveryChange | undefined {
+    return this.temporaryDeliveryChanges.find(c => c.elderId === elderId && c.date === date);
+  }
+
+  private detectTempChangeConflicts(elderId: string, date: string): string[] {
+    const conflicts: string[] = [];
+    const task = this.tasks.find(t => t.elderId === elderId && t.date === date);
+    if (task) {
+      if (task.isManuallyModified) {
+        conflicts.push(`该日期存在手动修改的任务（状态：${task.status}），临时变更将覆盖任务中的志愿者分配和特殊餐食备注`);
+      }
+      if (task.status === '异常') {
+        conflicts.push(`该日期存在异常状态的任务（异常信息：${task.exception || '无'}），请确认是否仍要变更`);
+      }
+    }
+    const exceptions = this.exceptionRecords.filter(r => r.elderId === elderId && r.date === date && r.status !== '已解决');
+    if (exceptions.length > 0) {
+      conflicts.push(`该日期存在 ${exceptions.length} 条未解决的异常记录，变更可能影响异常处理流程`);
+    }
+    const existingChange = this.temporaryDeliveryChanges.find(c => c.elderId === elderId && c.date === date && c.id !== this.editingTempChangeId);
+    if (existingChange) {
+      conflicts.push(`该日期已存在临时变更记录，保存将覆盖原变更`);
+    }
+    return conflicts;
+  }
+
+  saveTempChange() {
+    if (!this.tempChangeFormElderId || !this.tempChangeForm.date || !this.tempChangeForm.reason.trim()) return;
+
+    const conflicts = this.detectTempChangeConflicts(this.tempChangeFormElderId, this.tempChangeForm.date);
+    if (conflicts.length > 0 && !this.tempChangeConflictInfo) {
+      this.tempChangeConflictInfo = conflicts.join('\n');
+      return;
+    }
+
+    if (this.tempChangeConflictInfo && this.tempChangeConflictResolution === 'cancel') {
+      this.tempChangeConflictInfo = null;
+      return;
+    }
+
+    const now = new Date();
+    const createdAt = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const form = this.tempChangeForm;
+    const changeData: Omit<TemporaryDeliveryChange, 'id' | 'createdAt'> = {
+      elderId: this.tempChangeFormElderId,
+      date: form.date,
+      reason: form.reason,
+      address: form.address || undefined,
+      contact: form.contact || undefined,
+      mealTagIds: form.mealTagIds && form.mealTagIds.length > 0 ? form.mealTagIds : undefined,
+      specialMealNote: form.specialMealNote || undefined,
+      volunteerId: form.volunteerId || undefined,
+    };
+
+    if (this.editingTempChangeId) {
+      this.temporaryDeliveryChanges = this.temporaryDeliveryChanges.map(c =>
+        c.id === this.editingTempChangeId ? { ...c, ...changeData } : c
+      );
+    } else {
+      this.temporaryDeliveryChanges = [
+        { id: crypto.randomUUID(), ...changeData, createdAt },
+        ...this.temporaryDeliveryChanges,
+      ];
+    }
+
+    this.applyTempChangeToTasks(this.tempChangeFormElderId, form.date);
+    this.saveTempChanges();
+    this.tempChangeConflictInfo = null;
+    this.editingTempChangeId = null;
+    this.tempChangeForm = { date: today, reason: '' };
+  }
+
+  deleteTempChange(id: string) {
+    if (!confirm('确认删除此临时变更？删除后该日期将恢复使用老人长期档案信息。')) return;
+    this.temporaryDeliveryChanges = this.temporaryDeliveryChanges.filter(c => c.id !== id);
+    this.saveTempChanges();
+  }
+
+  private applyTempChangeToTasks(elderId: string, date: string) {
+    const change = this.getTempChangeForElderDate(elderId, date);
+    if (!change) return;
+    const task = this.tasks.find(t => t.elderId === elderId && t.date === date);
+    if (task) {
+      this.tasks = this.tasks.map(t => {
+        if (t.id !== task.id) return t;
+        const updates: Partial<MealTask> = {};
+        if (change.volunteerId !== undefined) {
+          updates.volunteerId = change.volunteerId;
+          updates.status = change.volunteerId ? '配送中' : '待分配';
+        }
+        if (change.specialMealNote !== undefined) {
+          updates.specialMealNote = change.specialMealNote;
+        }
+        return { ...t, ...updates, isManuallyModified: true };
+      });
+      this.save();
+    }
+  }
+
+  applyTempChangeToElderRef(elder: Elder, date: string): Elder {
+    const change = this.getTempChangeForElderDate(elder.id, date);
+    if (!change) return elder;
+    return {
+      ...elder,
+      address: change.address !== undefined ? change.address : elder.address,
+      contact: change.contact !== undefined ? change.contact : elder.contact,
+      mealTags: change.mealTagIds !== undefined ? change.mealTagIds : elder.mealTags,
+      specialMealNote: change.specialMealNote !== undefined ? change.specialMealNote : elder.specialMealNote,
+    };
+  }
+
+  private saveTempChanges() {
+    this.sync.writeLocalData('temporaryDeliveryChanges', this.temporaryDeliveryChanges);
+    this.sync.captureLocalSnapshot('temporaryDeliveryChanges', this.temporaryDeliveryChanges);
+  }
+
+  private loadTempChanges() {
+    const raw = this.sync.readLocalData<TemporaryDeliveryChange[]>('temporaryDeliveryChanges');
+    if (raw) this.temporaryDeliveryChanges = raw;
+    this.sync.captureLocalSnapshot('temporaryDeliveryChanges', this.temporaryDeliveryChanges);
+  }
+
+  hasTempChangeOnDate(elderId: string, date: string): boolean {
+    return this.temporaryDeliveryChanges.some(c => c.elderId === elderId && c.date === date);
+  }
+
+  tempChangeSummary(elderId: string, date: string): string {
+    const change = this.getTempChangeForElderDate(elderId, date);
+    if (!change) return '';
+    const parts: string[] = [];
+    if (change.address) parts.push('地址已变更');
+    if (change.contact) parts.push('联系方式已变更');
+    if (change.mealTagIds) parts.push('餐食标签已变更');
+    if (change.specialMealNote) parts.push('特殊餐食备注已变更');
+    if (change.volunteerId) {
+      const vol = this.volunteers.find(v => v.id === change.volunteerId);
+      parts.push(vol ? `志愿者指定为${vol.name}` : '志愿者已变更');
+    }
+    return parts.length > 0 ? parts.join('、') : '临时变更';
+  }
+
   elderMealTags(elderId: string): MealTag[] {
     const elder = this.elders.find((e) => e.id === elderId);
     if (!elder) return [];
@@ -4048,6 +4423,7 @@ export class App implements AfterViewChecked, OnInit {
       kanbanSort: { ...this.kanbanSort },
       prepData: this.mealPrepService.exportStorageData(),
       deliveryData: this.volunteerDeliveryService.exportStorageData(),
+      temporaryDeliveryChanges: [...this.temporaryDeliveryChanges],
     };
 
     const jsonStr = JSON.stringify(backup, null, 2);
@@ -4296,6 +4672,10 @@ export class App implements AfterViewChecked, OnInit {
       errors.push('deliveryData 字段格式不正确（必须为对象）');
     }
 
+    if (data.temporaryDeliveryChanges !== undefined && !Array.isArray(data.temporaryDeliveryChanges)) {
+      errors.push('temporaryDeliveryChanges 字段格式不正确（必须为数组）');
+    }
+
     if (errors.length > 0) {
       this.importError = {
         type: 'validation',
@@ -4319,6 +4699,7 @@ export class App implements AfterViewChecked, OnInit {
       kanbanSort: data.kanbanSort || {},
       prepData: data.prepData || {},
       deliveryData: data.deliveryData || {},
+      temporaryDeliveryChanges: data.temporaryDeliveryChanges || [],
     };
 
     const nestedStatusCount = (storageData: Record<string, Record<string, unknown>> | undefined): number => {
@@ -4353,6 +4734,7 @@ export class App implements AfterViewChecked, OnInit {
     const visitIdMap = new Map(this.visitRecords.map(r => [r.id, r]));
     const notificationIdMap = new Map(this.phoneNotifications.map(n => [n.id, n]));
     const callbackIdMap = new Map(this.callbackTasks.map(c => [c.id, c]));
+    const tempChangeIdMap = new Map(this.temporaryDeliveryChanges.map(c => [c.id, c]));
 
     const classify = <T extends { id: string }>(items: T[], existingMap: Map<string, T>): ImportPreviewItem<T>[] => {
       return items.map(item => {
@@ -4373,7 +4755,8 @@ export class App implements AfterViewChecked, OnInit {
       exceptionRecords: classify(backup.exceptionRecords, exceptionIdMap),
       visitRecords: classify(backup.visitRecords, visitIdMap),
       phoneNotifications: classify(backup.phoneNotifications, notificationIdMap),
-      callbackTasks: classify(backup.callbackTasks, callbackIdMap)
+      callbackTasks: classify(backup.callbackTasks, callbackIdMap),
+      temporaryDeliveryChanges: classify(backup.temporaryDeliveryChanges || [], tempChangeIdMap)
     };
   }
 
@@ -4393,6 +4776,7 @@ export class App implements AfterViewChecked, OnInit {
       visitRecords: { total: p.visitRecords.length, new: this.countImportItemsByStatus(p.visitRecords, 'new'), duplicate: this.countImportItemsByStatus(p.visitRecords, 'duplicate'), overwrite: this.countImportItemsByStatus(p.visitRecords, 'overwrite') },
       phoneNotifications: { total: p.phoneNotifications.length, new: this.countImportItemsByStatus(p.phoneNotifications, 'new'), duplicate: this.countImportItemsByStatus(p.phoneNotifications, 'duplicate'), overwrite: this.countImportItemsByStatus(p.phoneNotifications, 'overwrite') },
       callbackTasks: { total: p.callbackTasks.length, new: this.countImportItemsByStatus(p.callbackTasks, 'new'), duplicate: this.countImportItemsByStatus(p.callbackTasks, 'duplicate'), overwrite: this.countImportItemsByStatus(p.callbackTasks, 'overwrite') },
+      temporaryDeliveryChanges: { total: p.temporaryDeliveryChanges.length, new: this.countImportItemsByStatus(p.temporaryDeliveryChanges, 'new'), duplicate: this.countImportItemsByStatus(p.temporaryDeliveryChanges, 'duplicate'), overwrite: this.countImportItemsByStatus(p.temporaryDeliveryChanges, 'overwrite') },
     };
   }
 
@@ -4516,6 +4900,7 @@ export class App implements AfterViewChecked, OnInit {
       ['phoneNotifications', backup.phoneNotifications, this.phoneNotifications],
       ['callbackTasks', backup.callbackTasks, this.callbackTasks],
       ['kanbanSort', backup.kanbanSort || {}, this.kanbanSort],
+      ['temporaryDeliveryChanges', backup.temporaryDeliveryChanges || [], this.temporaryDeliveryChanges],
     ];
     if (backup.prepData) {
       detectionPairs.push(['prepData', backup.prepData, this.mealPrepService.exportStorageData()]);
@@ -4626,6 +5011,10 @@ export class App implements AfterViewChecked, OnInit {
     this.phoneNotifications = mergeById(this.phoneNotifications, backup.phoneNotifications);
     this.callbackTasks = mergeById(this.callbackTasks, backup.callbackTasks);
 
+    if (backup.temporaryDeliveryChanges) {
+      this.temporaryDeliveryChanges = mergeById(this.temporaryDeliveryChanges, backup.temporaryDeliveryChanges);
+    }
+
     this.exceptionRecords = this.sync.deduplicateArray(
       this.exceptionRecords,
       (r) => this.sync.buildDedupKeyForException({ taskId: r.taskId, source: r.source, category: r.category })
@@ -4660,6 +5049,7 @@ export class App implements AfterViewChecked, OnInit {
     this.saveVisits();
     this.savePhoneNotifications();
     this.saveCallbackTasks();
+    this.saveTempChanges();
   }
 
   private finalizeImportComplete() {
