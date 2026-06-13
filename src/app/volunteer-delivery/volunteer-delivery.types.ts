@@ -1,5 +1,16 @@
 export type DeliveryStatus = '待配送' | '配送中' | '已送达' | '异常' | '未接通';
 
+export type DeliveryStoredStatus = {
+  status: DeliveryStatus;
+  exceptionNote: string;
+  statusUpdatedAt: string;
+  exceptionRecorded: boolean;
+  notificationAdded: boolean;
+  phoneCallResults: { notificationId: string; result: string; remark: string; timestamp: string }[];
+  visitReminderHandled: boolean;
+  visitReminderNote: string;
+};
+
 export const DELIVERY_STATUSES: DeliveryStatus[] = [
   '待配送',
   '配送中',
@@ -142,6 +153,7 @@ export type OfflineDraftMergeResult = {
   exceptionCreated?: any;
   notificationCreated?: any;
   notificationUpdated?: { notificationId: string; status: any; remark?: string };
+  visitReminderHandled?: { taskId: string; note: string };
   callbackCreated?: any;
   conflicts: OfflineDeliveryDraft[];
   mergedCount: number;

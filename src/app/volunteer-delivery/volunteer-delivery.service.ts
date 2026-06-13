@@ -13,6 +13,7 @@ import {
   OfflineDraftStatus,
   OfflineDraftMergeResult,
   LS_OFFLINE_DRAFT_KEY,
+  DeliveryStoredStatus,
 } from './volunteer-delivery.types';
 import { SYNC_INSTANCE, SyncConflictGroup, SyncNotification } from '../sync.service';
 
@@ -177,20 +178,23 @@ export class VolunteerDeliveryService implements OnDestroy {
     this.sync.writeLocalData('deliveryData', this.storageData);
   }
 
-  private getStoredStatus(date: string, taskId: string) {
-    return this.storageData[date]?.[taskId] || {
+  private getStoredStatus(date: string, taskId: string): DeliveryStoredStatus {
+    return (this.storageData[date]?.[taskId] as DeliveryStoredStatus) || {
       status: '待配送' as DeliveryStatus,
       exceptionNote: '',
       statusUpdatedAt: '',
       exceptionRecorded: false,
       notificationAdded: false,
+      phoneCallResults: [],
+      visitReminderHandled: false,
+      visitReminderNote: '',
     };
   }
 
   private setStoredStatus(
     date: string,
     taskId: string,
-    data: {
+    data: Partial<DeliveryStoredStatus> & {
       status: DeliveryStatus;
       exceptionNote: string;
       statusUpdatedAt: string;
@@ -201,7 +205,11 @@ export class VolunteerDeliveryService implements OnDestroy {
     if (!this.storageData[date]) {
       this.storageData[date] = {};
     }
-    this.storageData[date][taskId] = data;
+    const existing = this.getStoredStatus(date, taskId);
+    this.storageData[date][taskId] = {
+      ...existing,
+      ...data,
+    };
     this.saveStorage();
   }
 
@@ -562,6 +570,47 @@ export class VolunteerDeliveryService implements OnDestroy {
     });
   }
 
+  recordPhoneCallResult(
+    date: string,
+    taskId: string,
+    notificationId: string,
+    result: '已通知' | '未接通' | '稍后再拨',
+    remark: string = ''
+  ): void {
+    const existing = this.getStoredStatus(date, taskId);
+    const newResult = {
+      notificationId,
+      result,
+      remark,
+      timestamp: this.nowString(),
+    };
+    this.setStoredStatus(date, taskId, {
+      ...existing,
+      phoneCallResults: [...(existing.phoneCallResults || []), newResult],
+    });
+  }
+
+  markVisitReminderHandled(
+    date: string,
+    taskId: string,
+    note: string = ''
+  ): void {
+    const existing = this.getStoredStatus(date, taskId);
+    this.setStoredStatus(date, taskId, {
+      ...existing,
+      visitReminderHandled: true,
+      visitReminderNote: note,
+    });
+  }
+
+  getPhoneCallResults(date: string, taskId: string) {
+    return this.getStoredStatus(date, taskId).phoneCallResults || [];
+  }
+
+  isVisitReminderHandled(date: string, taskId: string): boolean {
+    return this.getStoredStatus(date, taskId).visitReminderHandled || false;
+  }
+
   getDeliveryStatusColor(status: DeliveryStatus): string {
     return DELIVERY_STATUS_COLORS[status];
   }
@@ -707,11 +756,13 @@ export class VolunteerDeliveryService implements OnDestroy {
     volunteerId: string,
     status: DeliveryStatus,
     exceptionNote: string = ''
-  ): OfflineDeliveryDraft {
-    return this.createOfflineDraft('status-update', taskId, date, volunteerId, {
+  ): { draft: OfflineDeliveryDraft; updateResult: TaskWritebackResult } {
+    const updateResult = this.updateDeliveryStatus(date, taskId, status, exceptionNote);
+    const draft = this.createOfflineDraft('status-update', taskId, date, volunteerId, {
       deliveryStatus: status,
       exceptionNote,
     });
+    return { draft, updateResult };
   }
 
   createExceptionNoteDraft(
@@ -720,6 +771,11 @@ export class VolunteerDeliveryService implements OnDestroy {
     volunteerId: string,
     exceptionNote: string
   ): OfflineDeliveryDraft {
+    const existing = this.getStoredStatus(date, taskId);
+    this.setStoredStatus(date, taskId, {
+      ...existing,
+      exceptionNote,
+    });
     return this.createOfflineDraft('exception-note', taskId, date, volunteerId, {
       exceptionNote,
     });
@@ -733,6 +789,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     result: '已通知' | '未接通' | '稍后再拨',
     remark: string = ''
   ): OfflineDeliveryDraft {
+    this.recordPhoneCallResult(date, taskId, phoneNotificationId, result, remark);
     return this.createOfflineDraft('phone-call-result', taskId, date, volunteerId, {
       phoneNotificationId,
       phoneCallResult: result,
@@ -746,6 +803,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     volunteerId: string,
     note: string = ''
   ): OfflineDeliveryDraft {
+    this.markVisitReminderHandled(date, taskId, note);
     return this.createOfflineDraft('visit-reminder-handled', taskId, date, volunteerId, {
       visitReminderHandled: true,
       visitReminderNote: note,
@@ -898,7 +956,7 @@ export class VolunteerDeliveryService implements OnDestroy {
       case 'phone-call-result':
         return this.mergePhoneCallResultDraft(draft, existingNotifications, result);
       case 'visit-reminder-handled':
-        return true;
+        return this.mergeVisitReminderHandledDraft(draft, result);
       default:
         return false;
     }
@@ -984,11 +1042,41 @@ export class VolunteerDeliveryService implements OnDestroy {
   ): boolean {
     if (!draft.phoneNotificationId || !draft.phoneCallResult) return false;
 
+    this.recordPhoneCallResult(
+      draft.date,
+      draft.taskId,
+      draft.phoneNotificationId,
+      draft.phoneCallResult,
+      draft.phoneCallRemark
+    );
+
     if (result) {
       result.notificationUpdated = {
         notificationId: draft.phoneNotificationId,
         status: draft.phoneCallResult,
         remark: draft.phoneCallRemark,
+      };
+    }
+
+    return true;
+  }
+
+  private mergeVisitReminderHandledDraft(
+    draft: OfflineDeliveryDraft,
+    result?: OfflineDraftMergeResult
+  ): boolean {
+    if (!draft.visitReminderHandled) return false;
+
+    this.markVisitReminderHandled(
+      draft.date,
+      draft.taskId,
+      draft.visitReminderNote
+    );
+
+    if (result) {
+      result.visitReminderHandled = {
+        taskId: draft.taskId,
+        note: draft.visitReminderNote || '',
       };
     }
 

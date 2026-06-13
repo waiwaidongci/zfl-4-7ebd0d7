@@ -3944,6 +3944,18 @@ export class App implements AfterViewChecked, OnInit {
         }
       }
     }
+    if (data.visitReminderHandled) {
+      const vh = data.visitReminderHandled;
+      this.tasks = this.tasks.map(t =>
+        t.id === vh.taskId ? {
+          ...t,
+          visitReminderHandled: true,
+          visitReminderNote: vh.note,
+        } : t
+      );
+      this.showSyncToast('回访提醒已标记为已处理', 'success');
+      this.save();
+    }
   }
 
   offlineDraftConflicts: any[] = [];

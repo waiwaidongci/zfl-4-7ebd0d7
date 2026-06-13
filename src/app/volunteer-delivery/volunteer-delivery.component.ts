@@ -30,6 +30,7 @@ type DeliveryWritebackResult = {
   exceptionCreated?: ExceptionRecord;
   notificationCreated?: PhoneNotification;
   notificationUpdated?: { notificationId: string; status: any; remark?: string };
+  visitReminderHandled?: { taskId: string; note: string };
   draftCreated?: OfflineDeliveryDraft;
   mergeResult?: any;
 };
@@ -210,7 +211,7 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
     }
 
     if (!this.isOnline) {
-      const draft = this.deliveryService.createStatusUpdateDraft(
+      const { draft, updateResult } = this.deliveryService.createStatusUpdateDraft(
         data.taskId,
         this.date,
         this.selectedVolunteerId,
@@ -219,18 +220,11 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
       );
       writeback.draftCreated = draft;
 
-      const localResult = this.deliveryService.updateDeliveryStatus(
-        this.date,
-        data.taskId,
-        data.status,
-        data.exceptionNote,
-      );
-
-      if (localResult.taskUpdated) {
+      if (updateResult.taskUpdated) {
         writeback.taskUpdated = {
-          taskId: localResult.taskUpdated.id,
-          status: localResult.taskUpdated.status,
-          exception: localResult.taskUpdated.exception,
+          taskId: updateResult.taskUpdated.id,
+          status: updateResult.taskUpdated.status,
+          exception: updateResult.taskUpdated.exception,
           deliveryStatus: data.status,
         };
       }
@@ -345,6 +339,9 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
     if (mergeResult.notificationUpdated) {
       writeback.notificationUpdated = mergeResult.notificationUpdated;
     }
+    if (mergeResult.visitReminderHandled) {
+      writeback.visitReminderHandled = mergeResult.visitReminderHandled;
+    }
 
     this.statusUpdated.emit(writeback);
 
@@ -416,31 +413,35 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
     const existingNotification = this.phoneNotifications.find(
       n => n.taskId === data.taskId && (n.notificationStatus === '未通知' || n.notificationStatus === '稍后再拨')
     );
+    const notificationId = data.phoneNotificationId || existingNotification?.id || '';
 
     if (!this.isOnline) {
       const draft = this.deliveryService.createPhoneCallResultDraft(
         data.taskId,
         this.date,
         this.selectedVolunteerId,
-        data.phoneNotificationId || existingNotification?.id || '',
+        notificationId,
         data.result,
         data.remark
       );
       writeback.draftCreated = draft;
-      writeback.notificationUpdated = {
-        notificationId: data.phoneNotificationId || existingNotification?.id || '',
-        status: data.result,
-        remark: data.remark,
-      };
       this.lastSyncMessage = `电话结果已保存为离线草稿`;
       setTimeout(() => { this.lastSyncMessage = ''; }, 3000);
     } else {
-      writeback.notificationUpdated = {
-        notificationId: data.phoneNotificationId || existingNotification?.id || '',
-        status: data.result,
-        remark: data.remark,
-      };
+      this.deliveryService.recordPhoneCallResult(
+        this.date,
+        data.taskId,
+        notificationId,
+        data.result,
+        data.remark
+      );
     }
+
+    writeback.notificationUpdated = {
+      notificationId,
+      status: data.result,
+      remark: data.remark,
+    };
 
     this.updateDraftCounts();
     this.statusUpdated.emit(writeback);
@@ -459,7 +460,18 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
       writeback.draftCreated = draft;
       this.lastSyncMessage = `回访处理已保存为离线草稿`;
       setTimeout(() => { this.lastSyncMessage = ''; }, 3000);
+    } else {
+      this.deliveryService.markVisitReminderHandled(
+        this.date,
+        data.taskId,
+        data.note
+      );
     }
+
+    writeback.visitReminderHandled = {
+      taskId: data.taskId,
+      note: data.note,
+    };
 
     this.updateDraftCounts();
     this.statusUpdated.emit(writeback);
