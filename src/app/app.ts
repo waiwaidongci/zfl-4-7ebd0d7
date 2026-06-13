@@ -301,6 +301,10 @@ type SimDiffPausedItem = {
   wasPaused: boolean;
   isPaused: boolean;
   changeType: 'pause-new' | 'pause-resume' | 'pause-unchanged';
+  changeSource?: 'elder-pause-date' | 'simulation-algorithm' | 'temp-change';
+  changeDetail?: string;
+  relatedTempChangeId?: string;
+  relatedTempChangeReason?: string;
 };
 
 type SimDiffSpecialMealItem = {
@@ -310,6 +314,12 @@ type SimDiffSpecialMealItem = {
   oldNote?: string;
   newNote?: string;
   changeType: 'special-new' | 'special-removed' | 'special-changed' | 'special-unchanged';
+  changeSource?: 'elder-basic' | 'task-override' | 'temp-change' | 'simulation-algorithm';
+  changeDetail?: string;
+  relatedTempChangeId?: string;
+  relatedTempChangeReason?: string;
+  oldSource?: 'elder-basic' | 'task-override' | 'temp-change';
+  newSource?: 'elder-basic' | 'task-override' | 'temp-change';
 };
 
 type DaySimulationDiff = {
@@ -2305,6 +2315,7 @@ type SimulationDiffResult = {
                         <span class="pause-tag new" *ngIf="item.changeType === 'pause-new'">新增暂停</span>
                         <span class="pause-tag resume" *ngIf="item.changeType === 'pause-resume'">恢复送餐</span>
                         <span class="pause-tag keep" *ngIf="item.changeType === 'pause-unchanged' && item.isPaused">持续暂停</span>
+                        <span class="source-tag" *ngIf="item.changeSource">{{ getPauseChangeSourceText(item.changeSource) }}</span>
                       </div>
                       <small>{{ item.address }}</small>
                       <small class="contact">📞 {{ item.contact }}</small>
@@ -2312,6 +2323,10 @@ type SimulationDiffResult = {
                         <span class="pause-status" [class.active]="item.wasPaused">提交前：{{ item.wasPaused ? '已暂停' : '正常送餐' }}</span>
                         <span class="pause-arrow">→</span>
                         <span class="pause-status" [class.active]="item.isPaused">提交后：{{ item.isPaused ? '暂停送餐' : '正常送餐' }}</span>
+                      </div>
+                      <div class="change-detail-row" *ngIf="item.changeDetail">
+                        <span class="detail-label">变更原因：</span>
+                        <span class="detail-text">{{ item.changeDetail }}</span>
                       </div>
                     </div>
                   </div>
@@ -2331,6 +2346,12 @@ type SimulationDiffResult = {
                         <span class="special-tag new" *ngIf="item.changeType === 'special-new'">新增特殊餐</span>
                         <span class="special-tag removed" *ngIf="item.changeType === 'special-removed'">取消特殊餐</span>
                         <span class="special-tag changed" *ngIf="item.changeType === 'special-changed'">餐食调整</span>
+                        <span class="source-tag" *ngIf="item.changeSource">{{ getSpecialChangeSourceText(item.changeSource) }}</span>
+                      </div>
+                      <div class="source-compare-row" *ngIf="item.oldSource || item.newSource">
+                        <span class="source-label" *ngIf="item.oldSource">原来源：{{ getSpecialChangeSourceText(item.oldSource) }}</span>
+                        <span class="source-arrow" *ngIf="item.oldSource && item.newSource && item.oldSource !== item.newSource">→</span>
+                        <span class="source-label" *ngIf="item.newSource && item.oldSource !== item.newSource">新来源：{{ getSpecialChangeSourceText(item.newSource) }}</span>
                       </div>
                       <div class="special-compare" *ngIf="item.changeType === 'special-changed'">
                         <div class="change-box old">
@@ -2350,6 +2371,14 @@ type SimulationDiffResult = {
                       <div class="special-single removed" *ngIf="item.changeType === 'special-removed'">
                         <small>移除备注</small>
                         <p>{{ item.oldNote }}</p>
+                      </div>
+                      <div class="change-detail-row" *ngIf="item.changeDetail">
+                        <span class="detail-label">变更说明：</span>
+                        <span class="detail-text">{{ item.changeDetail }}</span>
+                      </div>
+                      <div class="change-detail-row" *ngIf="item.relatedTempChangeReason">
+                        <span class="detail-label">临时变更原因：</span>
+                        <span class="detail-text temp-reason">{{ item.relatedTempChangeReason }}</span>
                       </div>
                     </div>
                   </div>
@@ -3161,6 +3190,15 @@ type SimulationDiffResult = {
     .special-single p { margin: 0; font-size: 13px; }
     .special-single.new { background: #fcf6ee; border: 1px solid #efd4b4; }
     .special-single.removed { background: #fceced; border: 1px solid #eeb9b9; text-decoration: line-through; opacity: 0.8; }
+
+    .source-tag { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 10px; background: #f0f2ed; color: #65715f; margin-left: 6px; font-weight: 500; }
+    .change-detail-row { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; font-size: 12px; flex-wrap: wrap; }
+    .change-detail-row .detail-label { color: #8a9783; flex-shrink: 0; }
+    .change-detail-row .detail-text { color: #3d4a38; }
+    .change-detail-row .detail-text.temp-reason { color: #9a6bd9; font-style: italic; }
+    .source-compare-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+    .source-compare-row .source-label { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #f0f2ed; color: #65715f; }
+    .source-compare-row .source-arrow { color: #8a9783; font-size: 12px; }
 
     .route-compare-grid { display: flex; flex-direction: column; gap: 14px; }
     .route-compare-card { border: 1px solid #e2e7da; border-radius: 10px; background: #fff; overflow: hidden; }
@@ -4543,19 +4581,37 @@ export class App implements AfterViewChecked, OnInit {
 
         if (elder) {
           let pauseChangeType: SimDiffPausedItem['changeType'] = 'pause-unchanged';
+          let pauseChangeSource: SimDiffPausedItem['changeSource'];
+          let pauseChangeDetail = '';
           const realTaskForElder = realTaskMap.get(elderId);
           const simTaskForElder = simTaskMap.get(elderId);
           const wasInReal = !!realTaskForElder && !wasPaused;
           const isInSim = !!simTaskForElder && !isPausedNow;
+
           if (!wasPaused && isPausedNow) {
             pauseChangeType = 'pause-new';
             totalPauseChanges++;
             totalPausedNew++;
+            if (elder.pauseDates?.includes(date)) {
+              pauseChangeSource = 'elder-pause-date';
+              pauseChangeDetail = `老人基础信息中新增暂停日期：${date}`;
+            } else {
+              pauseChangeSource = 'simulation-algorithm';
+              pauseChangeDetail = '模拟排班算法判定该老人当日暂停送餐';
+            }
           } else if (wasPaused && !isPausedNow) {
             pauseChangeType = 'pause-resume';
             totalPauseChanges++;
             totalPausedResumed++;
+            if (!elder.pauseDates?.includes(date)) {
+              pauseChangeSource = 'elder-pause-date';
+              pauseChangeDetail = `老人基础信息中移除暂停日期：${date}`;
+            } else {
+              pauseChangeSource = 'simulation-algorithm';
+              pauseChangeDetail = '模拟排班算法判定该老人当日恢复送餐';
+            }
           }
+
           if (pauseChangeType !== 'pause-unchanged' || wasPaused || isPausedNow) {
             pausedChanges.push({
               elderId,
@@ -4565,12 +4621,42 @@ export class App implements AfterViewChecked, OnInit {
               wasPaused,
               isPaused: isPausedNow,
               changeType: pauseChangeType,
+              changeSource: pauseChangeSource,
+              changeDetail: pauseChangeDetail,
             });
           }
         }
 
         if (simSpecialNote !== realSpecialNote) {
           let specialChangeType: SimDiffSpecialMealItem['changeType'] = 'special-unchanged';
+          let specialChangeSource: SimDiffSpecialMealItem['changeSource'];
+          let specialChangeDetail = '';
+          let oldSource: SimDiffSpecialMealItem['oldSource'];
+          let newSource: SimDiffSpecialMealItem['newSource'];
+          let relatedTempChangeId: string | undefined;
+          let relatedTempChangeReason: string | undefined;
+
+          const realTempChange = this.temporaryDeliveryChanges.find(c => c.elderId === elderId && c.date === date);
+          if (realTempChange?.specialMealNote !== undefined) {
+            oldSource = 'temp-change';
+            relatedTempChangeId = realTempChange.id;
+            relatedTempChangeReason = realTempChange.reason;
+          } else if (realTask?.specialMealNote) {
+            oldSource = 'task-override';
+          } else if (elder?.specialMealNote) {
+            oldSource = 'elder-basic';
+          }
+
+          const simTaskInSim = simTask;
+          const elderInSim = elder;
+          if (realTempChange?.specialMealNote !== undefined) {
+            newSource = 'temp-change';
+          } else if (simTaskInSim?.specialMealNote) {
+            newSource = 'task-override';
+          } else if (elderInSim?.specialMealNote) {
+            newSource = 'elder-basic';
+          }
+
           if (!realSpecialNote && simSpecialNote) {
             specialChangeType = 'special-new';
           } else if (realSpecialNote && !simSpecialNote) {
@@ -4578,6 +4664,25 @@ export class App implements AfterViewChecked, OnInit {
           } else if (realSpecialNote && simSpecialNote) {
             specialChangeType = 'special-changed';
           }
+
+          if (oldSource && newSource && oldSource !== newSource) {
+            specialChangeSource = newSource;
+            const sourceMap: Record<string, string> = {
+              'elder-basic': '老人基础信息',
+              'task-override': '任务单独备注',
+              'temp-change': '临时送餐变更'
+            };
+            specialChangeDetail = `备注来源变更：${sourceMap[oldSource]} → ${sourceMap[newSource]}`;
+          } else if (oldSource === newSource && oldSource) {
+            specialChangeSource = oldSource;
+            const sourceMap: Record<string, string> = {
+              'elder-basic': '老人基础信息',
+              'task-override': '任务单独备注',
+              'temp-change': '临时送餐变更'
+            };
+            specialChangeDetail = `备注内容变更（来源：${sourceMap[oldSource]}）`;
+          }
+
           if (specialChangeType !== 'special-unchanged') {
             totalSpecialMealChanges++;
             specialMealChanges.push({
@@ -4587,6 +4692,12 @@ export class App implements AfterViewChecked, OnInit {
               oldNote: realSpecialNote || undefined,
               newNote: simSpecialNote || undefined,
               changeType: specialChangeType,
+              changeSource: specialChangeSource,
+              changeDetail: specialChangeDetail,
+              oldSource,
+              newSource,
+              relatedTempChangeId,
+              relatedTempChangeReason,
             });
           }
         }
@@ -4802,6 +4913,25 @@ export class App implements AfterViewChecked, OnInit {
 
   getDiffDayResumedCount(date: string): number {
     return this.getDiffDayForDate(date)?.pauseEffectiveCount?.resumedAffected || 0;
+  }
+
+  getPauseChangeSourceText(source?: string): string {
+    const map: Record<string, string> = {
+      'elder-pause-date': '📋 老人基础信息',
+      'simulation-algorithm': '🤖 模拟算法',
+      'temp-change': '📝 临时变更'
+    };
+    return source ? map[source] || source : '';
+  }
+
+  getSpecialChangeSourceText(source?: string): string {
+    const map: Record<string, string> = {
+      'elder-basic': '📋 老人基础信息',
+      'task-override': '✏️ 任务单独备注',
+      'temp-change': '📝 临时送餐变更',
+      'simulation-algorithm': '🤖 模拟算法'
+    };
+    return source ? map[source] || source : '';
   }
 
   getCurrentDiffDayAddedCount(): number {
