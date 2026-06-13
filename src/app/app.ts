@@ -275,6 +275,10 @@ type SimulationData = {
         </div>
         <div class="hero-actions no-print">
           <button type="button" class="ghost hero-kitchen-btn" (click)="quickOpenKitchenPrint()" *ngIf="viewMode === 'schedule' || viewMode === 'meal-prep'">🖨️ 厨房批次打印</button>
+          <button type="button" class="ghost hero-kitchen-btn temp-change-manage-btn" (click)="openTempChangeManagePanel()" *ngIf="viewMode === 'schedule'">
+            📋 临时变更管理
+            <span class="tc-manage-count" *ngIf="getTempChangeCountByStatus().today > 0">{{ getTempChangeCountByStatus().today }}</span>
+          </button>
           <button type="button" class="ghost import-export-btn" (click)="openImportExportPanel()">📦 数据导入导出</button>
         </div>
       </header>
@@ -931,6 +935,203 @@ type SimulationData = {
                 <button type="submit">{{ editingTempChangeId ? '保存修改' : '添加临时变更' }}</button>
               </div>
             </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" *ngIf="tempChangeManagePanelVisible" (click)="closeTempChangeManagePanel()">
+        <div class="modal-panel temp-change-manage-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>临时变更管理</h2>
+              <p class="muted">按日期查看、取消和清理所有临时送餐变更，支持到期提醒和过期清理</p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeTempChangeManagePanel()">关闭</button>
+          </div>
+
+          <div class="tc-manage-summary-bar">
+            <div class="tc-stat-item">
+              <span class="tc-stat-num today-num">{{ getTempChangeCountByStatus().today }}</span>
+              <span class="tc-stat-label">今日生效</span>
+            </div>
+            <div class="tc-stat-item">
+              <span class="tc-stat-num upcoming-num">{{ getTempChangeCountByStatus().upcoming }}</span>
+              <span class="tc-stat-label">即将生效</span>
+            </div>
+            <div class="tc-stat-item">
+              <span class="tc-stat-num expired-num">{{ getTempChangeCountByStatus().expired }}</span>
+              <span class="tc-stat-label">已过期</span>
+            </div>
+            <div class="tc-stat-item total-item">
+              <span class="tc-stat-num">{{ temporaryDeliveryChanges.length }}</span>
+              <span class="tc-stat-label">总计</span>
+            </div>
+            <div class="tc-manage-header-actions">
+              <button type="button" class="ghost sm" [disabled]="getTempChangeCountByStatus().expired === 0" (click)="cleanupExpiredTempChanges()">
+                🗑️ 清理过期
+              </button>
+            </div>
+          </div>
+
+          <div class="tc-filter-tabs">
+            <button type="button" [class.active-filter]="tempChangeManageFilter === 'all'" (click)="setTempChangeManageFilter('all')">
+              全部 <small>({{ temporaryDeliveryChanges.length }})</small>
+            </button>
+            <button type="button" [class.active-filter]="tempChangeManageFilter === 'today'" (click)="setTempChangeManageFilter('today')">
+              🔴 今日 <small>({{ getTempChangeCountByStatus().today }})</small>
+            </button>
+            <button type="button" [class.active-filter]="tempChangeManageFilter === 'upcoming'" (click)="setTempChangeManageFilter('upcoming')">
+              🟡 即将生效 <small>({{ getTempChangeCountByStatus().upcoming }})</small>
+            </button>
+            <button type="button" [class.active-filter]="tempChangeManageFilter === 'expired'" (click)="setTempChangeManageFilter('expired')">
+              ⚪ 已过期 <small>({{ getTempChangeCountByStatus().expired }})</small>
+            </button>
+          </div>
+
+          <div class="tc-manage-body">
+            <div class="tc-empty-state" *ngIf="getFilteredTempChanges().length === 0">
+              <div class="tc-empty-icon">📋</div>
+              <p>当前筛选条件下没有临时变更</p>
+              <small class="muted">通过左侧老人列表中的"临时变更"按钮为指定老人添加变更</small>
+            </div>
+
+            <div class="tc-date-group" *ngFor="let dateKey of getGroupedDateKeys()">
+              <div class="tc-date-header">
+                <h3>📅 {{ dateKey }}</h3>
+                <span class="tc-date-count">{{ getTempChangesGroupedByDate().get(dateKey)!.length }}条变更</span>
+              </div>
+
+              <div class="tc-change-list">
+                <div
+                  class="tc-change-card"
+                  *ngFor="let change of getTempChangesGroupedByDate().get(dateKey)!"
+                  [class.expanded]="tempChangeManageExpandedId === change.id"
+                >
+                  <div class="tc-change-main" (click)="toggleTempChangeManageExpand(change.id)">
+                    <div class="tc-change-info">
+                      <div class="tc-change-elder-row">
+                        <strong class="tc-elder-name">{{ getTempChangeElderName(change) }}</strong>
+                        <span class="tc-status-tag" [class]="getTempChangeStatusClass(change)">
+                          {{ getTempChangeStatusLabel(change) }}
+                        </span>
+                      </div>
+                      <div class="tc-change-summary">{{ tempChangeSummary(change.elderId, change.date) }}</div>
+                      <small class="tc-change-reason">💡 {{ change.reason }}</small>
+                    </div>
+                    <div class="tc-change-actions">
+                      <button type="button" class="ghost sm" (click)="$event.stopPropagation(); editTempChange(change); closeTempChangeManagePanel()">
+                        ✏️ 编辑
+                      </button>
+                      <button
+                        type="button"
+                        class="sm cancel-tc-btn"
+                        (click)="$event.stopPropagation(); deleteTempChange(change.id, true)"
+                      >
+                        ✕ 取消变更
+                      </button>
+                      <span class="tc-expand-arrow" [class.rotated]="tempChangeManageExpandedId === change.id">▼</span>
+                    </div>
+                  </div>
+
+                  <div class="tc-change-detail" *ngIf="tempChangeManageExpandedId === change.id">
+                    <div class="tc-detail-grid">
+                      <div class="tc-detail-col">
+                        <h4>👤 老人信息</h4>
+                        <div class="tc-detail-row">
+                          <span class="tc-detail-label">创建时间</span>
+                          <span class="tc-detail-value">{{ change.createdAt }}</span>
+                        </div>
+                      </div>
+
+                      <div class="tc-detail-col">
+                        <h4>📍 送餐地址</h4>
+                        <div class="tc-detail-compare">
+                          <div class="tc-compare-item original">
+                            <span class="tc-compare-label">原地址</span>
+                            <p>{{ getTempChangeOriginalAddress(change) }}</p>
+                          </div>
+                          <div class="tc-compare-arrow" *ngIf="change.address">→</div>
+                          <div class="tc-compare-item new" *ngIf="change.address">
+                            <span class="tc-compare-label">临时地址</span>
+                            <p>{{ change.address }}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="tc-detail-col">
+                        <h4>📞 联系方式</h4>
+                        <div class="tc-detail-compare">
+                          <div class="tc-compare-item original">
+                            <span class="tc-compare-label">原联系方式</span>
+                            <p>{{ getTempChangeOriginalContact(change) }}</p>
+                          </div>
+                          <div class="tc-compare-arrow" *ngIf="change.contact">→</div>
+                          <div class="tc-compare-item new" *ngIf="change.contact">
+                            <span class="tc-compare-label">临时联系方式</span>
+                            <p>{{ change.contact }}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="tc-detail-col">
+                        <h4>🏷️ 餐食标签</h4>
+                        <div class="tc-detail-compare">
+                          <div class="tc-compare-item original">
+                            <span class="tc-compare-label">原标签</span>
+                            <div class="tc-tag-row">
+                              <span
+                                class="tag-chip sm"
+                                *ngFor="let tag of getTempChangeOriginalMealTags(change)"
+                                [style.background]="tag.color + '20'"
+                                [style.color]="tag.color"
+                                [style.borderColor]="tag.color + '50'"
+                              >{{ tag.name }}</span>
+                              <small class="muted" *ngIf="getTempChangeOriginalMealTags(change).length === 0">无</small>
+                            </div>
+                          </div>
+                          <div class="tc-compare-arrow" *ngIf="change.mealTagIds">→</div>
+                          <div class="tc-compare-item new" *ngIf="change.mealTagIds">
+                            <span class="tc-compare-label">临时标签</span>
+                            <div class="tc-tag-row">
+                              <span
+                                class="tag-chip sm"
+                                *ngFor="let tag of getTempChangeEffectiveMealTags(change)"
+                                [style.background]="tag.color + '20'"
+                                [style.color]="tag.color"
+                                [style.borderColor]="tag.color + '50'"
+                              >{{ tag.name }}</span>
+                              <small class="muted" *ngIf="getTempChangeEffectiveMealTags(change).length === 0">清空所有标签</small>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="tc-detail-col">
+                        <h4>📝 特殊餐食备注</h4>
+                        <div class="tc-detail-compare">
+                          <div class="tc-compare-item original">
+                            <span class="tc-compare-label">原备注</span>
+                            <p>{{ getTempChangeOriginalSpecialNote(change) || '无' }}</p>
+                          </div>
+                          <div class="tc-compare-arrow" *ngIf="change.specialMealNote">→</div>
+                          <div class="tc-compare-item new" *ngIf="change.specialMealNote">
+                            <span class="tc-compare-label">临时备注</span>
+                            <p>{{ change.specialMealNote }}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="tc-detail-col">
+                        <h4>🚚 配送志愿者</h4>
+                        <div class="tc-detail-value" [class.has-change]="change.volunteerId">
+                          {{ change.volunteerId ? '指定：' + getTempChangeVolunteerName(change) : '不修改，保留任务中的志愿者分配' }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2386,6 +2587,238 @@ type SimulationData = {
       .simulation-header { flex-direction: column; }
       .simulation-actions { width: 100%; }
     }
+
+    .temp-change-manage-btn { position: relative; }
+    .tc-manage-count {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; padding: 0 5px;
+      background: #c75454; color: #fff; font-size: 11px;
+      border-radius: 9px; margin-left: 6px; font-weight: 600;
+    }
+
+    .temp-change-manage-modal { max-width: 900px; width: 95vw; }
+    .temp-change-manage-modal .modal-body { max-height: 75vh; overflow-y: auto; padding: 0; }
+
+    .tc-manage-summary-bar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 16px 20px; background: #f8f7f2;
+      border-bottom: 1px solid #e8e5da;
+      flex-wrap: wrap;
+    }
+    .tc-stat-item {
+      display: flex; flex-direction: column; align-items: center;
+      min-width: 70px; padding: 8px 14px;
+      background: #fff; border-radius: 8px;
+      border: 1px solid #e8e5da;
+    }
+    .tc-stat-item.total-item {
+      background: linear-gradient(135deg, #f5efe4, #ece3d0);
+      border-color: #d4c49c;
+    }
+    .tc-stat-num {
+      font-size: 24px; font-weight: 700; color: #4a5040;
+      line-height: 1.2;
+    }
+    .tc-stat-num.today-num { color: #c75454; }
+    .tc-stat-num.upcoming-num { color: #d9a84a; }
+    .tc-stat-num.expired-num { color: #8a9481; }
+    .tc-stat-label {
+      font-size: 12px; color: #65715f; margin-top: 2px;
+    }
+    .tc-manage-header-actions {
+      margin-left: auto; display: flex; gap: 8px;
+    }
+
+    .tc-filter-tabs {
+      display: flex; gap: 4px; padding: 12px 20px;
+      border-bottom: 1px solid #e8e5da;
+      background: #fafaf5;
+    }
+    .tc-filter-tabs button {
+      padding: 6px 14px; border: none; background: transparent;
+      border-radius: 6px; cursor: pointer;
+      font-size: 13px; color: #65715f;
+      transition: all 0.15s ease;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .tc-filter-tabs button:hover { background: #eeeadd; }
+    .tc-filter-tabs button.active-filter {
+      background: #7a8a5e; color: #fff;
+    }
+    .tc-filter-tabs button small { opacity: 0.7; font-size: 11px; }
+
+    .tc-manage-body { padding: 16px 20px; }
+    .tc-empty-state {
+      text-align: center; padding: 48px 20px;
+      color: #8a9481;
+    }
+    .tc-empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .tc-empty-state p { margin: 4px 0; font-size: 15px; color: #4a5040; }
+
+    .tc-date-group { margin-bottom: 20px; }
+    .tc-date-group:last-child { margin-bottom: 0; }
+    .tc-date-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; background: #f5efe4;
+      border-radius: 8px 8px 0 0;
+      border: 1px solid #e0d5be;
+      border-bottom: none;
+    }
+    .tc-date-header h3 {
+      margin: 0; font-size: 14px; color: #6b5a3a;
+    }
+    .tc-date-count {
+      font-size: 12px; color: #8a7550;
+      background: #fff; padding: 3px 10px;
+      border-radius: 12px;
+    }
+
+    .tc-change-list {
+      border: 1px solid #e0d5be;
+      border-radius: 0 0 8px 8px;
+      overflow: hidden;
+    }
+    .tc-change-card {
+      border-bottom: 1px solid #f0ead9;
+      background: #fff;
+      transition: background 0.15s ease;
+    }
+    .tc-change-card:last-child { border-bottom: none; }
+    .tc-change-card.expanded { background: #fffdf5; }
+
+    .tc-change-main {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; cursor: pointer;
+      gap: 16px;
+    }
+    .tc-change-main:hover { background: #faf8f0; }
+
+    .tc-change-info { flex: 1; min-width: 0; }
+    .tc-change-elder-row {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 4px; flex-wrap: wrap;
+    }
+    .tc-elder-name {
+      font-size: 15px; color: #4a5040;
+    }
+    .tc-status-tag {
+      font-size: 11px; padding: 2px 8px;
+      border-radius: 10px; font-weight: 500;
+      border: 1px solid transparent;
+    }
+    .tc-status-tag.tc-status-today {
+      background: #fde8e8; color: #c75454;
+      border-color: #e8b4b4;
+      animation: tc-today-pulse 2s ease-in-out infinite;
+    }
+    @keyframes tc-today-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(199, 84, 84, 0.3); }
+      50% { box-shadow: 0 0 0 4px rgba(199, 84, 84, 0.08); }
+    }
+    .tc-status-tag.tc-status-upcoming {
+      background: #fff4e0; color: #b38230;
+      border-color: #e6cc8a;
+    }
+    .tc-status-tag.tc-status-expired {
+      background: #f0f2ed; color: #7a8770;
+      border-color: #d3d9cb;
+      opacity: 0.8;
+    }
+    .tc-change-summary {
+      font-size: 13px; color: #5a6350;
+      margin-bottom: 2px;
+    }
+    .tc-change-reason {
+      color: #8a7550; display: block;
+      margin-top: 2px;
+    }
+
+    .tc-change-actions {
+      display: flex; align-items: center; gap: 8px;
+      flex-shrink: 0;
+    }
+    .cancel-tc-btn {
+      background: #c75454; color: #fff;
+      border: none; padding: 5px 12px;
+      border-radius: 6px; cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s ease;
+    }
+    .cancel-tc-btn:hover { background: #a94444; }
+
+    .tc-expand-arrow {
+      font-size: 10px; color: #8a9481;
+      transition: transform 0.2s ease;
+      margin-left: 4px;
+    }
+    .tc-expand-arrow.rotated { transform: rotate(180deg); }
+
+    .tc-change-detail {
+      padding: 0 16px 16px;
+      border-top: 1px dashed #e8e0ca;
+    }
+    .tc-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .tc-detail-col h4 {
+      margin: 0 0 10px 0; font-size: 13px;
+      color: #6b5a3a; padding-bottom: 6px;
+      border-bottom: 1px solid #f0ead9;
+    }
+    .tc-detail-row {
+      display: flex; justify-content: space-between;
+      font-size: 12px; padding: 4px 0;
+    }
+    .tc-detail-label { color: #8a9481; }
+    .tc-detail-value { color: #4a5040; font-weight: 500; }
+    .tc-detail-value.has-change {
+      color: #7a8a5e; font-weight: 600;
+    }
+
+    .tc-detail-compare {
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .tc-compare-item {
+      padding: 10px; border-radius: 6px;
+      font-size: 12px;
+    }
+    .tc-compare-item.original {
+      background: #f8f7f2; border: 1px solid #e8e5da;
+    }
+    .tc-compare-item.new {
+      background: #f5f8f0; border: 1px solid #d5e0c1;
+    }
+    .tc-compare-label {
+      display: block; font-size: 11px;
+      color: #8a9481; margin-bottom: 4px;
+      font-weight: 500;
+    }
+    .tc-compare-item p {
+      margin: 0; color: #4a5040;
+      line-height: 1.5; word-break: break-all;
+    }
+    .tc-compare-arrow {
+      text-align: center; color: #7a8a5e;
+      font-size: 14px; font-weight: 600;
+    }
+    .tc-tag-row {
+      display: flex; flex-wrap: wrap; gap: 4px;
+    }
+
+    @media (max-width: 640px) {
+      .tc-manage-summary-bar { padding: 12px; gap: 8px; }
+      .tc-stat-item { min-width: 58px; padding: 6px 10px; }
+      .tc-stat-num { font-size: 18px; }
+      .tc-filter-tabs { padding: 8px 12px; flex-wrap: wrap; }
+      .tc-filter-tabs button { padding: 5px 10px; font-size: 12px; }
+      .tc-manage-body { padding: 12px; }
+      .tc-detail-grid { grid-template-columns: 1fr; }
+      .tc-change-main { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .tc-change-actions { align-self: flex-end; }
+    }
   `],
 })
 export class App implements AfterViewChecked, OnInit {
@@ -2599,6 +3032,11 @@ export class App implements AfterViewChecked, OnInit {
   tempChangeConflictInfo: string | null = null;
   tempChangeConflictResolution: 'overwrite-task' | 'keep-both' | 'cancel' = 'keep-both';
   editingTempChangeId: string | null = null;
+
+  tempChangeManagePanelVisible = false;
+  tempChangeManageFilter: 'all' | 'today' | 'upcoming' | 'expired' = 'all';
+  tempChangeManageSelectedDate: string | null = null;
+  tempChangeManageExpandedId: string | null = null;
 
   readonly todayStr = today;
 
@@ -4106,10 +4544,83 @@ export class App implements AfterViewChecked, OnInit {
     this.tempChangeForm = { date: today, reason: '' };
   }
 
-  deleteTempChange(id: string) {
-    if (!confirm('确认删除此临时变更？删除后该日期将恢复使用老人长期档案信息。')) return;
+  deleteTempChange(id: string, fromManagePanel: boolean = false) {
+    const change = this.temporaryDeliveryChanges.find(c => c.id === id);
+    if (!change) return;
+
+    const confirmMsg = fromManagePanel
+      ? `确认取消「${change.date}」的临时变更？\n老人：${this.elders.find(e => e.id === change.elderId)?.name || '未知'}\n原因：${change.reason}\n\n取消后该日期将恢复使用老人长期档案信息，并同步刷新备餐、配送和闭环数据。`
+      : '确认删除此临时变更？删除后该日期将恢复使用老人长期档案信息。';
+
+    if (!confirm(confirmMsg)) return;
+
+    const elderIdToTaskIdMap = this.buildElderIdDateTaskIdMap();
+    const prepImpactTaskIds = this.mealPrepService.onTempChangeCancelled(change, elderIdToTaskIdMap);
+
+    this.revertTaskFromTempChange(change.elderId, change.date);
     this.temporaryDeliveryChanges = this.temporaryDeliveryChanges.filter(c => c.id !== id);
+
+    if (prepImpactTaskIds.length > 0) {
+      this.mealPrepService.clearPrepStateForTaskIds(change.date, prepImpactTaskIds);
+    }
+
     this.saveTempChanges();
+
+    if (fromManagePanel) {
+      const impact = this.mealPrepService.getTempChangePrepImpactSummary([change], change.date);
+      if (prepImpactTaskIds.length > 0) {
+        this.showSyncToast(`临时变更已取消，已重置 ${prepImpactTaskIds.length} 条备餐状态，相关数据已同步`, 'info');
+      } else if (impact.affectedCount > 0) {
+        this.showSyncToast('临时变更已取消，相关数据已同步刷新', 'info');
+      } else {
+        this.showSyncToast('临时变更已取消', 'info');
+      }
+    }
+  }
+
+  private buildElderIdDateTaskIdMap(): Map<string, Map<string, string>> {
+    const result = new Map<string, Map<string, string>>();
+    for (const task of this.tasks) {
+      if (!result.has(task.elderId)) {
+        result.set(task.elderId, new Map());
+      }
+      result.get(task.elderId)!.set(task.date, task.id);
+    }
+    return result;
+  }
+
+  private revertTaskFromTempChange(elderId: string, date: string) {
+    const elder = this.elders.find(e => e.id === elderId);
+    if (!elder) return;
+    const task = this.tasks.find(t => t.elderId === elderId && t.date === date);
+    if (!task) return;
+    const change = this.getTempChangeForElderDate(elderId, date);
+    if (!change) return;
+
+    this.tasks = this.tasks.map(t => {
+      if (t.id !== task.id) return t;
+      const updates: Partial<MealTask> = {};
+      if (change.volunteerId !== undefined) {
+        const activeAssignmentsForElder = this.temporaryDeliveryChanges
+          .filter(c => c.elderId === elderId && c.date === date && c.id !== change.id && c.volunteerId !== undefined);
+        if (activeAssignmentsForElder.length === 0) {
+          updates.volunteerId = '';
+          updates.status = '待分配';
+        }
+      }
+      if (change.specialMealNote !== undefined) {
+        const activeNoteChanges = this.temporaryDeliveryChanges
+          .filter(c => c.elderId === elderId && c.date === date && c.id !== change.id && c.specialMealNote !== undefined);
+        if (activeNoteChanges.length === 0) {
+          updates.specialMealNote = elder.specialMealNote || '';
+        }
+      }
+      if (Object.keys(updates).length > 0) {
+        return { ...t, ...updates, isManuallyModified: true };
+      }
+      return t;
+    });
+    this.save();
   }
 
   private applyTempChangeToTasks(elderId: string, date: string) {
@@ -4180,6 +4691,154 @@ export class App implements AfterViewChecked, OnInit {
       parts.push(vol ? `志愿者指定为${vol.name}` : '志愿者已变更');
     }
     return parts.length > 0 ? parts.join('、') : '临时变更';
+  }
+
+  openTempChangeManagePanel() {
+    this.tempChangeManagePanelVisible = true;
+    this.tempChangeManageSelectedDate = this.taskDate || today;
+    this.tempChangeManageExpandedId = null;
+  }
+
+  closeTempChangeManagePanel() {
+    this.tempChangeManagePanelVisible = false;
+    this.tempChangeManageExpandedId = null;
+  }
+
+  setTempChangeManageFilter(filter: 'all' | 'today' | 'upcoming' | 'expired') {
+    this.tempChangeManageFilter = filter;
+  }
+
+  toggleTempChangeManageExpand(id: string) {
+    this.tempChangeManageExpandedId = this.tempChangeManageExpandedId === id ? null : id;
+  }
+
+  getTempChangeStatus(change: TemporaryDeliveryChange): 'today' | 'upcoming' | 'expired' {
+    const changeDate = new Date(change.date);
+    const todayDate = new Date(today);
+    changeDate.setHours(0, 0, 0, 0);
+    todayDate.setHours(0, 0, 0, 0);
+    const diffDays = Math.floor((changeDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return 'today';
+    if (diffDays < 0) return 'expired';
+    return 'upcoming';
+  }
+
+  getTempChangeStatusLabel(change: TemporaryDeliveryChange): string {
+    const status = this.getTempChangeStatus(change);
+    if (status === 'today') return '今日生效';
+    if (status === 'expired') return '已过期';
+    const diffDays = Math.ceil((new Date(change.date).getTime() - new Date(today).getTime()) / (1000 * 60 * 60 * 24));
+    return `${diffDays}天后生效`;
+  }
+
+  getTempChangeStatusClass(change: TemporaryDeliveryChange): string {
+    const status = this.getTempChangeStatus(change);
+    if (status === 'today') return 'tc-status-today';
+    if (status === 'expired') return 'tc-status-expired';
+    return 'tc-status-upcoming';
+  }
+
+  getFilteredTempChanges(): TemporaryDeliveryChange[] {
+    let changes = [...this.temporaryDeliveryChanges];
+    if (this.tempChangeManageFilter !== 'all') {
+      changes = changes.filter(c => this.getTempChangeStatus(c) === this.tempChangeManageFilter);
+    }
+    return changes.sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) return dateCompare;
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+  }
+
+  getTempChangesGroupedByDate(): Map<string, TemporaryDeliveryChange[]> {
+    const filtered = this.getFilteredTempChanges();
+    const groups = new Map<string, TemporaryDeliveryChange[]>();
+    for (const change of filtered) {
+      if (!groups.has(change.date)) {
+        groups.set(change.date, []);
+      }
+      groups.get(change.date)!.push(change);
+    }
+    return groups;
+  }
+
+  getGroupedDateKeys(): string[] {
+    return Array.from(this.getTempChangesGroupedByDate().keys());
+  }
+
+  getTempChangeElderName(change: TemporaryDeliveryChange): string {
+    return this.elders.find(e => e.id === change.elderId)?.name || '未知老人';
+  }
+
+  getTempChangeOriginalAddress(change: TemporaryDeliveryChange): string {
+    return this.elders.find(e => e.id === change.elderId)?.address || '-';
+  }
+
+  getTempChangeOriginalContact(change: TemporaryDeliveryChange): string {
+    return this.elders.find(e => e.id === change.elderId)?.contact || '-';
+  }
+
+  getTempChangeOriginalSpecialNote(change: TemporaryDeliveryChange): string {
+    return this.elders.find(e => e.id === change.elderId)?.specialMealNote || '';
+  }
+
+  getTempChangeOriginalMealTags(change: TemporaryDeliveryChange): MealTag[] {
+    const elder = this.elders.find(e => e.id === change.elderId);
+    if (!elder) return [];
+    return this.mealTags.filter(t => (elder.mealTags || []).includes(t.id));
+  }
+
+  getTempChangeEffectiveMealTags(change: TemporaryDeliveryChange): MealTag[] {
+    if (change.mealTagIds === undefined) return this.getTempChangeOriginalMealTags(change);
+    return this.mealTags.filter(t => change.mealTagIds!.includes(t.id));
+  }
+
+  getTempChangeVolunteerName(change: TemporaryDeliveryChange): string {
+    if (!change.volunteerId) return '-';
+    return this.volunteers.find(v => v.id === change.volunteerId)?.name || '未知志愿者';
+  }
+
+  getTempChangeCountByStatus(): { today: number; upcoming: number; expired: number } {
+    const result = { today: 0, upcoming: 0, expired: 0 };
+    for (const change of this.temporaryDeliveryChanges) {
+      result[this.getTempChangeStatus(change)]++;
+    }
+    return result;
+  }
+
+  cleanupExpiredTempChanges() {
+    const expired = this.temporaryDeliveryChanges.filter(c => this.getTempChangeStatus(c) === 'expired');
+    if (expired.length === 0) {
+      this.showSyncToast('当前没有已过期的临时变更', 'info');
+      return;
+    }
+    if (!confirm(`确认清理 ${expired.length} 条已过期的临时变更？\n这些变更日期已过，不再影响任何排班数据。`)) return;
+
+    const batchImpact = this.mealPrepService.onTempChangesCancelledBatch(expired);
+    if (batchImpact.size > 0) {
+      const dateTaskMap = new Map<string, string[]>();
+      for (const [, taskIds] of batchImpact) {
+        for (const tid of taskIds) {
+          const tc = expired.find(c => batchImpact.get(c.id)?.includes(tid));
+          if (tc) {
+            if (!dateTaskMap.has(tc.date)) dateTaskMap.set(tc.date, []);
+            if (!dateTaskMap.get(tc.date)!.includes(tid)) {
+              dateTaskMap.get(tc.date)!.push(tid);
+            }
+          }
+        }
+      }
+      for (const [date, taskIds] of dateTaskMap) {
+        this.mealPrepService.clearPrepStateForTaskIds(date, taskIds);
+      }
+    }
+
+    const expiredIds = new Set(expired.map(c => c.id));
+    this.temporaryDeliveryChanges = this.temporaryDeliveryChanges.filter(c => !expiredIds.has(c.id));
+    this.saveTempChanges();
+
+    const resetInfo = batchImpact.size > 0 ? `，并重置 ${Array.from(batchImpact.values()).flat().length} 条备餐状态` : '';
+    this.showSyncToast(`已清理 ${expired.length} 条过期临时变更${resetInfo}`, 'info');
   }
 
   elderMealTags(elderId: string, date?: string): MealTag[] {

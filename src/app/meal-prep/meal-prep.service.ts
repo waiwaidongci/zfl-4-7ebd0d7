@@ -850,4 +850,70 @@ export class MealPrepService {
       specialGroup,
     };
   }
+
+  onTempChangeCancelled(change: TemporaryDeliveryChange, elderIdToTaskIdMap?: Map<string, Map<string, string>>): string[] {
+    const cleanedTaskIds: string[] = [];
+    const taskIdByElderAndDate = elderIdToTaskIdMap?.get(change.elderId)?.get(change.date);
+    if (taskIdByElderAndDate) {
+      const stored = this.getStoredStatus(change.date, taskIdByElderAndDate);
+      if (stored.status === '备餐中' || stored.status === '缺餐异常') {
+        cleanedTaskIds.push(taskIdByElderAndDate);
+      }
+      return cleanedTaskIds;
+    }
+    const dateMap = this.storageData[change.date];
+    if (!dateMap) return cleanedTaskIds;
+    for (const taskId of Object.keys(dateMap)) {
+      const stored = dateMap[taskId];
+      const tcAffectsPrep = change.mealTagIds !== undefined ||
+        change.specialMealNote !== undefined ||
+        change.address !== undefined;
+      if (tcAffectsPrep && (stored.status === '备餐中' || stored.status === '缺餐异常')) {
+        cleanedTaskIds.push(taskId);
+      }
+    }
+    return cleanedTaskIds;
+  }
+
+  onTempChangesCancelledBatch(changes: TemporaryDeliveryChange[]): Map<string, string[]> {
+    const result = new Map<string, string[]>();
+    for (const change of changes) {
+      const cleaned = this.onTempChangeCancelled(change);
+      if (cleaned.length > 0) {
+        result.set(change.id, cleaned);
+      }
+    }
+    return result;
+  }
+
+  clearPrepStateForTaskIds(date: string, taskIds: string[]): void {
+    for (const taskId of taskIds) {
+      const stored = this.getStoredStatus(date, taskId);
+      if (stored.status !== '已完成') {
+        this.setStoredStatus(date, taskId, {
+          status: '待备餐',
+          missingNote: '',
+          exceptionRecorded: stored.exceptionRecorded,
+          notificationAdded: stored.notificationAdded,
+        });
+      }
+    }
+  }
+
+  getTempChangePrepImpactSummary(changes: TemporaryDeliveryChange[], date: string): {
+    affectedCount: number;
+    tagChangedCount: number;
+    addressChangedCount: number;
+    specialNoteChangedCount: number;
+    volunteerChangedCount: number;
+  } {
+    const dateChanges = changes.filter(c => c.date === date);
+    return {
+      affectedCount: dateChanges.length,
+      tagChangedCount: dateChanges.filter(c => c.mealTagIds !== undefined).length,
+      addressChangedCount: dateChanges.filter(c => c.address !== undefined).length,
+      specialNoteChangedCount: dateChanges.filter(c => c.specialMealNote !== undefined).length,
+      volunteerChangedCount: dateChanges.filter(c => c.volunteerId !== undefined).length,
+    };
+  }
 }
