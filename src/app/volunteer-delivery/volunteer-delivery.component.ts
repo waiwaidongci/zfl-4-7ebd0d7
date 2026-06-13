@@ -211,7 +211,7 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
     }
 
     if (!this.isOnline) {
-      const { draft, updateResult } = this.deliveryService.createStatusUpdateDraft(
+      const draft = this.deliveryService.createStatusUpdateDraft(
         data.taskId,
         this.date,
         this.selectedVolunteerId,
@@ -219,43 +219,6 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
         data.exceptionNote
       );
       writeback.draftCreated = draft;
-
-      if (updateResult.taskUpdated) {
-        writeback.taskUpdated = {
-          taskId: updateResult.taskUpdated.id,
-          status: updateResult.taskUpdated.status,
-          exception: updateResult.taskUpdated.exception,
-          deliveryStatus: data.status,
-        };
-      }
-
-      if (isException && origTask && origElder) {
-        const stored = this.deliveryService.exportStorageData();
-        const storedData = stored[this.date]?.[data.taskId];
-
-        if (storedData && !storedData.exceptionRecorded) {
-          const excRecord = this.deliveryService.createDeliveryExceptionRecord(
-            origTask,
-            origElder,
-            data.status,
-            data.exceptionNote,
-          );
-          writeback.exceptionCreated = excRecord;
-          this.deliveryService.markDeliveryExceptionRecorded(this.date, data.taskId);
-        }
-
-        if (storedData && !storedData.notificationAdded) {
-          const notification = this.deliveryService.createDeliveryPhoneNotification(
-            origTask,
-            origElder,
-            data.status,
-            data.exceptionNote,
-          );
-          writeback.notificationCreated = notification;
-          this.deliveryService.markDeliveryNotificationAdded(this.date, data.taskId);
-        }
-      }
-
       this.lastSyncMessage = `已保存为离线草稿，将在恢复同步后自动同步`;
       setTimeout(() => { this.lastSyncMessage = ''; }, 3000);
     } else {
@@ -435,13 +398,12 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
         data.result,
         data.remark
       );
+      writeback.notificationUpdated = {
+        notificationId,
+        status: data.result,
+        remark: data.remark,
+      };
     }
-
-    writeback.notificationUpdated = {
-      notificationId,
-      status: data.result,
-      remark: data.remark,
-    };
 
     this.updateDraftCounts();
     this.statusUpdated.emit(writeback);
@@ -466,12 +428,11 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
         data.taskId,
         data.note
       );
+      writeback.visitReminderHandled = {
+        taskId: data.taskId,
+        note: data.note,
+      };
     }
-
-    writeback.visitReminderHandled = {
-      taskId: data.taskId,
-      note: data.note,
-    };
 
     this.updateDraftCounts();
     this.statusUpdated.emit(writeback);

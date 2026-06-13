@@ -53,6 +53,8 @@ export type DeliveryTask = {
   exceptionRecorded: boolean;
   notificationAdded: boolean;
   visitReminder: boolean;
+  visitReminderHandled: boolean;
+  visitReminderNote: string;
 };
 
 export type VolunteerDailySummary = {
@@ -100,16 +102,7 @@ export const LS_DELIVERY_DATA_KEY = 'zfl-4-volunteer-delivery-data';
 
 export type DeliveryStorageData = Record<
   string,
-  Record<
-    string,
-    {
-      status: DeliveryStatus;
-      exceptionNote: string;
-      statusUpdatedAt: string;
-      exceptionRecorded: boolean;
-      notificationAdded: boolean;
-    }
-  >
+  Record<string, DeliveryStoredStatus>
 >;
 
 export type DeliveryViewMode = 'selector' | 'delivery';

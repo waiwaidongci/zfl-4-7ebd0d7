@@ -179,7 +179,7 @@ export class VolunteerDeliveryService implements OnDestroy {
   }
 
   private getStoredStatus(date: string, taskId: string): DeliveryStoredStatus {
-    return (this.storageData[date]?.[taskId] as DeliveryStoredStatus) || {
+    const defaults: DeliveryStoredStatus = {
       status: '待配送' as DeliveryStatus,
       exceptionNote: '',
       statusUpdatedAt: '',
@@ -188,6 +188,10 @@ export class VolunteerDeliveryService implements OnDestroy {
       phoneCallResults: [],
       visitReminderHandled: false,
       visitReminderNote: '',
+    };
+    return {
+      ...defaults,
+      ...(this.storageData[date]?.[taskId] as Partial<DeliveryStoredStatus> | undefined),
     };
   }
 
@@ -392,7 +396,9 @@ export class VolunteerDeliveryService implements OnDestroy {
         date,
         exceptionRecorded: stored.exceptionRecorded,
         notificationAdded: stored.notificationAdded,
-        visitReminder: !!lastVisit?.nextAttention,
+        visitReminder: !!lastVisit?.nextAttention && !stored.visitReminderHandled,
+        visitReminderHandled: stored.visitReminderHandled,
+        visitReminderNote: stored.visitReminderNote,
       } as DeliveryTask;
     }).filter((t): t is DeliveryTask => !!t);
 
@@ -550,6 +556,31 @@ export class VolunteerDeliveryService implements OnDestroy {
       notificationStatus,
       remark,
       source: deliveryStatus === '未接通' ? '未接通' : '配送异常',
+      updatedAt: timeStr,
+    };
+  }
+
+  private createPhoneCallResultNotification(
+    task: MealTask,
+    elder: Elder,
+    result: '已通知' | '未接通' | '稍后再拨',
+    remark: string = '',
+  ): PhoneNotification {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const match = elder.contact.match(/1[3-9]\d{9}/);
+    const phone = match ? match[0] : elder.contact;
+
+    return {
+      id: crypto.randomUUID(),
+      date: task.date,
+      targetType: 'elder',
+      targetId: elder.id,
+      phone,
+      taskId: task.id,
+      notificationStatus: result,
+      remark: remark || '志愿者配送端电话拨打结果',
+      source: '手动登记',
       updatedAt: timeStr,
     };
   }
@@ -756,13 +787,11 @@ export class VolunteerDeliveryService implements OnDestroy {
     volunteerId: string,
     status: DeliveryStatus,
     exceptionNote: string = ''
-  ): { draft: OfflineDeliveryDraft; updateResult: TaskWritebackResult } {
-    const updateResult = this.updateDeliveryStatus(date, taskId, status, exceptionNote);
-    const draft = this.createOfflineDraft('status-update', taskId, date, volunteerId, {
+  ): OfflineDeliveryDraft {
+    return this.createOfflineDraft('status-update', taskId, date, volunteerId, {
       deliveryStatus: status,
       exceptionNote,
     });
-    return { draft, updateResult };
   }
 
   createExceptionNoteDraft(
@@ -771,11 +800,6 @@ export class VolunteerDeliveryService implements OnDestroy {
     volunteerId: string,
     exceptionNote: string
   ): OfflineDeliveryDraft {
-    const existing = this.getStoredStatus(date, taskId);
-    this.setStoredStatus(date, taskId, {
-      ...existing,
-      exceptionNote,
-    });
     return this.createOfflineDraft('exception-note', taskId, date, volunteerId, {
       exceptionNote,
     });
@@ -789,7 +813,6 @@ export class VolunteerDeliveryService implements OnDestroy {
     result: '已通知' | '未接通' | '稍后再拨',
     remark: string = ''
   ): OfflineDeliveryDraft {
-    this.recordPhoneCallResult(date, taskId, phoneNotificationId, result, remark);
     return this.createOfflineDraft('phone-call-result', taskId, date, volunteerId, {
       phoneNotificationId,
       phoneCallResult: result,
@@ -803,7 +826,6 @@ export class VolunteerDeliveryService implements OnDestroy {
     volunteerId: string,
     note: string = ''
   ): OfflineDeliveryDraft {
-    this.markVisitReminderHandled(date, taskId, note);
     return this.createOfflineDraft('visit-reminder-handled', taskId, date, volunteerId, {
       visitReminderHandled: true,
       visitReminderNote: note,
@@ -954,7 +976,7 @@ export class VolunteerDeliveryService implements OnDestroy {
       case 'exception-note':
         return this.mergeExceptionNoteDraft(draft, tasks);
       case 'phone-call-result':
-        return this.mergePhoneCallResultDraft(draft, existingNotifications, result);
+        return this.mergePhoneCallResultDraft(draft, tasks, elders, existingNotifications, result);
       case 'visit-reminder-handled':
         return this.mergeVisitReminderHandledDraft(draft, result);
       default:
@@ -1037,22 +1059,53 @@ export class VolunteerDeliveryService implements OnDestroy {
 
   private mergePhoneCallResultDraft(
     draft: OfflineDeliveryDraft,
+    tasks?: MealTask[],
+    elders?: Elder[],
     existingNotifications?: PhoneNotification[],
     result?: OfflineDraftMergeResult
   ): boolean {
-    if (!draft.phoneNotificationId || !draft.phoneCallResult) return false;
+    if (!draft.phoneCallResult) return false;
+
+    let notificationId = draft.phoneNotificationId || '';
+    if (!notificationId) {
+      const task = tasks?.find(t => t.id === draft.taskId);
+      const elder = elders?.find(e => e.id === task?.elderId);
+      if (!task || !elder) return false;
+
+      const existing = existingNotifications?.find(n =>
+        n.taskId === draft.taskId
+        && n.targetId === elder.id
+        && n.source === '手动登记'
+      );
+
+      if (existing) {
+        notificationId = existing.id;
+      } else {
+        const notification = this.createPhoneCallResultNotification(
+          task,
+          elder,
+          draft.phoneCallResult,
+          draft.phoneCallRemark || ''
+        );
+        notificationId = notification.id;
+        if (result) {
+          result.notificationCreated = notification;
+        }
+      }
+      draft.phoneNotificationId = notificationId;
+    }
 
     this.recordPhoneCallResult(
       draft.date,
       draft.taskId,
-      draft.phoneNotificationId,
+      notificationId,
       draft.phoneCallResult,
       draft.phoneCallRemark
     );
 
     if (result) {
       result.notificationUpdated = {
-        notificationId: draft.phoneNotificationId,
+        notificationId,
         status: draft.phoneCallResult,
         remark: draft.phoneCallRemark,
       };
