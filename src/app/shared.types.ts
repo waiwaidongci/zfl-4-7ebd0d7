@@ -37,7 +37,14 @@ export type MealTask = {
   specialMealNote: string;
 };
 
-export type ExceptionCategory = '无人应答' | '地址错误' | '老人拒收' | '餐食问题' | '配送延误' | '老人身体不适' | '其他';
+export type ExceptionCategory =
+  | '无人应答'
+  | '地址错误'
+  | '老人拒收'
+  | '餐食问题'
+  | '配送延误'
+  | '老人身体不适'
+  | '其他';
 export type ExceptionSeverity = '一般' | '较重' | '紧急';
 export type ExceptionStatus = '待处理' | '处理中' | '已解决';
 export type ExceptionSource = '备餐缺餐' | '配送异常' | '未接通' | '手动登记';
@@ -119,12 +126,18 @@ export type PrepStatus = '待备餐' | '备餐中' | '已完成' | '缺餐异常
 
 export type DeliveryStatus = '待配送' | '配送中' | '已送达' | '异常' | '未接通';
 
-export type PrepStorageData = Record<string, Record<string, {
-  status: PrepStatus;
-  missingNote: string;
-  exceptionRecorded: boolean;
-  notificationAdded: boolean;
-}>>;
+export type PrepStorageData = Record<
+  string,
+  Record<
+    string,
+    {
+      status: PrepStatus;
+      missingNote: string;
+      exceptionRecorded: boolean;
+      notificationAdded: boolean;
+    }
+  >
+>;
 
 export type DeliveryStorageData = Record<
   string,

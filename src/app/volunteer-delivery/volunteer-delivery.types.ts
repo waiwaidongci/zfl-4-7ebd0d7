@@ -12,13 +12,7 @@ export type DeliveryStoredStatus = {
   visitReminderNote: string;
 };
 
-export const DELIVERY_STATUSES: DeliveryStatus[] = [
-  '待配送',
-  '配送中',
-  '已送达',
-  '异常',
-  '未接通',
-];
+export const DELIVERY_STATUSES: DeliveryStatus[] = ['待配送', '配送中', '已送达', '异常', '未接通'];
 
 export type VolunteerRef = {
   id: string;
@@ -84,27 +78,24 @@ export type DeliveryRouteGroup = {
 };
 
 export const DELIVERY_STATUS_COLORS: Record<DeliveryStatus, string> = {
-  '待配送': '#8a9783',
-  '配送中': '#5a8fd9',
-  '已送达': '#4a9f6d',
-  '异常': '#c75454',
-  '未接通': '#d9a84a',
+  待配送: '#8a9783',
+  配送中: '#5a8fd9',
+  已送达: '#4a9f6d',
+  异常: '#c75454',
+  未接通: '#d9a84a',
 };
 
 export const DELIVERY_STATUS_ICONS: Record<DeliveryStatus, string> = {
-  '待配送': '📦',
-  '配送中': '🚴',
-  '已送达': '✓',
-  '异常': '⚠️',
-  '未接通': '📞',
+  待配送: '📦',
+  配送中: '🚴',
+  已送达: '✓',
+  异常: '⚠️',
+  未接通: '📞',
 };
 
 export const LS_DELIVERY_DATA_KEY = 'zfl-4-volunteer-delivery-data';
 
-export type DeliveryStorageData = Record<
-  string,
-  Record<string, DeliveryStoredStatus>
->;
+export type DeliveryStorageData = Record<string, Record<string, DeliveryStoredStatus>>;
 
 export type DeliveryViewMode = 'selector' | 'delivery';
 

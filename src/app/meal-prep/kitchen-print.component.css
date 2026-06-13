@@ -4,7 +4,7 @@
   flex: 1;
   background: #fff;
   color: #1f2e26;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
 .screen-toolbar {
@@ -44,7 +44,9 @@
   background: #fff;
   font-family: inherit;
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .toolbar-date-input:focus {
@@ -140,10 +142,14 @@
   margin: 0 4px;
 }
 
-.no-print { display: block; }
+.no-print {
+  display: block;
+}
 
 @media print {
-  .no-print { display: none !important; }
+  .no-print {
+    display: none !important;
+  }
 }
 
 .print-header {
@@ -194,16 +200,34 @@
   color: #65715f;
 }
 
-.summary-card.special strong { color: #b36a2e; }
-.summary-card.special { background: #fff8f0; border-color: #f0d2b4; }
+.summary-card.special strong {
+  color: #b36a2e;
+}
+.summary-card.special {
+  background: #fff8f0;
+  border-color: #f0d2b4;
+}
 
-.summary-card.paused strong { color: #8a9783; }
-.summary-card.paused { background: #f7f8f4; border-color: #d6d9d0; }
+.summary-card.paused strong {
+  color: #8a9783;
+}
+.summary-card.paused {
+  background: #f7f8f4;
+  border-color: #d6d9d0;
+}
 
-.summary-card.missing strong { color: #c75454; }
-.summary-card.missing { background: #fef8f8; border-color: #f0c4c4; }
+.summary-card.missing strong {
+  color: #c75454;
+}
+.summary-card.missing {
+  background: #fef8f8;
+  border-color: #f0c4c4;
+}
 
-.summary-card.total { background: #eef3ea; border-color: #c4d6ba; }
+.summary-card.total {
+  background: #eef3ea;
+  border-color: #c4d6ba;
+}
 
 .print-groups {
   display: flex;
@@ -273,7 +297,7 @@
   text-align: left;
   border-bottom: 1px solid #dfe4d6;
   font-size: 11.5px;
-  letter-spacing: .2px;
+  letter-spacing: 0.2px;
   white-space: nowrap;
 }
 
@@ -296,10 +320,16 @@
   background: #f4f7f1;
 }
 
-.row-paused { background: #f7f8f4 !important; }
-.row-paused td { color: #6e7a68; }
+.row-paused {
+  background: #f7f8f4 !important;
+}
+.row-paused td {
+  color: #6e7a68;
+}
 
-.row-missing { background: #fef8f8 !important; }
+.row-missing {
+  background: #fef8f8 !important;
+}
 
 .cell-index {
   text-align: center;
@@ -324,7 +354,7 @@
 }
 
 .cell-contact {
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: 'SF Mono', Consolas, monospace;
   color: #4a5a44;
   white-space: nowrap;
 }
@@ -382,7 +412,7 @@
 }
 
 .volunteer-phone {
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: 'SF Mono', Consolas, monospace;
   color: #5a6b53;
 }
 
@@ -480,15 +510,21 @@
     page-break-after: avoid;
   }
 
-  .print-header h1 { font-size: 18px; }
+  .print-header h1 {
+    font-size: 18px;
+  }
 
   .print-summary {
     margin-bottom: 16px;
     page-break-after: avoid;
   }
 
-  .summary-card { padding: 8px 4px; }
-  .summary-card strong { font-size: 18px; }
+  .summary-card {
+    padding: 8px 4px;
+  }
+  .summary-card strong {
+    font-size: 18px;
+  }
 
   .print-group {
     page-break-inside: avoid;
@@ -496,8 +532,12 @@
     margin-bottom: 14px;
   }
 
-  .print-group-header { padding: 8px 12px; }
-  .group-title { font-size: 14px; }
+  .print-group-header {
+    padding: 8px 12px;
+  }
+  .group-title {
+    font-size: 14px;
+  }
 
   .print-table thead th {
     font-size: 10.5px;
@@ -509,7 +549,9 @@
     font-size: 11px;
   }
 
-  .print-tag { font-size: 10px; }
+  .print-tag {
+    font-size: 10px;
+  }
 
   .group-footer {
     padding: 8px 12px;

@@ -21,11 +21,7 @@ export class VolunteerSelectorComponent {
   constructor(private deliveryService: VolunteerDeliveryService) {}
 
   getRouteGroups() {
-    return this.deliveryService.getAllVolunteerRouteGroups(
-      this.date,
-      this.tasks,
-      this.volunteers,
-    );
+    return this.deliveryService.getAllVolunteerRouteGroups(this.date, this.tasks, this.volunteers);
   }
 
   getProgressPct(taskCount: number, completedCount: number): number {

@@ -113,7 +113,13 @@ export type PausedSummary = {
   pauseRate: number;
   byTags: PausedTagStat[];
   pausedWithSpecialNote: PrepItem[];
-  pausedElderList: Array<{ elderName: string; address: string; contact: string; tagNames: string[]; specialNote: string }>;
+  pausedElderList: Array<{
+    elderName: string;
+    address: string;
+    contact: string;
+    tagNames: string[];
+    specialNote: string;
+  }>;
 };
 
 export type DailyPrepSummary = {

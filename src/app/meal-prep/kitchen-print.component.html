@@ -20,41 +20,53 @@
         [class.active]="groupFilters['tag']"
         [class.has-data]="hasGroupType('tag')"
         (click)="toggleGroupFilter('tag')"
-      >🏷️ 餐食标签</button>
+      >
+        🏷️ 餐食标签
+      </button>
       <button
         type="button"
         class="toolbar-btn chip sm"
         [class.active]="groupFilters['special']"
         [class.has-data]="hasGroupType('special')"
         (click)="toggleGroupFilter('special')"
-      >🍽️ 特殊备注</button>
+      >
+        🍽️ 特殊备注
+      </button>
       <button
         type="button"
         class="toolbar-btn chip sm"
         [class.active]="groupFilters['all']"
         [class.has-data]="hasGroupType('all')"
         (click)="toggleGroupFilter('all')"
-      >🍚 标准餐</button>
+      >
+        🍚 标准餐
+      </button>
       <button
         type="button"
         class="toolbar-btn chip sm"
         [class.active]="groupFilters['paused']"
         [class.has-data]="hasGroupType('paused')"
         (click)="toggleGroupFilter('paused')"
-      >⏸ 暂停送餐</button>
+      >
+        ⏸ 暂停送餐
+      </button>
       <button
         type="button"
         class="toolbar-btn chip sm"
         [class.active]="groupFilters['missing']"
         [class.has-data]="hasGroupType('missing')"
         (click)="toggleGroupFilter('missing')"
-      >⚠ 缺餐异常</button>
+      >
+        ⚠ 缺餐异常
+      </button>
       <span class="toolbar-divider"></span>
       <button type="button" class="toolbar-btn ghost sm" (click)="selectAllGroups()">全选</button>
       <button type="button" class="toolbar-btn ghost sm" (click)="deselectAllGroups()">清空</button>
     </div>
     <div class="toolbar-section">
-      <button type="button" class="toolbar-btn sm print-action" (click)="triggerPrint()">🖨️ 打印清单</button>
+      <button type="button" class="toolbar-btn sm print-action" (click)="triggerPrint()">
+        🖨️ 打印清单
+      </button>
     </div>
   </div>
 
@@ -68,11 +80,26 @@
   </header>
 
   <section class="print-summary">
-    <div class="summary-card"><strong>{{ data.totalActive }}</strong><span>需出餐</span></div>
-    <div class="summary-card special" *ngIf="data.totalSpecial > 0"><strong>{{ data.totalSpecial }}</strong><span>含特殊备注</span></div>
-    <div class="summary-card paused" *ngIf="data.totalPaused > 0"><strong>{{ data.totalPaused }}</strong><span>暂停送餐</span></div>
-    <div class="summary-card missing" *ngIf="data.totalMissing > 0"><strong>{{ data.totalMissing }}</strong><span>缺餐异常</span></div>
-    <div class="summary-card total"><strong>{{ data.totalMeals }}</strong><span>登记总数</span></div>
+    <div class="summary-card">
+      <strong>{{ data.totalActive }}</strong
+      ><span>需出餐</span>
+    </div>
+    <div class="summary-card special" *ngIf="data.totalSpecial > 0">
+      <strong>{{ data.totalSpecial }}</strong
+      ><span>含特殊备注</span>
+    </div>
+    <div class="summary-card paused" *ngIf="data.totalPaused > 0">
+      <strong>{{ data.totalPaused }}</strong
+      ><span>暂停送餐</span>
+    </div>
+    <div class="summary-card missing" *ngIf="data.totalMissing > 0">
+      <strong>{{ data.totalMissing }}</strong
+      ><span>缺餐异常</span>
+    </div>
+    <div class="summary-card total">
+      <strong>{{ data.totalMeals }}</strong
+      ><span>登记总数</span>
+    </div>
   </section>
 
   <div class="print-groups">
@@ -81,7 +108,12 @@
         <div class="group-title-row">
           <span class="group-color-dot" [style.background]="group.color"></span>
           <h2 class="group-title">{{ group.groupLabel }}</h2>
-          <span class="group-count-badge" [style.background]="group.color + '18'" [style.color]="group.color">{{ group.totalCount }} 份</span>
+          <span
+            class="group-count-badge"
+            [style.background]="group.color + '18'"
+            [style.color]="group.color"
+            >{{ group.totalCount }} 份</span
+          >
         </div>
       </div>
 
@@ -89,14 +121,14 @@
         <table class="print-table">
           <thead>
             <tr>
-              <th style="width:40px">序号</th>
-              <th style="width:100px">老人姓名</th>
+              <th style="width: 40px">序号</th>
+              <th style="width: 100px">老人姓名</th>
               <th>送餐地址</th>
-              <th style="width:120px">联系方式</th>
-              <th style="width:160px">餐食标签</th>
+              <th style="width: 120px">联系方式</th>
+              <th style="width: 160px">餐食标签</th>
               <th>特殊备注</th>
-              <th style="width:160px">配送志愿者</th>
-              <th style="width:80px">签名</th>
+              <th style="width: 160px">配送志愿者</th>
+              <th style="width: 80px">签名</th>
             </tr>
           </thead>
           <tbody>
@@ -122,13 +154,24 @@
                   [style.background]="tag.color + '18'"
                   [style.color]="tag.color"
                   [style.borderColor]="tag.color + '50'"
-                >{{ tag.name }}</span>
-                <span class="muted" *ngIf="item.mealTags.length === 0 && group.groupType === 'all'">标准餐</span>
+                  >{{ tag.name }}</span
+                >
+                <span class="muted" *ngIf="item.mealTags.length === 0 && group.groupType === 'all'"
+                  >标准餐</span
+                >
               </td>
               <td class="cell-note">
-                <span class="special-note" *ngIf="item.specialMealNote">🍽️ {{ item.specialMealNote }}</span>
-                <span class="missing-note" *ngIf="item.isMissing && item.missingNote">缺餐：{{ item.missingNote }}</span>
-                <span class="muted" *ngIf="!item.specialMealNote && !(item.isMissing && item.missingNote)">—</span>
+                <span class="special-note" *ngIf="item.specialMealNote"
+                  >🍽️ {{ item.specialMealNote }}</span
+                >
+                <span class="missing-note" *ngIf="item.isMissing && item.missingNote"
+                  >缺餐：{{ item.missingNote }}</span
+                >
+                <span
+                  class="muted"
+                  *ngIf="!item.specialMealNote && !(item.isMissing && item.missingNote)"
+                  >—</span
+                >
               </td>
               <td class="cell-volunteer">
                 <div *ngIf="item.volunteerName; else noVolunteer">
@@ -148,9 +191,15 @@
 
       <div class="group-footer">
         <div class="group-footer-info">
-          <span>本组合计：<strong>{{ group.totalCount }}</strong> 份</span>
-          <span class="muted" *ngIf="group.groupType === 'paused'">· 以上老人本日暂停送餐，请勿备餐</span>
-          <span class="muted" *ngIf="group.groupType === 'missing'">· 以上老人本日缺餐，需另行处置闭环</span>
+          <span
+            >本组合计：<strong>{{ group.totalCount }}</strong> 份</span
+          >
+          <span class="muted" *ngIf="group.groupType === 'paused'"
+            >· 以上老人本日暂停送餐，请勿备餐</span
+          >
+          <span class="muted" *ngIf="group.groupType === 'missing'"
+            >· 以上老人本日缺餐，需另行处置闭环</span
+          >
           <span class="muted" *ngIf="group.groupType === 'special'">· 请逐一核对特殊餐食要求</span>
         </div>
         <div class="group-signoff">
@@ -165,12 +214,15 @@
 
   <footer class="print-footer">
     <div class="footer-notes">
-      <p><strong>📝 备餐说明：</strong>请按分组批次出餐，每份餐食核对老人姓名和特殊备注后转交对应志愿者。缺餐和暂停名单请勿出餐。</p>
+      <p>
+        <strong>📝 备餐说明：</strong
+        >请按分组批次出餐，每份餐食核对老人姓名和特殊备注后转交对应志愿者。缺餐和暂停名单请勿出餐。
+      </p>
     </div>
     <div class="footer-signoff">
       <div class="signoff-row">
         <span>厨房负责人：</span><span class="sign-line"></span>
-        <span style="margin-left:40px">配送协调：</span><span class="sign-line"></span>
+        <span style="margin-left: 40px">配送协调：</span><span class="sign-line"></span>
       </div>
     </div>
   </footer>

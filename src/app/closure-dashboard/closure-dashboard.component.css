@@ -39,7 +39,7 @@
   font-weight: 500;
 }
 
-.date-picker-wrap input[type="date"] {
+.date-picker-wrap input[type='date'] {
   width: auto;
   min-width: 150px;
   padding: 6px 10px;
@@ -112,12 +112,24 @@
   border-left: 4px solid;
 }
 
-.summary-card.total { border-left-color: #5a6b53; }
-.summary-card.prep { border-left-color: #d9a84a; }
-.summary-card.delivery { border-left-color: #4a9f6d; }
-.summary-card.exception { border-left-color: #c75454; }
-.summary-card.phone { border-left-color: #5a8fd9; }
-.summary-card.visit { border-left-color: #9a6bd9; }
+.summary-card.total {
+  border-left-color: #5a6b53;
+}
+.summary-card.prep {
+  border-left-color: #d9a84a;
+}
+.summary-card.delivery {
+  border-left-color: #4a9f6d;
+}
+.summary-card.exception {
+  border-left-color: #c75454;
+}
+.summary-card.phone {
+  border-left-color: #5a8fd9;
+}
+.summary-card.visit {
+  border-left-color: #9a6bd9;
+}
 
 .sc-icon {
   font-size: 28px;
@@ -157,11 +169,21 @@
   color: #65715f;
 }
 
-.sc-sub .done { color: #4a9f6d; }
-.sc-sub .doing { color: #5a8fd9; }
-.sc-sub .warn { color: #d9a84a; }
-.sc-sub .danger { color: #c75454; }
-.sc-sub .special { color: #b36a2e; }
+.sc-sub .done {
+  color: #4a9f6d;
+}
+.sc-sub .doing {
+  color: #5a8fd9;
+}
+.sc-sub .warn {
+  color: #d9a84a;
+}
+.sc-sub .danger {
+  color: #c75454;
+}
+.sc-sub .special {
+  color: #b36a2e;
+}
 
 .stage-timeline {
   background: #fff;
@@ -357,7 +379,7 @@
   background: #f5f7f1;
 }
 
-.chk-item input[type="checkbox"] {
+.chk-item input[type='checkbox'] {
   accent-color: #4a9f6d;
 }
 
@@ -720,8 +742,12 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .detail-panel-inner {
@@ -1219,14 +1245,31 @@
     gap: 8px;
   }
 
-  .td-elder { grid-column: 1 / -1; }
-  .td-volunteer { grid-column: 1 / 2; }
-  .td-tags { grid-column: 2 / 3; }
-  .td-stage { grid-column: 1 / -1; }
-  .td-prep { grid-column: 1 / 2; }
-  .td-delivery { grid-column: 2 / 3; }
-  .td-exception { grid-column: 1 / -1; }
-  .td-actions { grid-column: 1 / -1; text-align: left; }
+  .td-elder {
+    grid-column: 1 / -1;
+  }
+  .td-volunteer {
+    grid-column: 1 / 2;
+  }
+  .td-tags {
+    grid-column: 2 / 3;
+  }
+  .td-stage {
+    grid-column: 1 / -1;
+  }
+  .td-prep {
+    grid-column: 1 / 2;
+  }
+  .td-delivery {
+    grid-column: 2 / 3;
+  }
+  .td-exception {
+    grid-column: 1 / -1;
+  }
+  .td-actions {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
 
   .search-input {
     width: 220px;

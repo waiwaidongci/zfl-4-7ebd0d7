@@ -42,11 +42,11 @@ export class KitchenPrintComponent implements OnInit {
   }
 
   get filteredGroups(): PrintGroup[] {
-    return this.data.groups.filter(g => this.groupFilters[g.groupType]);
+    return this.data.groups.filter((g) => this.groupFilters[g.groupType]);
   }
 
   get activeFilterCount(): number {
-    return this.allGroupTypes.filter(t => this.groupFilters[t]).length;
+    return this.allGroupTypes.filter((t) => this.groupFilters[t]).length;
   }
 
   shiftDate(days: number) {
@@ -80,7 +80,7 @@ export class KitchenPrintComponent implements OnInit {
   }
 
   hasGroupType(type: PrintGroupType): boolean {
-    return this.data.groups.some(g => g.groupType === type);
+    return this.data.groups.some((g) => g.groupType === type);
   }
 
   triggerPrint() {

@@ -1,5 +1,12 @@
 import { TestBed } from '@angular/core/testing';
-import { MealPrepService, TemporaryDeliveryChange, Elder, Volunteer, MealTask, MealTag } from './meal-prep.service';
+import {
+  MealPrepService,
+  TemporaryDeliveryChange,
+  Elder,
+  Volunteer,
+  MealTask,
+  MealTag,
+} from './meal-prep.service';
 
 describe('MealPrepService', () => {
   let service: MealPrepService;
@@ -15,7 +22,7 @@ describe('MealPrepService', () => {
       note: '需要爬三楼',
       deliveryDays: [1, 2, 3, 4, 5],
       pauseDates: [],
-      specialMealNote: '不要放葱姜蒜'
+      specialMealNote: '不要放葱姜蒜',
     },
     {
       id: 'elder-2',
@@ -27,7 +34,7 @@ describe('MealPrepService', () => {
       note: '有糖尿病',
       deliveryDays: [1, 3, 5],
       pauseDates: [],
-      specialMealNote: '低糖饮食'
+      specialMealNote: '低糖饮食',
     },
     {
       id: 'elder-3',
@@ -39,8 +46,8 @@ describe('MealPrepService', () => {
       note: '',
       deliveryDays: [1, 2, 3, 4, 5],
       pauseDates: ['2024-06-15'],
-      specialMealNote: ''
-    }
+      specialMealNote: '',
+    },
   ];
 
   const mockVolunteers: Volunteer[] = [
@@ -50,7 +57,7 @@ describe('MealPrepService', () => {
       phone: '13900139001',
       capacity: 10,
       area: '朝阳区',
-      availableDays: [1, 2, 3, 4, 5]
+      availableDays: [1, 2, 3, 4, 5],
     },
     {
       id: 'vol-2',
@@ -58,15 +65,15 @@ describe('MealPrepService', () => {
       phone: '13900139002',
       capacity: 8,
       area: '朝阳区',
-      availableDays: [1, 3, 5]
-    }
+      availableDays: [1, 3, 5],
+    },
   ];
 
   const mockMealTags: MealTag[] = [
     { id: 'tag-low-salt', name: '低盐', color: '#4a9f6d' },
     { id: 'tag-soft', name: '软食', color: '#d9a84a' },
     { id: 'tag-diabetic', name: '低糖', color: '#5a8fd9' },
-    { id: 'tag-vegetarian', name: '素食', color: '#9a6bd9' }
+    { id: 'tag-vegetarian', name: '素食', color: '#9a6bd9' },
   ];
 
   const mockTasks: MealTask[] = [
@@ -78,7 +85,7 @@ describe('MealPrepService', () => {
       status: '待分配',
       exception: '',
       isManuallyModified: false,
-      specialMealNote: ''
+      specialMealNote: '',
     },
     {
       id: 'task-2',
@@ -88,17 +95,19 @@ describe('MealPrepService', () => {
       status: '待分配',
       exception: '',
       isManuallyModified: false,
-      specialMealNote: ''
-    }
+      specialMealNote: '',
+    },
   ];
 
-  const createTempChange = (overrides: Partial<TemporaryDeliveryChange>): TemporaryDeliveryChange => ({
+  const createTempChange = (
+    overrides: Partial<TemporaryDeliveryChange>,
+  ): TemporaryDeliveryChange => ({
     id: 'temp-1',
     elderId: 'elder-1',
     date: '2024-06-14',
     reason: '临时变更测试',
     createdAt: '2024-06-14 08:00:00',
-    ...overrides
+    ...overrides,
   });
 
   beforeEach(() => {
@@ -114,7 +123,7 @@ describe('MealPrepService', () => {
   describe('临时送餐变更 - 地址变更', () => {
     it('应该应用临时地址变更到备餐项目', () => {
       const tempChange = createTempChange({
-        address: '临时地址：北京市海淀区xxx临时地点'
+        address: '临时地址：北京市海淀区xxx临时地点',
       });
 
       const summary = service.generateDailySummary(
@@ -123,7 +132,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -133,7 +142,7 @@ describe('MealPrepService', () => {
 
     it('未提供临时地址时应使用原始地址', () => {
       const tempChange = createTempChange({
-        address: undefined
+        address: undefined,
       });
 
       const summary = service.generateDailySummary(
@@ -142,7 +151,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -151,7 +160,7 @@ describe('MealPrepService', () => {
 
     it('空字符串地址应覆盖原始地址', () => {
       const tempChange = createTempChange({
-        address: ''
+        address: '',
       });
 
       const summary = service.generateDailySummary(
@@ -160,7 +169,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -171,7 +180,7 @@ describe('MealPrepService', () => {
   describe('临时送餐变更 - 联系方式变更', () => {
     it('应该应用临时联系方式变更到备餐项目', () => {
       const tempChange = createTempChange({
-        contact: '18800188001'
+        contact: '18800188001',
       });
 
       const summary = service.generateDailySummary(
@@ -180,7 +189,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -189,7 +198,7 @@ describe('MealPrepService', () => {
 
     it('未提供临时联系方式时应使用原始联系方式', () => {
       const tempChange = createTempChange({
-        contact: undefined
+        contact: undefined,
       });
 
       const summary = service.generateDailySummary(
@@ -198,7 +207,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -209,7 +218,7 @@ describe('MealPrepService', () => {
   describe('临时送餐变更 - 餐食标签变更', () => {
     it('应该应用临时餐食标签变更到备餐项目', () => {
       const tempChange = createTempChange({
-        mealTagIds: ['tag-diabetic', 'tag-vegetarian']
+        mealTagIds: ['tag-diabetic', 'tag-vegetarian'],
       });
 
       const summary = service.generateDailySummary(
@@ -218,7 +227,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -227,7 +236,7 @@ describe('MealPrepService', () => {
 
     it('空标签数组应覆盖原始标签', () => {
       const tempChange = createTempChange({
-        mealTagIds: []
+        mealTagIds: [],
       });
 
       const summary = service.generateDailySummary(
@@ -236,7 +245,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -245,7 +254,7 @@ describe('MealPrepService', () => {
 
     it('未提供临时标签时应使用原始标签', () => {
       const tempChange = createTempChange({
-        mealTagIds: undefined
+        mealTagIds: undefined,
       });
 
       const summary = service.generateDailySummary(
@@ -254,7 +263,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -263,7 +272,7 @@ describe('MealPrepService', () => {
 
     it('标签变更应影响标签统计', () => {
       const tempChange = createTempChange({
-        mealTagIds: ['tag-diabetic']
+        mealTagIds: ['tag-diabetic'],
       });
 
       const summary = service.generateDailySummary(
@@ -272,24 +281,24 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
-      const diabeticStat = summary.tagBreakdown.find(t => t.tagId === 'tag-diabetic');
+      const diabeticStat = summary.tagBreakdown.find((t) => t.tagId === 'tag-diabetic');
       expect(diabeticStat).toBeDefined();
       expect(diabeticStat!.activeCount).toBe(1);
 
-      const lowSaltStat = summary.tagBreakdown.find(t => t.tagId === 'tag-low-salt');
+      const lowSaltStat = summary.tagBreakdown.find((t) => t.tagId === 'tag-low-salt');
       expect(lowSaltStat).toBeUndefined();
     });
 
     it('标签变更应影响备餐批次分组', () => {
       const elderWithoutSpecialNote: Elder = {
         ...mockElders[0],
-        specialMealNote: ''
+        specialMealNote: '',
       };
       const tempChange = createTempChange({
-        mealTagIds: ['tag-diabetic']
+        mealTagIds: ['tag-diabetic'],
       });
 
       const summary = service.generateDailySummary(
@@ -298,10 +307,10 @@ describe('MealPrepService', () => {
         [elderWithoutSpecialNote, mockElders[1]],
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
-      const diabeticBatch = summary.batches.find(b => b.tagId === 'tag-diabetic');
+      const diabeticBatch = summary.batches.find((b) => b.tagId === 'tag-diabetic');
       expect(diabeticBatch).toBeDefined();
       expect(diabeticBatch!.items.length).toBe(1);
       expect(diabeticBatch!.items[0].elder.id).toBe('elder-1');
@@ -311,7 +320,7 @@ describe('MealPrepService', () => {
   describe('临时送餐变更 - 志愿者分配变更', () => {
     it('应该应用临时志愿者分配变更', () => {
       const tempChange = createTempChange({
-        volunteerId: 'vol-2'
+        volunteerId: 'vol-2',
       });
 
       const summary = service.generateDailySummary(
@@ -320,7 +329,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -331,7 +340,7 @@ describe('MealPrepService', () => {
 
     it('未提供临时志愿者时应使用任务原始志愿者', () => {
       const tempChange = createTempChange({
-        volunteerId: undefined
+        volunteerId: undefined,
       });
 
       const summary = service.generateDailySummary(
@@ -340,7 +349,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -349,7 +358,7 @@ describe('MealPrepService', () => {
 
     it('临时志愿者ID无效时志愿者信息为undefined', () => {
       const tempChange = createTempChange({
-        volunteerId: 'non-existent-vol'
+        volunteerId: 'non-existent-vol',
       });
 
       const summary = service.generateDailySummary(
@@ -358,7 +367,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -369,7 +378,7 @@ describe('MealPrepService', () => {
   describe('临时送餐变更 - 特殊餐食备注变更', () => {
     it('应该应用临时特殊餐食备注', () => {
       const tempChange = createTempChange({
-        specialMealNote: '今日完全流食，不要固体食物'
+        specialMealNote: '今日完全流食，不要固体食物',
       });
 
       const summary = service.generateDailySummary(
@@ -378,7 +387,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -386,13 +395,16 @@ describe('MealPrepService', () => {
     });
 
     it('任务级备注优先于老人级备注和临时变更', () => {
-      const tasksWithNote = [{
-        ...mockTasks[0],
-        specialMealNote: '任务级别：今日生日，加一份长寿面'
-      }, mockTasks[1]];
+      const tasksWithNote = [
+        {
+          ...mockTasks[0],
+          specialMealNote: '任务级别：今日生日，加一份长寿面',
+        },
+        mockTasks[1],
+      ];
 
       const tempChange = createTempChange({
-        specialMealNote: '临时备注'
+        specialMealNote: '临时备注',
       });
 
       const summary = service.generateDailySummary(
@@ -401,7 +413,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const elder1Item = summary.itemsById['task-1'];
@@ -410,7 +422,7 @@ describe('MealPrepService', () => {
 
     it('特殊备注应将项目分到特殊餐食批次', () => {
       const tempChange = createTempChange({
-        specialMealNote: '过敏体质，严禁花生制品'
+        specialMealNote: '过敏体质，严禁花生制品',
       });
 
       const summary = service.generateDailySummary(
@@ -419,13 +431,13 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
-      const specialBatch = summary.batches.find(b => b.batchType === 'special');
+      const specialBatch = summary.batches.find((b) => b.batchType === 'special');
       expect(specialBatch).toBeDefined();
-      expect(specialBatch!.items.some(i => i.elder.id === 'elder-1')).toBe(true);
-      expect(summary.specialItems.some(i => i.elder.id === 'elder-1')).toBe(true);
+      expect(specialBatch!.items.some((i) => i.elder.id === 'elder-1')).toBe(true);
+      expect(summary.specialItems.some((i) => i.elder.id === 'elder-1')).toBe(true);
     });
   });
 
@@ -434,8 +446,8 @@ describe('MealPrepService', () => {
       const pausedDateTasks: MealTask[] = [
         {
           ...mockTasks[0],
-          date: '2024-06-15'
-        }
+          date: '2024-06-15',
+        },
       ];
 
       const summary = service.generateDailySummary(
@@ -444,7 +456,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        []
+        [],
       );
 
       expect(summary.pausedMeals).toBe(1);
@@ -462,8 +474,8 @@ describe('MealPrepService', () => {
           status: '待分配',
           exception: '',
           isManuallyModified: false,
-          specialMealNote: ''
-        }
+          specialMealNote: '',
+        },
       ];
 
       const summary = service.generateDailySummary(
@@ -472,10 +484,10 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        []
+        [],
       );
 
-      const pausedItem = summary.pausedItems.find(i => i.elder.id === 'elder-3');
+      const pausedItem = summary.pausedItems.find((i) => i.elder.id === 'elder-3');
       expect(pausedItem).toBeDefined();
       expect(pausedItem!.isPaused).toBe(true);
       expect(pausedItem!.status).toBe('待备餐');
@@ -486,8 +498,8 @@ describe('MealPrepService', () => {
         {
           ...mockElders[2],
           mealTags: ['tag-soft', 'tag-diabetic'],
-          pauseDates: ['2024-06-15']
-        }
+          pauseDates: ['2024-06-15'],
+        },
       ];
 
       const summary = service.generateDailySummary(
@@ -496,7 +508,7 @@ describe('MealPrepService', () => {
         eldersWithPausedTags,
         mockMealTags,
         mockVolunteers,
-        []
+        [],
       );
 
       expect(summary.pausedSummary.byTags.length).toBe(2);
@@ -506,7 +518,7 @@ describe('MealPrepService', () => {
     it('暂停率计算应正确', () => {
       const mixedTasks: MealTask[] = [
         { ...mockTasks[0], date: '2024-06-15' },
-        { ...mockTasks[1], date: '2024-06-15' }
+        { ...mockTasks[1], date: '2024-06-15' },
       ];
 
       const summary = service.generateDailySummary(
@@ -515,7 +527,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        []
+        [],
       );
 
       const expectedRate = Math.round((1 / 3) * 1000) / 10;
@@ -529,7 +541,7 @@ describe('MealPrepService', () => {
         elderId: 'elder-3',
         date: '2024-06-15',
         address: '暂停期间临时地址',
-        contact: '18800188003'
+        contact: '18800188003',
       });
 
       const summary = service.generateDailySummary(
@@ -538,10 +550,10 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
-      const pausedItem = summary.pausedItems.find(i => i.elder.id === 'elder-3');
+      const pausedItem = summary.pausedItems.find((i) => i.elder.id === 'elder-3');
       expect(pausedItem).toBeDefined();
       expect(pausedItem!.elder.address).toBe('暂停期间临时地址');
       expect(pausedItem!.elder.contact).toBe('18800188003');
@@ -555,7 +567,7 @@ describe('MealPrepService', () => {
         contact: '18800188099',
         mealTagIds: ['tag-vegetarian'],
         volunteerId: 'vol-2',
-        specialMealNote: '综合变更备注'
+        specialMealNote: '综合变更备注',
       });
 
       const summary = service.generateDailySummary(
@@ -564,7 +576,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const item = summary.itemsById['task-1'];
@@ -578,12 +590,12 @@ describe('MealPrepService', () => {
     it('不同日期的临时变更不应互相影响', () => {
       const tempChangeToday = createTempChange({
         date: '2024-06-14',
-        address: '今日临时地址'
+        address: '今日临时地址',
       });
       const tempChangeTomorrow = createTempChange({
         id: 'temp-2',
         date: '2024-06-15',
-        address: '明日临时地址'
+        address: '明日临时地址',
       });
 
       const summaryToday = service.generateDailySummary(
@@ -592,7 +604,7 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChangeToday, tempChangeTomorrow]
+        [tempChangeToday, tempChangeTomorrow],
       );
 
       expect(summaryToday.itemsById['task-1'].elder.address).toBe('今日临时地址');
@@ -601,9 +613,19 @@ describe('MealPrepService', () => {
     it('getTempChangePrepImpactSummary 应正确统计变更影响', () => {
       const changes: TemporaryDeliveryChange[] = [
         createTempChange({ address: 'addr1' }),
-        createTempChange({ id: 'temp-2', elderId: 'elder-2', mealTagIds: ['tag-diabetic'], contact: '123' }),
-        createTempChange({ id: 'temp-3', elderId: 'elder-2', date: '2024-06-15', address: 'addr2' }),
-        createTempChange({ id: 'temp-4', volunteerId: 'vol-2', specialMealNote: 'note' })
+        createTempChange({
+          id: 'temp-2',
+          elderId: 'elder-2',
+          mealTagIds: ['tag-diabetic'],
+          contact: '123',
+        }),
+        createTempChange({
+          id: 'temp-3',
+          elderId: 'elder-2',
+          date: '2024-06-15',
+          address: 'addr2',
+        }),
+        createTempChange({ id: 'temp-4', volunteerId: 'vol-2', specialMealNote: 'note' }),
       ];
 
       const impact = service.getTempChangePrepImpactSummary(changes, '2024-06-14');
@@ -645,7 +667,7 @@ describe('MealPrepService', () => {
         contact: '18800188088',
         mealTagIds: ['tag-diabetic'],
         volunteerId: 'vol-2',
-        specialMealNote: '打印备注'
+        specialMealNote: '打印备注',
       });
 
       const summary = service.generateDailySummary(
@@ -654,19 +676,19 @@ describe('MealPrepService', () => {
         mockElders,
         mockMealTags,
         mockVolunteers,
-        [tempChange]
+        [tempChange],
       );
 
       const printData = service.generateKitchenPrintViewData(summary, mockMealTags);
       const specialGroup = printData.specialGroup;
 
       expect(specialGroup).toBeDefined();
-      const elder1PrintItem = specialGroup!.items.find(i => i.elderName === '张大爷');
+      const elder1PrintItem = specialGroup!.items.find((i) => i.elderName === '张大爷');
       expect(elder1PrintItem).toBeDefined();
       expect(elder1PrintItem!.address).toBe('打印测试地址');
       expect(elder1PrintItem!.contact).toBe('18800188088');
       expect(elder1PrintItem!.volunteerName).toBe('刘志愿者');
-      expect(elder1PrintItem!.mealTags.some(t => t.id === 'tag-diabetic')).toBe(true);
+      expect(elder1PrintItem!.mealTags.some((t) => t.id === 'tag-diabetic')).toBe(true);
     });
   });
 

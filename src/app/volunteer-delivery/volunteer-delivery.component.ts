@@ -1,4 +1,13 @@
-import { Component, EventEmitter, Input, Output, OnInit, OnChanges, SimpleChanges, OnDestroy } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  Output,
+  OnInit,
+  OnChanges,
+  SimpleChanges,
+  OnDestroy,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   VolunteerDailySummary,
@@ -26,7 +35,12 @@ import { VolunteerSelectorComponent } from './volunteer-selector.component';
 import { DeliveryDetailComponent } from './delivery-detail.component';
 
 type DeliveryWritebackResult = {
-  taskUpdated?: { taskId: string; status: MealTask['status']; exception: string; deliveryStatus: DeliveryStatus };
+  taskUpdated?: {
+    taskId: string;
+    status: MealTask['status'];
+    exception: string;
+    deliveryStatus: DeliveryStatus;
+  };
   exceptionCreated?: ExceptionRecord;
   notificationCreated?: PhoneNotification;
   notificationUpdated?: { notificationId: string; status: any; remark?: string };
@@ -43,11 +57,7 @@ type DraftMergeEvent = {
 @Component({
   selector: 'app-volunteer-delivery',
   standalone: true,
-  imports: [
-    CommonModule,
-    VolunteerSelectorComponent,
-    DeliveryDetailComponent,
-  ],
+  imports: [CommonModule, VolunteerSelectorComponent, DeliveryDetailComponent],
   templateUrl: './volunteer-delivery.component.html',
   styleUrls: ['./volunteer-delivery.component.css'],
 })
@@ -118,7 +128,17 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['date'] || changes['volunteerId'] || changes['tasks'] || changes['elders'] || changes['volunteers'] || changes['mealTags'] || changes['visitRecords'] || changes['kanbanSort'] || changes['temporaryDeliveryChanges']) {
+    if (
+      changes['date'] ||
+      changes['volunteerId'] ||
+      changes['tasks'] ||
+      changes['elders'] ||
+      changes['volunteers'] ||
+      changes['mealTags'] ||
+      changes['visitRecords'] ||
+      changes['kanbanSort'] ||
+      changes['temporaryDeliveryChanges']
+    ) {
       if (changes['volunteerId'] && this.volunteerId) {
         this.selectedVolunteerId = this.volunteerId;
         this.viewMode = 'delivery';
@@ -194,18 +214,21 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
   onUpdateTaskStatus(data: { taskId: string; status: DeliveryStatus; exceptionNote: string }) {
     const writeback: DeliveryWritebackResult = {};
     const isException = data.status === '异常' || data.status === '未接通';
-    const origTask = this.tasks.find(t => t.id === data.taskId);
-    let origElder = this.elders.find(e => origTask ? e.id === origTask.elderId : false);
+    const origTask = this.tasks.find((t) => t.id === data.taskId);
+    let origElder = this.elders.find((e) => (origTask ? e.id === origTask.elderId : false));
 
     if (origTask && origElder && this.date) {
-      const tc = this.temporaryDeliveryChanges.find(c => c.elderId === origElder!.id && c.date === this.date);
+      const tc = this.temporaryDeliveryChanges.find(
+        (c) => c.elderId === origElder!.id && c.date === this.date,
+      );
       if (tc) {
         origElder = {
           ...origElder,
           address: tc.address !== undefined ? tc.address : origElder.address,
           contact: tc.contact !== undefined ? tc.contact : origElder.contact,
           mealTags: tc.mealTagIds !== undefined ? tc.mealTagIds : origElder.mealTags,
-          specialMealNote: tc.specialMealNote !== undefined ? tc.specialMealNote : origElder.specialMealNote,
+          specialMealNote:
+            tc.specialMealNote !== undefined ? tc.specialMealNote : origElder.specialMealNote,
         };
       }
     }
@@ -216,11 +239,13 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
         this.date,
         this.selectedVolunteerId,
         data.status,
-        data.exceptionNote
+        data.exceptionNote,
       );
       writeback.draftCreated = draft;
       this.lastSyncMessage = `已保存为离线草稿，将在恢复同步后自动同步`;
-      setTimeout(() => { this.lastSyncMessage = ''; }, 3000);
+      setTimeout(() => {
+        this.lastSyncMessage = '';
+      }, 3000);
     } else {
       const result = this.deliveryService.updateDeliveryStatus(
         this.date,
@@ -278,7 +303,7 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
       this.tasks,
       this.elders,
       this.exceptionRecords,
-      this.phoneNotifications
+      this.phoneNotifications,
     );
 
     const writeback: DeliveryWritebackResult = {
@@ -313,7 +338,9 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
       this.lastSyncMessage = `检测到 ${mergeResult.conflicts.length} 个冲突需要手动处理`;
     } else {
       this.lastSyncMessage = `已同步 ${mergeResult.mergedCount} 条离线操作`;
-      setTimeout(() => { this.lastSyncMessage = ''; }, 3000);
+      setTimeout(() => {
+        this.lastSyncMessage = '';
+      }, 3000);
     }
 
     this.draftsMerged.emit({
@@ -345,22 +372,22 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
 
   getDraftStatusLabel(status: OfflineDraftStatus): string {
     const labels: Record<OfflineDraftStatus, string> = {
-      'pending': '待同步',
-      'syncing': '同步中',
-      'synced': '已同步',
-      'conflict': '有冲突',
-      'discarded': '已丢弃',
+      pending: '待同步',
+      syncing: '同步中',
+      synced: '已同步',
+      conflict: '有冲突',
+      discarded: '已丢弃',
     };
     return labels[status] || status;
   }
 
   getDraftStatusColor(status: OfflineDraftStatus): string {
     const colors: Record<OfflineDraftStatus, string> = {
-      'pending': '#d9a84a',
-      'syncing': '#5a8fd9',
-      'synced': '#4a9f6d',
-      'conflict': '#c75454',
-      'discarded': '#8a9783',
+      pending: '#d9a84a',
+      syncing: '#5a8fd9',
+      synced: '#4a9f6d',
+      conflict: '#c75454',
+      discarded: '#8a9783',
     };
     return colors[status] || '#8a9783';
   }
@@ -374,7 +401,9 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
     const writeback: DeliveryWritebackResult = {};
 
     const existingNotification = this.phoneNotifications.find(
-      n => n.taskId === data.taskId && (n.notificationStatus === '未通知' || n.notificationStatus === '稍后再拨')
+      (n) =>
+        n.taskId === data.taskId &&
+        (n.notificationStatus === '未通知' || n.notificationStatus === '稍后再拨'),
     );
     const notificationId = data.phoneNotificationId || existingNotification?.id || '';
 
@@ -385,18 +414,20 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
         this.selectedVolunteerId,
         notificationId,
         data.result,
-        data.remark
+        data.remark,
       );
       writeback.draftCreated = draft;
       this.lastSyncMessage = `电话结果已保存为离线草稿`;
-      setTimeout(() => { this.lastSyncMessage = ''; }, 3000);
+      setTimeout(() => {
+        this.lastSyncMessage = '';
+      }, 3000);
     } else {
       this.deliveryService.recordPhoneCallResult(
         this.date,
         data.taskId,
         notificationId,
         data.result,
-        data.remark
+        data.remark,
       );
       writeback.notificationUpdated = {
         notificationId,
@@ -417,17 +448,15 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
         data.taskId,
         this.date,
         this.selectedVolunteerId,
-        data.note
+        data.note,
       );
       writeback.draftCreated = draft;
       this.lastSyncMessage = `回访处理已保存为离线草稿`;
-      setTimeout(() => { this.lastSyncMessage = ''; }, 3000);
+      setTimeout(() => {
+        this.lastSyncMessage = '';
+      }, 3000);
     } else {
-      this.deliveryService.markVisitReminderHandled(
-        this.date,
-        data.taskId,
-        data.note
-      );
+      this.deliveryService.markVisitReminderHandled(this.date, data.taskId, data.note);
       writeback.visitReminderHandled = {
         taskId: data.taskId,
         note: data.note,
@@ -455,19 +484,44 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
   getQuickStatusSummary(): { label: string; count: number; color: string; icon: string }[] {
     if (!this.summary) return [];
     return [
-      { label: '待配送', count: this.summary.pendingTasks, color: DELIVERY_STATUS_COLORS['待配送'], icon: DELIVERY_STATUS_ICONS['待配送'] },
-      { label: '配送中', count: this.summary.inProgressTasks, color: DELIVERY_STATUS_COLORS['配送中'], icon: DELIVERY_STATUS_ICONS['配送中'] },
-      { label: '已送达', count: this.summary.completedTasks, color: DELIVERY_STATUS_COLORS['已送达'], icon: DELIVERY_STATUS_ICONS['已送达'] },
-      { label: '异常', count: this.summary.exceptionTasks, color: DELIVERY_STATUS_COLORS['异常'], icon: DELIVERY_STATUS_ICONS['异常'] },
-      { label: '未接通', count: this.summary.unreachableTasks, color: DELIVERY_STATUS_COLORS['未接通'], icon: DELIVERY_STATUS_ICONS['未接通'] },
-    ].filter(s => s.count > 0);
+      {
+        label: '待配送',
+        count: this.summary.pendingTasks,
+        color: DELIVERY_STATUS_COLORS['待配送'],
+        icon: DELIVERY_STATUS_ICONS['待配送'],
+      },
+      {
+        label: '配送中',
+        count: this.summary.inProgressTasks,
+        color: DELIVERY_STATUS_COLORS['配送中'],
+        icon: DELIVERY_STATUS_ICONS['配送中'],
+      },
+      {
+        label: '已送达',
+        count: this.summary.completedTasks,
+        color: DELIVERY_STATUS_COLORS['已送达'],
+        icon: DELIVERY_STATUS_ICONS['已送达'],
+      },
+      {
+        label: '异常',
+        count: this.summary.exceptionTasks,
+        color: DELIVERY_STATUS_COLORS['异常'],
+        icon: DELIVERY_STATUS_ICONS['异常'],
+      },
+      {
+        label: '未接通',
+        count: this.summary.unreachableTasks,
+        color: DELIVERY_STATUS_COLORS['未接通'],
+        icon: DELIVERY_STATUS_ICONS['未接通'],
+      },
+    ].filter((s) => s.count > 0);
   }
 
   findFirstUndeliveredIndex(): number {
     if (!this.summary) return 0;
     const priorityOrder: DeliveryStatus[] = ['配送中', '待配送', '未接通', '异常', '已送达'];
     for (const status of priorityOrder) {
-      const idx = this.summary.tasks.findIndex(t => t.status === status);
+      const idx = this.summary.tasks.findIndex((t) => t.status === status);
       if (idx !== -1) return idx;
     }
     return 0;

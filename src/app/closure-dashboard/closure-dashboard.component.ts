@@ -1,5 +1,14 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output, OnInit, OnChanges, SimpleChanges, OnDestroy } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  Output,
+  OnInit,
+  OnChanges,
+  SimpleChanges,
+  OnDestroy,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   ClosureTaskRow,
@@ -48,7 +57,14 @@ type ActiveFilterChip = {
   filterValue: any;
 };
 
-type DropdownKey = 'volunteer' | 'elder' | 'mealTag' | 'excSource' | 'excStatus' | 'prepStatus' | 'deliveryStatus';
+type DropdownKey =
+  | 'volunteer'
+  | 'elder'
+  | 'mealTag'
+  | 'excSource'
+  | 'excStatus'
+  | 'prepStatus'
+  | 'deliveryStatus';
 
 @Component({
   selector: 'app-closure-dashboard',
@@ -133,7 +149,7 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
   constructor(
     private dashboardService: ClosureDashboardService,
     private prepService: MealPrepService,
-    private deliveryService: VolunteerDeliveryService
+    private deliveryService: VolunteerDeliveryService,
   ) {}
 
   ngOnInit() {
@@ -240,7 +256,7 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
       this.callbackTasks,
       this.temporaryDeliveryChanges,
       prepStorageData,
-      deliveryStorageData
+      deliveryStorageData,
     );
 
     this.summary = this.dashboardService.computeSummaryStats(this.allRows);
@@ -551,7 +567,7 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
   getStatusBadgeStyle(
     type: 'task' | 'prep' | 'delivery' | 'exception' | 'notification' | 'callback',
     status: string,
-    hasUnresolved?: boolean
+    hasUnresolved?: boolean,
   ): { [key: string]: string } {
     let color = '#8a9783';
     let bg = '#f0f2ec';
@@ -655,14 +671,18 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
 
   severityColor(severity: string): string {
     switch (severity) {
-      case '紧急': return '#c75454';
-      case '较重': return '#d9a84a';
-      default: return '#5a8fd9';
+      case '紧急':
+        return '#c75454';
+      case '较重':
+        return '#d9a84a';
+      default:
+        return '#5a8fd9';
     }
   }
 
   assignedCount(volunteerId: string): number {
-    return this.tasks.filter((t) => t.date === this.dashboardDate && t.volunteerId === volunteerId).length;
+    return this.tasks.filter((t) => t.date === this.dashboardDate && t.volunteerId === volunteerId)
+      .length;
   }
 
   getStageItem(stage: TaskStage): StageTimelineItem | undefined {
@@ -705,7 +725,7 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
       this.dashboardDate,
       row.taskId,
       this.detailPrepStatus as PrepStatus,
-      this.detailPrepMissingNote
+      this.detailPrepMissingNote,
     );
 
     const result: ClosureStatusUpdateResult = {
@@ -720,8 +740,16 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
       const elder = this.elders.find((e) => e.id === row.elderId);
       const task = this.tasks.find((t) => t.id === row.taskId);
       if (elder && task) {
-        const exception = this.prepService.createExceptionRecord(task, elder, this.detailPrepMissingNote);
-        const notification = this.prepService.createPhoneNotification(task, elder, this.detailPrepMissingNote);
+        const exception = this.prepService.createExceptionRecord(
+          task,
+          elder,
+          this.detailPrepMissingNote,
+        );
+        const notification = this.prepService.createPhoneNotification(
+          task,
+          elder,
+          this.detailPrepMissingNote,
+        );
         result.exceptionCreated = exception as ExceptionRecord;
         result.notificationCreated = notification as PhoneNotification;
         this.prepService.markExceptionRecorded(this.dashboardDate, row.taskId);
@@ -752,7 +780,7 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
       this.dashboardDate,
       row.taskId,
       this.detailDeliveryStatus as DeliveryStatus,
-      this.detailDeliveryExceptionNote
+      this.detailDeliveryExceptionNote,
     );
 
     const result: ClosureStatusUpdateResult = {
@@ -767,7 +795,8 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
       result.taskUpdated = writeback.taskUpdated;
     }
 
-    const isException = this.detailDeliveryStatus === '异常' || this.detailDeliveryStatus === '未接通';
+    const isException =
+      this.detailDeliveryStatus === '异常' || this.detailDeliveryStatus === '未接通';
     if (isException && this.detailDeliveryExceptionNote) {
       const elder = this.elders.find((e) => e.id === row.elderId);
       const task = this.tasks.find((t) => t.id === row.taskId);
@@ -776,13 +805,13 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
           task,
           elder,
           this.detailDeliveryStatus as DeliveryStatus,
-          this.detailDeliveryExceptionNote
+          this.detailDeliveryExceptionNote,
         );
         const notification = this.deliveryService.createDeliveryPhoneNotification(
           task,
           elder,
           this.detailDeliveryStatus as DeliveryStatus,
-          this.detailDeliveryExceptionNote
+          this.detailDeliveryExceptionNote,
         );
         result.exceptionCreated = exception as ExceptionRecord;
         result.notificationCreated = notification as PhoneNotification;
@@ -822,7 +851,10 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
     this.refresh();
   }
 
-  updateNotificationStatus(notificationId: string, status: PhoneNotification['notificationStatus']) {
+  updateNotificationStatus(
+    notificationId: string,
+    status: PhoneNotification['notificationStatus'],
+  ) {
     const result: ClosureStatusUpdateResult = {};
     const now = new Date();
     const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;

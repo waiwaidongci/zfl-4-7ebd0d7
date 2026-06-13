@@ -22,15 +22,22 @@ import {
   DeliveryStorageData,
 } from './closure-dashboard.types';
 
-const TASK_STAGES: TaskStage[] = ['任务生成', '自动分配', '备餐阶段', '配送阶段', '异常处置', '回访关注'];
+const TASK_STAGES: TaskStage[] = [
+  '任务生成',
+  '自动分配',
+  '备餐阶段',
+  '配送阶段',
+  '异常处置',
+  '回访关注',
+];
 
 const STAGE_CONFIG: Record<TaskStage, { icon: string; color: string; bgColor: string }> = {
-  '任务生成': { icon: '📋', color: '#8a9783', bgColor: '#f0f2ec' },
-  '自动分配': { icon: '🤖', color: '#5a8fd9', bgColor: '#e8f0fa' },
-  '备餐阶段': { icon: '🍳', color: '#d9a84a', bgColor: '#fdf3e0' },
-  '配送阶段': { icon: '🚴', color: '#4a9f6d', bgColor: '#e8f5ec' },
-  '异常处置': { icon: '⚠️', color: '#c75454', bgColor: '#fde8e8' },
-  '回访关注': { icon: '📞', color: '#9a6bd9', bgColor: '#f3e8fa' },
+  任务生成: { icon: '📋', color: '#8a9783', bgColor: '#f0f2ec' },
+  自动分配: { icon: '🤖', color: '#5a8fd9', bgColor: '#e8f0fa' },
+  备餐阶段: { icon: '🍳', color: '#d9a84a', bgColor: '#fdf3e0' },
+  配送阶段: { icon: '🚴', color: '#4a9f6d', bgColor: '#e8f5ec' },
+  异常处置: { icon: '⚠️', color: '#c75454', bgColor: '#fde8e8' },
+  回访关注: { icon: '📞', color: '#9a6bd9', bgColor: '#f3e8fa' },
 };
 
 @Injectable({ providedIn: 'root' })
@@ -47,7 +54,7 @@ export class ClosureDashboardService {
     callbackTasks: CallbackTask[],
     temporaryDeliveryChanges: TemporaryDeliveryChange[],
     prepStorageData: PrepStorageData,
-    deliveryStorageData: DeliveryStorageData
+    deliveryStorageData: DeliveryStorageData,
   ): ClosureTaskRow[] {
     const rows: ClosureTaskRow[] = [];
     const dayTasks = tasks.filter((t) => t.date === date);
@@ -89,21 +96,31 @@ export class ClosureDashboardService {
         volunteerName: volunteer?.name || '未分配',
         volunteerPhone: volunteer?.phone || '',
         volunteerArea: volunteer?.area || '',
-        taskStatus: isPaused ? '待分配' : (task?.status || '待分配'),
+        taskStatus: isPaused ? '待分配' : task?.status || '待分配',
         taskException: task?.exception || '',
         isManuallyModified: task?.isManuallyModified || false,
         hasTempChange: !!tempChange,
         tempChangeSummary: tempChange ? this.summarizeTempChange(tempChange, elder) : '',
-        prepStatus: isPaused ? '' : (prepData?.status || ''),
+        prepStatus: isPaused ? '' : prepData?.status || '',
         prepMissingNote: prepData?.missingNote || '',
-        deliveryStatus: isPaused ? '' : (deliveryData?.status || ''),
+        deliveryStatus: isPaused ? '' : deliveryData?.status || '',
         deliveryExceptionNote: deliveryData?.exceptionNote || '',
-        currentStage: this.determineCurrentStage(task, prepData?.status, deliveryData?.status, elderExceptions, lastVisit, isPaused, date),
+        currentStage: this.determineCurrentStage(
+          task,
+          prepData?.status,
+          deliveryData?.status,
+          elderExceptions,
+          lastVisit,
+          isPaused,
+          date,
+        ),
         exceptionRecords: elderExceptions,
         hasUnresolvedException: elderExceptions.some((e) => e.status !== '已解决'),
         phoneNotifications: elderNotifications,
         callbackTasks: elderCallbacks,
-        hasPendingCallback: elderCallbacks.some((c) => c.status === '待回拨' || c.status === '回拨中'),
+        hasPendingCallback: elderCallbacks.some(
+          (c) => c.status === '待回拨' || c.status === '回拨中',
+        ),
         lastVisit,
         visitReminder: this.needsVisitReminder(lastVisit, date),
         createdAt: task?.id ? task.id.split('-').slice(0, 3).join('-') : date,
@@ -121,7 +138,7 @@ export class ClosureDashboardService {
     date: string,
     elders: Elder[],
     allTags: MealTag[],
-    tempChanges: TemporaryDeliveryChange[]
+    tempChanges: TemporaryDeliveryChange[],
   ): MealTag[] {
     const elder = elders.find((e) => e.id === elderId);
     const tempChange = tempChanges.find((tc) => tc.elderId === elderId);
@@ -140,7 +157,7 @@ export class ClosureDashboardService {
     elderId: string,
     date: string,
     elders: Elder[],
-    tempChanges: TemporaryDeliveryChange[]
+    tempChanges: TemporaryDeliveryChange[],
   ): string {
     const elder = elders.find((e) => e.id === elderId);
     const tempChange = tempChanges.find((tc) => tc.elderId === elderId);
@@ -155,7 +172,7 @@ export class ClosureDashboardService {
     elderId: string,
     date: string,
     elders: Elder[],
-    tempChanges: TemporaryDeliveryChange[]
+    tempChanges: TemporaryDeliveryChange[],
   ): string {
     const elder = elders.find((e) => e.id === elderId);
     const tempChange = tempChanges.find((tc) => tc.elderId === elderId);
@@ -170,7 +187,7 @@ export class ClosureDashboardService {
     elderId: string,
     date: string,
     elders: Elder[],
-    tempChanges: TemporaryDeliveryChange[]
+    tempChanges: TemporaryDeliveryChange[],
   ): string {
     const elder = elders.find((e) => e.id === elderId);
     const tempChange = tempChanges.find((tc) => tc.elderId === elderId);
@@ -198,7 +215,7 @@ export class ClosureDashboardService {
     exceptions: ExceptionRecord[],
     lastVisit: VisitRecord | undefined,
     isPaused: boolean,
-    date: string
+    date: string,
   ): TaskStage {
     if (isPaused || !task) return '任务生成';
 
@@ -209,7 +226,13 @@ export class ClosureDashboardService {
       return this.needsVisitReminder(lastVisit, date) ? '回访关注' : '配送阶段';
     }
 
-    if (deliveryStatus === '配送中' || deliveryStatus === '异常' || deliveryStatus === '未接通' || task.status === '配送中' || task.status === '异常') {
+    if (
+      deliveryStatus === '配送中' ||
+      deliveryStatus === '异常' ||
+      deliveryStatus === '未接通' ||
+      task.status === '配送中' ||
+      task.status === '异常'
+    ) {
       return '配送阶段';
     }
 
@@ -243,21 +266,47 @@ export class ClosureDashboardService {
       specialMealTasks: rows.filter((r) => r.elderSpecialNote || r.elderMealTags.length > 0).length,
       prepCompleted: rows.filter((r) => r.prepStatus === '已完成').length,
       prepInProgress: rows.filter((r) => r.prepStatus === '备餐中').length,
-      prepPending: rows.filter((r) => r.prepStatus === '待备餐' || (!r.prepStatus && r.volunteerId)).length,
+      prepPending: rows.filter((r) => r.prepStatus === '待备餐' || (!r.prepStatus && r.volunteerId))
+        .length,
       prepMissing: rows.filter((r) => r.prepStatus === '缺餐异常').length,
-      deliveryCompleted: rows.filter((r) => r.deliveryStatus === '已送达' || r.taskStatus === '已送达').length,
-      deliveryInProgress: rows.filter((r) => r.deliveryStatus === '配送中' || r.taskStatus === '配送中').length,
-      deliveryPending: rows.filter((r) => !r.deliveryStatus && r.volunteerId && r.taskStatus !== '已送达').length,
+      deliveryCompleted: rows.filter(
+        (r) => r.deliveryStatus === '已送达' || r.taskStatus === '已送达',
+      ).length,
+      deliveryInProgress: rows.filter(
+        (r) => r.deliveryStatus === '配送中' || r.taskStatus === '配送中',
+      ).length,
+      deliveryPending: rows.filter(
+        (r) => !r.deliveryStatus && r.volunteerId && r.taskStatus !== '已送达',
+      ).length,
       deliveryException: rows.filter((r) => r.deliveryStatus === '异常').length,
       deliveryUnreachable: rows.filter((r) => r.deliveryStatus === '未接通').length,
       totalExceptions: rows.reduce((sum, r) => sum + r.exceptionRecords.length, 0),
-      pendingExceptions: rows.filter((r) => r.exceptionRecords.some((e) => e.status === '待处理')).length,
-      inProgressExceptions: rows.filter((r) => r.exceptionRecords.some((e) => e.status === '处理中')).length,
-      resolvedExceptions: rows.filter((r) => r.exceptionRecords.length > 0 && r.exceptionRecords.every((e) => e.status === '已解决')).length,
-      pendingNotifications: rows.reduce((sum, r) => sum + r.phoneNotifications.filter((n) => n.notificationStatus === '未通知').length, 0),
-      pendingCallbacks: rows.reduce((sum, r) => sum + r.callbackTasks.filter((c) => c.status === '待回拨').length, 0),
-      activeCallbacks: rows.reduce((sum, r) => sum + r.callbackTasks.filter((c) => c.status === '回拨中').length, 0),
-      completedCallbacks: rows.reduce((sum, r) => sum + r.callbackTasks.filter((c) => c.status === '已完成').length, 0),
+      pendingExceptions: rows.filter((r) => r.exceptionRecords.some((e) => e.status === '待处理'))
+        .length,
+      inProgressExceptions: rows.filter((r) =>
+        r.exceptionRecords.some((e) => e.status === '处理中'),
+      ).length,
+      resolvedExceptions: rows.filter(
+        (r) =>
+          r.exceptionRecords.length > 0 && r.exceptionRecords.every((e) => e.status === '已解决'),
+      ).length,
+      pendingNotifications: rows.reduce(
+        (sum, r) =>
+          sum + r.phoneNotifications.filter((n) => n.notificationStatus === '未通知').length,
+        0,
+      ),
+      pendingCallbacks: rows.reduce(
+        (sum, r) => sum + r.callbackTasks.filter((c) => c.status === '待回拨').length,
+        0,
+      ),
+      activeCallbacks: rows.reduce(
+        (sum, r) => sum + r.callbackTasks.filter((c) => c.status === '回拨中').length,
+        0,
+      ),
+      completedCallbacks: rows.reduce(
+        (sum, r) => sum + r.callbackTasks.filter((c) => c.status === '已完成').length,
+        0,
+      ),
       visitReminderCount: rows.filter((r) => r.visitReminder).length,
     };
 
@@ -349,10 +398,15 @@ export class ClosureDashboardService {
         if (!filters.taskStages.includes(row.currentStage)) return false;
       }
       if (filters.prepStatuses.length > 0) {
-        if (!row.prepStatus || !filters.prepStatuses.includes(row.prepStatus as PrepStatus)) return false;
+        if (!row.prepStatus || !filters.prepStatuses.includes(row.prepStatus as PrepStatus))
+          return false;
       }
       if (filters.deliveryStatuses.length > 0) {
-        if (!row.deliveryStatus || !filters.deliveryStatuses.includes(row.deliveryStatus as DeliveryStatus)) return false;
+        if (
+          !row.deliveryStatus ||
+          !filters.deliveryStatuses.includes(row.deliveryStatus as DeliveryStatus)
+        )
+          return false;
       }
       return true;
     });

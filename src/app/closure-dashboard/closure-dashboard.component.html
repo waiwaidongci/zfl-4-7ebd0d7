@@ -9,7 +9,13 @@
     </div>
     <div class="toolbar-right">
       <div class="search-wrap">
-        <input type="text" placeholder="搜索老人/志愿者/地址/电话..." [(ngModel)]="searchText" (input)="onSearchChange()" class="search-input" />
+        <input
+          type="text"
+          placeholder="搜索老人/志愿者/地址/电话..."
+          [(ngModel)]="searchText"
+          (input)="onSearchChange()"
+          class="search-input"
+        />
         <span class="search-icon">🔍</span>
       </div>
       <button type="button" class="refresh-btn" (click)="refreshData.emit()">🔄 刷新数据</button>
@@ -45,14 +51,20 @@
     <div class="summary-card delivery">
       <div class="sc-icon">🚴</div>
       <div class="sc-content">
-        <strong>{{ summary.deliveryCompleted }}/{{ summary.totalTasks - summary.pausedTasks }}</strong>
+        <strong
+          >{{ summary.deliveryCompleted }}/{{ summary.totalTasks - summary.pausedTasks }}</strong
+        >
         <span>配送进度</span>
         <div class="sc-sub">
           <span class="done">已送达 {{ summary.deliveryCompleted }}</span>
           <span class="doing">配送中 {{ summary.deliveryInProgress }}</span>
           <span class="warn">待配送 {{ summary.deliveryPending }}</span>
-          <span class="danger" *ngIf="summary.deliveryException > 0">异常 {{ summary.deliveryException }}</span>
-          <span class="warn" *ngIf="summary.deliveryUnreachable > 0">未接通 {{ summary.deliveryUnreachable }}</span>
+          <span class="danger" *ngIf="summary.deliveryException > 0"
+            >异常 {{ summary.deliveryException }}</span
+          >
+          <span class="warn" *ngIf="summary.deliveryUnreachable > 0"
+            >未接通 {{ summary.deliveryUnreachable }}</span
+          >
         </div>
       </div>
     </div>
@@ -116,7 +128,9 @@
     <div class="filters-header" (click)="toggleFiltersExpanded = !toggleFiltersExpanded">
       <strong>🔍 交叉筛选</strong>
       <span class="filter-count">已启用 {{ activeFilterCount }} 个筛选条件</span>
-      <button type="button" class="expand-btn">{{ toggleFiltersExpanded ? '收起' : '展开' }}</button>
+      <button type="button" class="expand-btn">
+        {{ toggleFiltersExpanded ? '收起' : '展开' }}
+      </button>
     </div>
 
     <div class="filters-body" *ngIf="toggleFiltersExpanded">
@@ -124,12 +138,18 @@
         <div class="filter-group" (click)="$event.stopPropagation()">
           <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('volunteer')">
             👤 志愿者
-            <span class="filter-badge" *ngIf="filters.volunteerIds.length > 0">{{ filters.volunteerIds.length }}</span>
+            <span class="filter-badge" *ngIf="filters.volunteerIds.length > 0">{{
+              filters.volunteerIds.length
+            }}</span>
             <span class="dd-arrow">▼</span>
           </button>
           <div class="dropdown-panel" *ngIf="dropdownOpen.volunteer">
             <label class="chk-item" *ngFor="let v of availableFilters.volunteers">
-              <input type="checkbox" [checked]="filters.volunteerIds.includes(v.id)" (change)="toggleVolunteerFilter(v.id)" />
+              <input
+                type="checkbox"
+                [checked]="filters.volunteerIds.includes(v.id)"
+                (change)="toggleVolunteerFilter(v.id)"
+              />
               <span>{{ v.name }}</span>
               <small>· {{ assignedCount(v.id) }}单</small>
             </label>
@@ -140,12 +160,18 @@
         <div class="filter-group" (click)="$event.stopPropagation()">
           <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('elder')">
             👵 老人
-            <span class="filter-badge" *ngIf="filters.elderIds.length > 0">{{ filters.elderIds.length }}</span>
+            <span class="filter-badge" *ngIf="filters.elderIds.length > 0">{{
+              filters.elderIds.length
+            }}</span>
             <span class="dd-arrow">▼</span>
           </button>
           <div class="dropdown-panel elder-panel" *ngIf="dropdownOpen.elder">
             <label class="chk-item" *ngFor="let e of availableFilters.elders">
-              <input type="checkbox" [checked]="filters.elderIds.includes(e.id)" (change)="toggleElderFilter(e.id)" />
+              <input
+                type="checkbox"
+                [checked]="filters.elderIds.includes(e.id)"
+                (change)="toggleElderFilter(e.id)"
+              />
               <span>{{ e.name }}</span>
             </label>
             <p class="dropdown-empty" *ngIf="availableFilters.elders.length === 0">暂无数据</p>
@@ -155,13 +181,25 @@
         <div class="filter-group" (click)="$event.stopPropagation()">
           <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('mealTag')">
             🏷️ 餐食标签
-            <span class="filter-badge" *ngIf="filters.mealTagIds.length > 0">{{ filters.mealTagIds.length }}</span>
+            <span class="filter-badge" *ngIf="filters.mealTagIds.length > 0">{{
+              filters.mealTagIds.length
+            }}</span>
             <span class="dd-arrow">▼</span>
           </button>
           <div class="dropdown-panel" *ngIf="dropdownOpen.mealTag">
             <label class="chk-item" *ngFor="let tag of availableFilters.mealTags">
-              <input type="checkbox" [checked]="filters.mealTagIds.includes(tag.id)" (change)="toggleMealTagFilter(tag.id)" />
-              <span class="tag-chip sm" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+              <input
+                type="checkbox"
+                [checked]="filters.mealTagIds.includes(tag.id)"
+                (change)="toggleMealTagFilter(tag.id)"
+              />
+              <span
+                class="tag-chip sm"
+                [style.background]="tag.color + '20'"
+                [style.color]="tag.color"
+                [style.borderColor]="tag.color + '50'"
+                >{{ tag.name }}</span
+              >
             </label>
             <p class="dropdown-empty" *ngIf="availableFilters.mealTags.length === 0">暂无数据</p>
           </div>
@@ -170,63 +208,143 @@
         <div class="filter-group" (click)="$event.stopPropagation()">
           <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('excSource')">
             📡 异常来源
-            <span class="filter-badge" *ngIf="filters.exceptionSources.length > 0">{{ filters.exceptionSources.length }}</span>
+            <span class="filter-badge" *ngIf="filters.exceptionSources.length > 0">{{
+              filters.exceptionSources.length
+            }}</span>
             <span class="dd-arrow">▼</span>
           </button>
           <div class="dropdown-panel" *ngIf="dropdownOpen.excSource">
             <label class="chk-item" *ngFor="let src of availableFilters.exceptionSources">
-              <input type="checkbox" [checked]="filters.exceptionSources.includes(src)" (change)="toggleExceptionSource(src)" />
+              <input
+                type="checkbox"
+                [checked]="filters.exceptionSources.includes(src)"
+                (change)="toggleExceptionSource(src)"
+              />
               <span>{{ src }}</span>
             </label>
-            <p class="dropdown-empty" *ngIf="availableFilters.exceptionSources.length === 0">暂无数据</p>
+            <p class="dropdown-empty" *ngIf="availableFilters.exceptionSources.length === 0">
+              暂无数据
+            </p>
           </div>
         </div>
 
         <div class="filter-group" (click)="$event.stopPropagation()">
           <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('excStatus')">
             📊 处理状态
-            <span class="filter-badge" *ngIf="filters.exceptionStatuses.length > 0">{{ filters.exceptionStatuses.length }}</span>
+            <span class="filter-badge" *ngIf="filters.exceptionStatuses.length > 0">{{
+              filters.exceptionStatuses.length
+            }}</span>
             <span class="dd-arrow">▼</span>
           </button>
           <div class="dropdown-panel" *ngIf="dropdownOpen.excStatus">
             <label class="chk-item" *ngFor="let st of availableFilters.exceptionStatuses">
-              <input type="checkbox" [checked]="filters.exceptionStatuses.includes(st)" (change)="toggleExceptionStatus(st)" />
+              <input
+                type="checkbox"
+                [checked]="filters.exceptionStatuses.includes(st)"
+                (change)="toggleExceptionStatus(st)"
+              />
               <span>{{ st }}</span>
             </label>
-            <p class="dropdown-empty" *ngIf="availableFilters.exceptionStatuses.length === 0">暂无数据</p>
+            <p class="dropdown-empty" *ngIf="availableFilters.exceptionStatuses.length === 0">
+              暂无数据
+            </p>
           </div>
         </div>
 
         <div class="filter-group" (click)="$event.stopPropagation()">
           <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('prepStatus')">
             🍳 备餐状态
-            <span class="filter-badge" *ngIf="filters.prepStatuses.length > 0">{{ filters.prepStatuses.length }}</span>
+            <span class="filter-badge" *ngIf="filters.prepStatuses.length > 0">{{
+              filters.prepStatuses.length
+            }}</span>
             <span class="dd-arrow">▼</span>
           </button>
           <div class="dropdown-panel" *ngIf="dropdownOpen.prepStatus">
-            <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('待备餐')" (change)="togglePrepStatus('待备餐')" /><span>待备餐</span></label>
-            <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('备餐中')" (change)="togglePrepStatus('备餐中')" /><span>备餐中</span></label>
-            <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('已完成')" (change)="togglePrepStatus('已完成')" /><span>已完成</span></label>
-            <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('缺餐异常')" (change)="togglePrepStatus('缺餐异常')" /><span>缺餐异常</span></label>
+            <label class="chk-item"
+              ><input
+                type="checkbox"
+                [checked]="filters.prepStatuses.includes('待备餐')"
+                (change)="togglePrepStatus('待备餐')"
+              /><span>待备餐</span></label
+            >
+            <label class="chk-item"
+              ><input
+                type="checkbox"
+                [checked]="filters.prepStatuses.includes('备餐中')"
+                (change)="togglePrepStatus('备餐中')"
+              /><span>备餐中</span></label
+            >
+            <label class="chk-item"
+              ><input
+                type="checkbox"
+                [checked]="filters.prepStatuses.includes('已完成')"
+                (change)="togglePrepStatus('已完成')"
+              /><span>已完成</span></label
+            >
+            <label class="chk-item"
+              ><input
+                type="checkbox"
+                [checked]="filters.prepStatuses.includes('缺餐异常')"
+                (change)="togglePrepStatus('缺餐异常')"
+              /><span>缺餐异常</span></label
+            >
           </div>
         </div>
 
         <div class="filter-group" (click)="$event.stopPropagation()">
-          <button type="button" class="filter-dropdown-btn" (click)="toggleDropdown('deliveryStatus')">
+          <button
+            type="button"
+            class="filter-dropdown-btn"
+            (click)="toggleDropdown('deliveryStatus')"
+          >
             🚴 配送状态
-            <span class="filter-badge" *ngIf="filters.deliveryStatuses.length > 0">{{ filters.deliveryStatuses.length }}</span>
+            <span class="filter-badge" *ngIf="filters.deliveryStatuses.length > 0">{{
+              filters.deliveryStatuses.length
+            }}</span>
             <span class="dd-arrow">▼</span>
           </button>
           <div class="dropdown-panel" *ngIf="dropdownOpen.deliveryStatus">
-            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('待配送')" (change)="toggleDeliveryStatus('待配送')" /><span>待配送</span></label>
-            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('配送中')" (change)="toggleDeliveryStatus('配送中')" /><span>配送中</span></label>
-            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('已送达')" (change)="toggleDeliveryStatus('已送达')" /><span>已送达</span></label>
-            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('异常')" (change)="toggleDeliveryStatus('异常')" /><span>异常</span></label>
-            <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('未接通')" (change)="toggleDeliveryStatus('未接通')" /><span>未接通</span></label>
+            <label class="chk-item"
+              ><input
+                type="checkbox"
+                [checked]="filters.deliveryStatuses.includes('待配送')"
+                (change)="toggleDeliveryStatus('待配送')"
+              /><span>待配送</span></label
+            >
+            <label class="chk-item"
+              ><input
+                type="checkbox"
+                [checked]="filters.deliveryStatuses.includes('配送中')"
+                (change)="toggleDeliveryStatus('配送中')"
+              /><span>配送中</span></label
+            >
+            <label class="chk-item"
+              ><input
+                type="checkbox"
+                [checked]="filters.deliveryStatuses.includes('已送达')"
+                (change)="toggleDeliveryStatus('已送达')"
+              /><span>已送达</span></label
+            >
+            <label class="chk-item"
+              ><input
+                type="checkbox"
+                [checked]="filters.deliveryStatuses.includes('异常')"
+                (change)="toggleDeliveryStatus('异常')"
+              /><span>异常</span></label
+            >
+            <label class="chk-item"
+              ><input
+                type="checkbox"
+                [checked]="filters.deliveryStatuses.includes('未接通')"
+                (change)="toggleDeliveryStatus('未接通')"
+              /><span>未接通</span></label
+            >
           </div>
         </div>
 
-        <button type="button" class="clear-filters-btn" (click)="clearAllFilters()">清除全部</button>
+        <button type="button" class="clear-filters-btn" (click)="clearAllFilters()">
+          清除全部
+        </button>
       </div>
     </div>
 
@@ -282,8 +400,12 @@
           <small>{{ row.elderAddress }}</small>
           <small class="contact-row">📞 {{ row.elderContact }}</small>
           <div class="row-badges">
-            <span class="row-badge temp" *ngIf="row.hasTempChange">📋 {{ row.tempChangeSummary }}</span>
-            <span class="row-badge special" *ngIf="row.elderSpecialNote">📝 {{ row.elderSpecialNote }}</span>
+            <span class="row-badge temp" *ngIf="row.hasTempChange"
+              >📋 {{ row.tempChangeSummary }}</span
+            >
+            <span class="row-badge special" *ngIf="row.elderSpecialNote"
+              >📝 {{ row.elderSpecialNote }}</span
+            >
             <span class="row-badge visit" *ngIf="row.visitReminder">❤️ 需回访</span>
           </div>
         </div>
@@ -300,11 +422,19 @@
             [style.background]="tag.color + '20'"
             [style.color]="tag.color"
             [style.borderColor]="tag.color + '50'"
-          >{{ tag.name }}</span>
+            >{{ tag.name }}</span
+          >
           <span *ngIf="row.elderMealTags.length === 0" class="muted">—</span>
         </div>
         <div class="td-stage">
-          <span class="stage-badge" [ngStyle]="{ color: getStageItem(row.currentStage)?.color, background: getStageItem(row.currentStage)?.bgColor, borderColor: getStageItem(row.currentStage)?.color + '50' }">
+          <span
+            class="stage-badge"
+            [ngStyle]="{
+              color: getStageItem(row.currentStage)?.color,
+              background: getStageItem(row.currentStage)?.bgColor,
+              borderColor: getStageItem(row.currentStage)?.color + '50',
+            }"
+          >
             {{ getStageItem(row.currentStage)?.icon }} {{ row.currentStage }}
           </span>
         </div>
@@ -313,20 +443,30 @@
             *ngIf="row.prepStatus"
             class="status-tag"
             [ngStyle]="getStatusBadgeStyle('prep', row.prepStatus)"
-          >{{ row.prepStatus }}</span>
-          <span *ngIf="!row.prepStatus && !row.taskId.startsWith('paused-')" class="muted">待备餐</span>
+            >{{ row.prepStatus }}</span
+          >
+          <span *ngIf="!row.prepStatus && !row.taskId.startsWith('paused-')" class="muted"
+            >待备餐</span
+          >
           <span *ngIf="row.taskId.startsWith('paused-')" class="muted">—</span>
-          <small *ngIf="row.prepMissingNote" class="note-text danger">{{ row.prepMissingNote }}</small>
+          <small *ngIf="row.prepMissingNote" class="note-text danger">{{
+            row.prepMissingNote
+          }}</small>
         </div>
         <div class="td-delivery">
           <span
             *ngIf="row.deliveryStatus"
             class="status-tag"
             [ngStyle]="getStatusBadgeStyle('delivery', row.deliveryStatus)"
-          >{{ row.deliveryStatus }}</span>
-          <span *ngIf="!row.deliveryStatus && !row.taskId.startsWith('paused-')" class="muted">待配送</span>
+            >{{ row.deliveryStatus }}</span
+          >
+          <span *ngIf="!row.deliveryStatus && !row.taskId.startsWith('paused-')" class="muted"
+            >待配送</span
+          >
           <span *ngIf="row.taskId.startsWith('paused-')" class="muted">—</span>
-          <small *ngIf="row.deliveryExceptionNote" class="note-text danger">{{ row.deliveryExceptionNote }}</small>
+          <small *ngIf="row.deliveryExceptionNote" class="note-text danger">{{
+            row.deliveryExceptionNote
+          }}</small>
         </div>
         <div class="td-exception">
           <div *ngIf="row.exceptionRecords.length > 0">
@@ -337,26 +477,42 @@
             >
               {{ exc.status }}
             </span>
-            <span *ngIf="row.exceptionRecords.length > 2" class="muted more-count">+{{ row.exceptionRecords.length - 2 }}</span>
+            <span *ngIf="row.exceptionRecords.length > 2" class="muted more-count"
+              >+{{ row.exceptionRecords.length - 2 }}</span
+            >
           </div>
           <div *ngIf="row.phoneNotifications.length > 0">
             <span
               *ngFor="let n of row.phoneNotifications.slice(0, 1)"
               class="status-tag"
               [ngStyle]="getStatusBadgeStyle('notification', n.notificationStatus)"
-            >📞 {{ n.notificationStatus }}</span>
+              >📞 {{ n.notificationStatus }}</span
+            >
           </div>
           <div *ngIf="row.callbackTasks.length > 0">
             <span
               *ngFor="let cb of row.callbackTasks.slice(0, 1)"
               class="status-tag"
               [ngStyle]="getStatusBadgeStyle('callback', cb.status)"
-            >🔄 {{ cb.status }}</span>
+              >🔄 {{ cb.status }}</span
+            >
           </div>
-          <span *ngIf="row.exceptionRecords.length === 0 && row.phoneNotifications.length === 0 && row.callbackTasks.length === 0" class="muted">—</span>
+          <span
+            *ngIf="
+              row.exceptionRecords.length === 0 &&
+              row.phoneNotifications.length === 0 &&
+              row.callbackTasks.length === 0
+            "
+            class="muted"
+            >—</span
+          >
         </div>
         <div class="td-actions no-print">
-          <button type="button" class="row-actions-btn" (click)="$event.stopPropagation(); selectRow(row)">
+          <button
+            type="button"
+            class="row-actions-btn"
+            (click)="$event.stopPropagation(); selectRow(row)"
+          >
             详情 →
           </button>
         </div>
@@ -369,29 +525,48 @@
   <div class="detail-panel-inner" (click)="$event.stopPropagation()">
     <div class="detail-header">
       <div>
-        <h2>{{ selectedRow.elderName }} <small class="muted">· {{ selectedRow.date }}</small></h2>
+        <h2>
+          {{ selectedRow.elderName }} <small class="muted">· {{ selectedRow.date }}</small>
+        </h2>
         <p class="muted">📌 {{ selectedRow.elderAddress }} · 📞 {{ selectedRow.elderContact }}</p>
-        <div class="tag-row" *ngIf="selectedRow.elderMealTags.length > 0 || selectedRow.elderSpecialNote">
+        <div
+          class="tag-row"
+          *ngIf="selectedRow.elderMealTags.length > 0 || selectedRow.elderSpecialNote"
+        >
           <span
             *ngFor="let tag of selectedRow.elderMealTags"
             class="tag-chip"
             [style.background]="tag.color + '20'"
             [style.color]="tag.color"
             [style.borderColor]="tag.color + '50'"
-          >{{ tag.name }}</span>
-          <span class="special-note-tag" *ngIf="selectedRow.elderSpecialNote">📝 {{ selectedRow.elderSpecialNote }}</span>
+            >{{ tag.name }}</span
+          >
+          <span class="special-note-tag" *ngIf="selectedRow.elderSpecialNote"
+            >📝 {{ selectedRow.elderSpecialNote }}</span
+          >
         </div>
       </div>
       <button type="button" class="close-detail-btn" (click)="closeDetail()">×</button>
     </div>
 
     <div class="detail-body">
-      <div class="detail-stage-banner" [ngStyle]="{ background: getStageItem(selectedRow.currentStage)?.bgColor, color: getStageItem(selectedRow.currentStage)?.color, borderColor: getStageItem(selectedRow.currentStage)?.color + '50' }">
+      <div
+        class="detail-stage-banner"
+        [ngStyle]="{
+          background: getStageItem(selectedRow.currentStage)?.bgColor,
+          color: getStageItem(selectedRow.currentStage)?.color,
+          borderColor: getStageItem(selectedRow.currentStage)?.color + '50',
+        }"
+      >
         <span class="banner-icon">{{ getStageItem(selectedRow.currentStage)?.icon }}</span>
-        <span>当前阶段：<strong>{{ selectedRow.currentStage }}</strong></span>
+        <span
+          >当前阶段：<strong>{{ selectedRow.currentStage }}</strong></span
+        >
         <span class="banner-right">
           <span *ngIf="selectedRow.visitReminder" class="visit-reminder-badge">❤️ 需回访关注</span>
-          <span *ngIf="selectedRow.hasTempChange" class="temp-badge">📋 {{ selectedRow.tempChangeSummary }}</span>
+          <span *ngIf="selectedRow.hasTempChange" class="temp-badge"
+            >📋 {{ selectedRow.tempChangeSummary }}</span
+          >
         </span>
       </div>
 
@@ -409,9 +584,15 @@
             <button
               type="button"
               class="primary-btn"
-              [disabled]="!detailVolunteerId || detailVolunteerId === selectedRow.volunteerId || selectedRow.taskId.startsWith('paused-')"
+              [disabled]="
+                !detailVolunteerId ||
+                detailVolunteerId === selectedRow.volunteerId ||
+                selectedRow.taskId.startsWith('paused-')
+              "
               (click)="confirmAssignVolunteer(selectedRow)"
-            >确认分配</button>
+            >
+              确认分配
+            </button>
           </div>
         </div>
       </section>
@@ -427,28 +608,36 @@
               [class.active]="detailPrepStatus === '待备餐'"
               [disabled]="selectedRow.taskId.startsWith('paused-')"
               (click)="updatePrepStatus(selectedRow, '待备餐')"
-            >待备餐</button>
+            >
+              待备餐
+            </button>
             <button
               type="button"
               class="status-btn doing"
               [class.active]="detailPrepStatus === '备餐中'"
               [disabled]="selectedRow.taskId.startsWith('paused-')"
               (click)="updatePrepStatus(selectedRow, '备餐中')"
-            >备餐中</button>
+            >
+              备餐中
+            </button>
             <button
               type="button"
               class="status-btn done"
               [class.active]="detailPrepStatus === '已完成'"
               [disabled]="selectedRow.taskId.startsWith('paused-')"
               (click)="updatePrepStatus(selectedRow, '已完成')"
-            >已完成</button>
+            >
+              已完成
+            </button>
             <button
               type="button"
               class="status-btn danger"
               [class.active]="detailPrepStatus === '缺餐异常'"
               [disabled]="selectedRow.taskId.startsWith('paused-')"
               (click)="markPrepMissing(selectedRow)"
-            >缺餐异常</button>
+            >
+              缺餐异常
+            </button>
           </div>
         </div>
         <div class="detail-row" *ngIf="detailPrepStatus === '缺餐异常'">
@@ -464,7 +653,9 @@
               class="danger-btn"
               [disabled]="!detailPrepMissingNote.trim()"
               (click)="confirmPrepStatusChange(selectedRow)"
-            >记录缺餐</button>
+            >
+              记录缺餐
+            </button>
           </div>
         </div>
       </section>
@@ -480,38 +671,51 @@
               [class.active]="detailDeliveryStatus === '待配送'"
               [disabled]="selectedRow.taskId.startsWith('paused-')"
               (click)="updateDeliveryStatus(selectedRow, '待配送')"
-            >待配送</button>
+            >
+              待配送
+            </button>
             <button
               type="button"
               class="status-btn doing"
               [class.active]="detailDeliveryStatus === '配送中'"
               [disabled]="selectedRow.taskId.startsWith('paused-')"
               (click)="updateDeliveryStatus(selectedRow, '配送中')"
-            >配送中</button>
+            >
+              配送中
+            </button>
             <button
               type="button"
               class="status-btn done"
               [class.active]="detailDeliveryStatus === '已送达'"
               [disabled]="selectedRow.taskId.startsWith('paused-')"
               (click)="updateDeliveryStatus(selectedRow, '已送达')"
-            >已送达</button>
+            >
+              已送达
+            </button>
             <button
               type="button"
               class="status-btn warn"
               [class.active]="detailDeliveryStatus === '未接通'"
               [disabled]="selectedRow.taskId.startsWith('paused-')"
               (click)="updateDeliveryStatus(selectedRow, '未接通')"
-            >未接通</button>
+            >
+              未接通
+            </button>
             <button
               type="button"
               class="status-btn danger"
               [class.active]="detailDeliveryStatus === '异常'"
               [disabled]="selectedRow.taskId.startsWith('paused-')"
               (click)="updateDeliveryStatus(selectedRow, '异常')"
-            >配送异常</button>
+            >
+              配送异常
+            </button>
           </div>
         </div>
-        <div class="detail-row" *ngIf="detailDeliveryStatus === '异常' || detailDeliveryStatus === '未接通'">
+        <div
+          class="detail-row"
+          *ngIf="detailDeliveryStatus === '异常' || detailDeliveryStatus === '未接通'"
+        >
           <label>异常说明</label>
           <div class="field-group">
             <textarea
@@ -524,7 +728,9 @@
               class="danger-btn"
               [disabled]="!detailDeliveryExceptionNote.trim()"
               (click)="confirmDeliveryStatusChange(selectedRow)"
-            >记录异常</button>
+            >
+              记录异常
+            </button>
           </div>
         </div>
       </section>
@@ -534,10 +740,17 @@
         <div class="record-list">
           <div *ngFor="let exc of selectedRow.exceptionRecords" class="record-card">
             <div class="record-header">
-              <span class="record-severity" [style.color]="severityColor(exc.severity)" [style.borderColor]="severityColor(exc.severity)">
+              <span
+                class="record-severity"
+                [style.color]="severityColor(exc.severity)"
+                [style.borderColor]="severityColor(exc.severity)"
+              >
                 {{ exc.severity }}
               </span>
-              <span class="status-tag exc-tag" [ngStyle]="getStatusBadgeStyle('exception', exc.status)">
+              <span
+                class="status-tag exc-tag"
+                [ngStyle]="getStatusBadgeStyle('exception', exc.status)"
+              >
                 {{ exc.status }}
               </span>
               <span class="record-source">{{ exc.source }}</span>
@@ -559,25 +772,33 @@
                 class="ghost sm"
                 *ngIf="exc.status === '待处理'"
                 (click)="updateExceptionRecordStatus(exc.id, '处理中')"
-              >开始处理</button>
+              >
+                开始处理
+              </button>
               <button
                 type="button"
                 class="sm"
                 *ngIf="exc.status === '处理中'"
                 (click)="updateExceptionRecordStatus(exc.id, '已解决')"
-              >标记已解决</button>
+              >
+                标记已解决
+              </button>
               <button
                 type="button"
                 class="ghost sm"
                 *ngIf="exc.status === '处理中'"
                 (click)="updateExceptionRecordStatus(exc.id, '待处理')"
-              >退回待处理</button>
+              >
+                退回待处理
+              </button>
               <button
                 type="button"
                 class="ghost sm danger-txt"
                 *ngIf="exc.status === '已解决'"
                 (click)="updateExceptionRecordStatus(exc.id, '处理中')"
-              >重新处理</button>
+              >
+                重新处理
+              </button>
             </div>
           </div>
         </div>
@@ -588,7 +809,10 @@
         <div class="record-list">
           <div *ngFor="let n of selectedRow.phoneNotifications" class="record-card">
             <div class="record-header">
-              <span class="status-tag" [ngStyle]="getStatusBadgeStyle('notification', n.notificationStatus)">
+              <span
+                class="status-tag"
+                [ngStyle]="getStatusBadgeStyle('notification', n.notificationStatus)"
+              >
                 {{ n.notificationStatus }}
               </span>
               <span class="record-source">{{ n.source }}</span>
@@ -602,25 +826,33 @@
                 class="sm"
                 *ngIf="n.notificationStatus === '未通知'"
                 (click)="updateNotificationStatus(n.id, '已通知')"
-              >标记已通知</button>
+              >
+                标记已通知
+              </button>
               <button
                 type="button"
                 class="ghost sm"
                 *ngIf="n.notificationStatus === '未通知'"
                 (click)="updateNotificationStatus(n.id, '未接通')"
-              >未接通</button>
+              >
+                未接通
+              </button>
               <button
                 type="button"
                 class="ghost sm"
                 *ngIf="n.notificationStatus === '未接通'"
                 (click)="updateNotificationStatus(n.id, '稍后再拨')"
-              >稍后再拨</button>
+              >
+                稍后再拨
+              </button>
               <button
                 type="button"
                 class="sm"
                 *ngIf="n.notificationStatus === '稍后再拨' || n.notificationStatus === '未接通'"
                 (click)="updateNotificationStatus(n.id, '已通知')"
-              >已联系上</button>
+              >
+                已联系上
+              </button>
             </div>
           </div>
         </div>
@@ -635,7 +867,9 @@
                 {{ cb.status }}
               </span>
               <span class="record-phone">📞 {{ cb.phone }}</span>
-              <span class="record-time muted" *ngIf="cb.nextCallbackTime">⏰ {{ cb.nextCallbackTime }}</span>
+              <span class="record-time muted" *ngIf="cb.nextCallbackTime"
+                >⏰ {{ cb.nextCallbackTime }}</span
+              >
               <span class="record-count">回拨 {{ cb.callbackCount }} 次</span>
             </div>
             <p class="record-desc" *ngIf="cb.remark">{{ cb.remark }}</p>
@@ -646,25 +880,33 @@
                 class="sm"
                 *ngIf="cb.status === '待回拨'"
                 (click)="updateCallbackStatus(cb.id, '回拨中')"
-              >开始回拨</button>
+              >
+                开始回拨
+              </button>
               <button
                 type="button"
                 class="sm done-btn"
                 *ngIf="cb.status === '回拨中'"
                 (click)="updateCallbackStatus(cb.id, '已完成')"
-              >完成回拨</button>
+              >
+                完成回拨
+              </button>
               <button
                 type="button"
                 class="ghost sm"
                 *ngIf="cb.status !== '已完成' && cb.status !== '已取消'"
                 (click)="updateCallbackStatus(cb.id, '已取消')"
-              >取消</button>
+              >
+                取消
+              </button>
               <button
                 type="button"
                 class="ghost sm"
                 *ngIf="cb.status === '已完成'"
                 (click)="updateCallbackStatus(cb.id, '待回拨')"
-              >重置</button>
+              >
+                重置
+              </button>
             </div>
           </div>
         </div>
@@ -688,13 +930,17 @@
           </p>
         </div>
         <div class="section-actions no-print" *ngIf="selectedRow.visitReminder">
-          <button type="button" class="primary-btn" (click)="openElderVisit(selectedRow)">前往回访记录</button>
+          <button type="button" class="primary-btn" (click)="openElderVisit(selectedRow)">
+            前往回访记录
+          </button>
         </div>
       </section>
       <section class="detail-section" *ngIf="!selectedRow.lastVisit">
         <div class="empty-hint">
           <p>📭 暂无回访记录</p>
-          <button type="button" class="primary-btn" (click)="openElderVisit(selectedRow)">新增回访记录</button>
+          <button type="button" class="primary-btn" (click)="openElderVisit(selectedRow)">
+            新增回访记录
+          </button>
         </div>
       </section>
     </div>

@@ -1,4 +1,12 @@
-import { Component, EventEmitter, Input, Output, OnInit, OnChanges, SimpleChanges } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  Output,
+  OnInit,
+  OnChanges,
+  SimpleChanges,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -22,7 +30,11 @@ export class DeliveryDetailComponent implements OnInit, OnChanges {
   @Input() total: number = 0;
   @Input() isOnline: boolean = true;
 
-  @Output() updateStatus = new EventEmitter<{ taskId: string; status: DeliveryStatus; exceptionNote: string }>();
+  @Output() updateStatus = new EventEmitter<{
+    taskId: string;
+    status: DeliveryStatus;
+    exceptionNote: string;
+  }>();
   @Output() prevTask = new EventEmitter<void>();
   @Output() nextTask = new EventEmitter<void>();
   @Output() backToList = new EventEmitter<void>();

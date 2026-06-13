@@ -29,7 +29,11 @@
       <textarea
         [(ngModel)]="exceptionNote"
         rows="4"
-        [placeholder]="pendingStatus === '未接通' ? '如：电话无人接听、门铃无人应答、邻居表示不在家...' : '请详细描述异常情况，如地址错误、老人拒收、餐食问题等...'"
+        [placeholder]="
+          pendingStatus === '未接通'
+            ? '如：电话无人接听、门铃无人应答、邻居表示不在家...'
+            : '请详细描述异常情况，如地址错误、老人拒收、餐食问题等...'
+        "
       ></textarea>
       <p class="tip">
         💡 提交后将自动：① 更新任务状态为"异常"

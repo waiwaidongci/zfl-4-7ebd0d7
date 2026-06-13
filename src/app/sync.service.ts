@@ -1,6 +1,9 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { LS_PREP_DATA_KEY } from './meal-prep/meal-prep.types';
-import { LS_DELIVERY_DATA_KEY, LS_OFFLINE_DRAFT_KEY } from './volunteer-delivery/volunteer-delivery.types';
+import {
+  LS_DELIVERY_DATA_KEY,
+  LS_OFFLINE_DRAFT_KEY,
+} from './volunteer-delivery/volunteer-delivery.types';
 
 export type SyncDataType =
   | 'elders'
@@ -159,7 +162,9 @@ export class MultiWindowSyncService implements OnDestroy {
 
   private notify(n: SyncNotification) {
     for (const h of this.notificationHandlers) {
-      try { h(n); } catch {}
+      try {
+        h(n);
+      } catch {}
     }
   }
 
@@ -246,7 +251,11 @@ export class MultiWindowSyncService implements OnDestroy {
     });
   }
 
-  private handleRemoteStorageChange(dataType: SyncDataType, newValue: string | null, oldValue: string | null) {
+  private handleRemoteStorageChange(
+    dataType: SyncDataType,
+    newValue: string | null,
+    oldValue: string | null,
+  ) {
     if (!newValue) return;
     let remoteData: any;
     try {
@@ -293,9 +302,8 @@ export class MultiWindowSyncService implements OnDestroy {
 
     const baseArr = Array.isArray(baseSnapshot) ? baseSnapshot : [];
     const remoteArr = Array.isArray(remoteData) ? remoteData : [];
-    const localArr = currentLocal !== undefined
-      ? (Array.isArray(currentLocal) ? currentLocal : [])
-      : baseArr;
+    const localArr =
+      currentLocal !== undefined ? (Array.isArray(currentLocal) ? currentLocal : []) : baseArr;
 
     const remoteById = new Map(remoteArr.map((r: any) => [r.id, r]));
     const localById = new Map(localArr.map((r: any) => [r.id, r]));
@@ -364,7 +372,11 @@ export class MultiWindowSyncService implements OnDestroy {
     const local = currentLocal !== undefined ? currentLocal : baseSnapshot;
     const base = baseSnapshot || {};
     const remote = remoteData || {};
-    const allDates = new Set([...Object.keys(base || {}), ...Object.keys(local || {}), ...Object.keys(remote)]);
+    const allDates = new Set([
+      ...Object.keys(base || {}),
+      ...Object.keys(local || {}),
+      ...Object.keys(remote),
+    ]);
     for (const date of allDates) {
       const localDate = local?.[date] || {};
       const remoteDate = remote?.[date] || {};
@@ -383,11 +395,13 @@ export class MultiWindowSyncService implements OnDestroy {
             recordLabel: `${date} 志愿者#${volId.slice(-4)} 路线顺序`,
             localRecord: { date, volunteerId: volId, order: lList },
             remoteRecord: { date, volunteerId: volId, order: rList },
-            fieldConflicts: [{
-              field: 'order',
-              localValue: lList,
-              remoteValue: rList,
-            }],
+            fieldConflicts: [
+              {
+                field: 'order',
+                localValue: lList,
+                remoteValue: rList,
+              },
+            ],
             resolution: 'keep-local',
           });
         }
@@ -410,7 +424,11 @@ export class MultiWindowSyncService implements OnDestroy {
     const local = currentLocal !== undefined ? currentLocal : baseSnapshot;
     const base = baseSnapshot || {};
     const remote = remoteData || {};
-    const allDates = new Set([...Object.keys(base || {}), ...Object.keys(local || {}), ...Object.keys(remote || {})]);
+    const allDates = new Set([
+      ...Object.keys(base || {}),
+      ...Object.keys(local || {}),
+      ...Object.keys(remote || {}),
+    ]);
     const typeName = dataType === 'prepData' ? '备餐' : '配送';
 
     for (const date of allDates) {
@@ -487,12 +505,18 @@ export class MultiWindowSyncService implements OnDestroy {
 
   private getIgnoredFieldsForType(dataType: SyncDataType): Set<string> {
     switch (dataType) {
-      case 'exceptionRecords': return new Set(['updatedAt']);
-      case 'phoneNotifications': return new Set(['updatedAt']);
-      case 'callbackTasks': return new Set(['updatedAt']);
-      case 'visitRecords': return new Set(['createdAt']);
-      case 'offlineDeliveryDrafts': return new Set(['syncedAt', 'status']);
-      default: return new Set();
+      case 'exceptionRecords':
+        return new Set(['updatedAt']);
+      case 'phoneNotifications':
+        return new Set(['updatedAt']);
+      case 'callbackTasks':
+        return new Set(['updatedAt']);
+      case 'visitRecords':
+        return new Set(['createdAt']);
+      case 'offlineDeliveryDrafts':
+        return new Set(['syncedAt', 'status']);
+      default:
+        return new Set();
     }
   }
 
@@ -564,9 +588,7 @@ export class MultiWindowSyncService implements OnDestroy {
     for (const conflict of group.conflicts) {
       const [date, volId] = conflict.recordId.split('/');
       const choice = conflict.resolution === 'adopt-remote' ? 'remote' : 'local';
-      const list = choice === 'local'
-        ? conflict.localRecord.order
-        : conflict.remoteRecord.order;
+      const list = choice === 'local' ? conflict.localRecord.order : conflict.remoteRecord.order;
       if (!merged[date]) merged[date] = {};
       merged[date][volId] = [...list];
     }
@@ -581,10 +603,7 @@ export class MultiWindowSyncService implements OnDestroy {
       const localEntry = merged[date]?.[taskId] || conflict.localRecord;
       const remoteEntry = conflict.remoteRecord;
 
-      const allKeys = new Set([
-        ...Object.keys(localEntry),
-        ...Object.keys(remoteEntry),
-      ]);
+      const allKeys = new Set([...Object.keys(localEntry), ...Object.keys(remoteEntry)]);
       allKeys.delete('date');
       allKeys.delete('taskId');
 
@@ -620,10 +639,7 @@ export class MultiWindowSyncService implements OnDestroy {
     return `cb-${c.notificationId}-${c.status}`;
   }
 
-  deduplicateArray<T extends { id: string }>(
-    arr: T[],
-    keyFn: (item: T) => string,
-  ): T[] {
+  deduplicateArray<T extends { id: string }>(arr: T[], keyFn: (item: T) => string): T[] {
     const seen = new Map<string, T>();
     for (const item of arr) {
       const key = keyFn(item);

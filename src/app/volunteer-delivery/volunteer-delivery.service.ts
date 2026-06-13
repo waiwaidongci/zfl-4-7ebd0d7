@@ -133,7 +133,7 @@ export class VolunteerDeliveryService implements OnDestroy {
       statusUpdatedAt: string;
       exceptionRecorded: boolean;
       notificationAdded: boolean;
-    }
+    },
   ) {
     if (!this.storageData[date]) {
       this.storageData[date] = {};
@@ -200,7 +200,7 @@ export class VolunteerDeliveryService implements OnDestroy {
   }
 
   getElderLastVisit(elderId: string, visits: VisitRecord[]) {
-    const elderVisits = visits.filter(v => v.elderId === elderId);
+    const elderVisits = visits.filter((v) => v.elderId === elderId);
     if (elderVisits.length === 0) return undefined;
     elderVisits.sort((a, b) => b.visitDate.localeCompare(a.visitDate));
     return elderVisits[0];
@@ -208,11 +208,15 @@ export class VolunteerDeliveryService implements OnDestroy {
 
   mapDeliveryStatusToTaskStatus(status: DeliveryStatus): MealTask['status'] {
     switch (status) {
-      case '配送中': return '配送中';
-      case '已送达': return '已送达';
+      case '配送中':
+        return '配送中';
+      case '已送达':
+        return '已送达';
       case '异常':
-      case '未接通': return '异常';
-      default: return '待分配';
+      case '未接通':
+        return '异常';
+      default:
+        return '待分配';
     }
   }
 
@@ -227,7 +231,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     kanbanSort?: KanbanSortMap,
     temporaryDeliveryChanges: TemporaryDeliveryChange[] = [],
   ): VolunteerDailySummary | null {
-    const volunteer = volunteers.find(v => v.id === volunteerId);
+    const volunteer = volunteers.find((v) => v.id === volunteerId);
     if (!volunteer) return null;
 
     const volunteerRef: VolunteerRef = {
@@ -252,7 +256,8 @@ export class VolunteerDeliveryService implements OnDestroy {
         address: change.address !== undefined ? change.address : elder.address,
         contact: change.contact !== undefined ? change.contact : elder.contact,
         mealTags: change.mealTagIds !== undefined ? change.mealTagIds : elder.mealTags,
-        specialMealNote: change.specialMealNote !== undefined ? change.specialMealNote : elder.specialMealNote,
+        specialMealNote:
+          change.specialMealNote !== undefined ? change.specialMealNote : elder.specialMealNote,
       };
     };
 
@@ -263,9 +268,12 @@ export class VolunteerDeliveryService implements OnDestroy {
       }
     }
 
-    const dateTasks = tasks.filter(t => t.date === date && (t.volunteerId === volunteerId || allTempChangeElderIds.has(t.elderId)));
-    const elderMap = new Map(elders.map(e => [e.id, e]));
-    const tagMap = new Map(mealTags.map(t => [t.id, t]));
+    const dateTasks = tasks.filter(
+      (t) =>
+        t.date === date && (t.volunteerId === volunteerId || allTempChangeElderIds.has(t.elderId)),
+    );
+    const elderMap = new Map(elders.map((e) => [e.id, e]));
+    const tagMap = new Map(mealTags.map((t) => [t.id, t]));
 
     const sortOrder = kanbanSort?.[date]?.[volunteerId];
     let orderedTasks = [...dateTasks];
@@ -280,66 +288,75 @@ export class VolunteerDeliveryService implements OnDestroy {
       });
     }
 
-    const deliveryTasks: DeliveryTask[] = orderedTasks.map((task, index) => {
-      const rawElder = elderMap.get(task.elderId);
-      if (!rawElder) return null;
-      const elder = applyTempChange(rawElder);
+    const deliveryTasks: DeliveryTask[] = orderedTasks
+      .map((task, index) => {
+        const rawElder = elderMap.get(task.elderId);
+        if (!rawElder) return null;
+        const elder = applyTempChange(rawElder);
 
-      const stored = this.getStoredStatus(date, task.id);
-      const lastVisit = this.getElderLastVisit(elder.id, visitRecords);
-      const isPaused = elder.pauseDates?.includes(date) || false;
+        const stored = this.getStoredStatus(date, task.id);
+        const lastVisit = this.getElderLastVisit(elder.id, visitRecords);
+        const isPaused = elder.pauseDates?.includes(date) || false;
 
-      const elderTags: ElderDeliveryRef['mealTags'] = elder.mealTags
-        .map(tid => tagMap.get(tid))
-        .filter((t): t is MealTag => !!t);
+        const elderTags: ElderDeliveryRef['mealTags'] = elder.mealTags
+          .map((tid) => tagMap.get(tid))
+          .filter((t): t is MealTag => !!t);
 
-      const effectiveVolunteerId = tempChangeMap.get(elder.id)?.volunteerId || task.volunteerId;
-      const effectiveVolunteer = effectiveVolunteerId === volunteerId ? volunteer : volunteers.find(v => v.id === effectiveVolunteerId);
+        const effectiveVolunteerId = tempChangeMap.get(elder.id)?.volunteerId || task.volunteerId;
+        const effectiveVolunteer =
+          effectiveVolunteerId === volunteerId
+            ? volunteer
+            : volunteers.find((v) => v.id === effectiveVolunteerId);
 
-      return {
-        id: `delivery-${date}-${task.id}`,
-        taskId: task.id,
-        routeOrder: index + 1,
-        volunteer: effectiveVolunteer ? {
-          id: effectiveVolunteer.id,
-          name: effectiveVolunteer.name,
-          phone: effectiveVolunteer.phone,
-          area: effectiveVolunteer.area,
-        } : volunteerRef,
-        elder: {
-          id: elder.id,
-          name: elder.name,
-          address: elder.address,
-          contact: elder.contact,
-          mealTags: elderTags,
-          specialMealNote: task.specialMealNote || elder.specialMealNote || '',
-          lastVisit: lastVisit ? {
-            date: lastVisit.visitDate,
-            method: lastVisit.visitMethod,
-            nextAttention: lastVisit.nextAttention || undefined,
-          } : undefined,
-        },
-        status: isPaused ? '待配送' : stored.status,
-        exceptionNote: stored.exceptionNote,
-        statusUpdatedAt: stored.statusUpdatedAt,
-        date,
-        exceptionRecorded: stored.exceptionRecorded,
-        notificationAdded: stored.notificationAdded,
-        visitReminder: !!lastVisit?.nextAttention && !stored.visitReminderHandled,
-        visitReminderHandled: stored.visitReminderHandled,
-        visitReminderNote: stored.visitReminderNote,
-      } as DeliveryTask;
-    }).filter((t): t is DeliveryTask => !!t);
+        return {
+          id: `delivery-${date}-${task.id}`,
+          taskId: task.id,
+          routeOrder: index + 1,
+          volunteer: effectiveVolunteer
+            ? {
+                id: effectiveVolunteer.id,
+                name: effectiveVolunteer.name,
+                phone: effectiveVolunteer.phone,
+                area: effectiveVolunteer.area,
+              }
+            : volunteerRef,
+          elder: {
+            id: elder.id,
+            name: elder.name,
+            address: elder.address,
+            contact: elder.contact,
+            mealTags: elderTags,
+            specialMealNote: task.specialMealNote || elder.specialMealNote || '',
+            lastVisit: lastVisit
+              ? {
+                  date: lastVisit.visitDate,
+                  method: lastVisit.visitMethod,
+                  nextAttention: lastVisit.nextAttention || undefined,
+                }
+              : undefined,
+          },
+          status: isPaused ? '待配送' : stored.status,
+          exceptionNote: stored.exceptionNote,
+          statusUpdatedAt: stored.statusUpdatedAt,
+          date,
+          exceptionRecorded: stored.exceptionRecorded,
+          notificationAdded: stored.notificationAdded,
+          visitReminder: !!lastVisit?.nextAttention && !stored.visitReminderHandled,
+          visitReminderHandled: stored.visitReminderHandled,
+          visitReminderNote: stored.visitReminderNote,
+        } as DeliveryTask;
+      })
+      .filter((t): t is DeliveryTask => !!t);
 
     return {
       volunteer: volunteerRef,
       date,
       totalTasks: deliveryTasks.length,
-      completedTasks: deliveryTasks.filter(t => t.status === '已送达').length,
-      inProgressTasks: deliveryTasks.filter(t => t.status === '配送中').length,
-      pendingTasks: deliveryTasks.filter(t => t.status === '待配送').length,
-      exceptionTasks: deliveryTasks.filter(t => t.status === '异常').length,
-      unreachableTasks: deliveryTasks.filter(t => t.status === '未接通').length,
+      completedTasks: deliveryTasks.filter((t) => t.status === '已送达').length,
+      inProgressTasks: deliveryTasks.filter((t) => t.status === '配送中').length,
+      pendingTasks: deliveryTasks.filter((t) => t.status === '待配送').length,
+      exceptionTasks: deliveryTasks.filter((t) => t.status === '异常').length,
+      unreachableTasks: deliveryTasks.filter((t) => t.status === '未接通').length,
       tasks: deliveryTasks,
     };
   }
@@ -349,10 +366,11 @@ export class VolunteerDeliveryService implements OnDestroy {
     tasks: MealTask[],
     volunteers: Volunteer[],
   ): Array<{ volunteer: VolunteerRef; taskCount: number; completedCount: number }> {
-    const result: Array<{ volunteer: VolunteerRef; taskCount: number; completedCount: number }> = [];
+    const result: Array<{ volunteer: VolunteerRef; taskCount: number; completedCount: number }> =
+      [];
 
     for (const v of volunteers) {
-      const vTasks = tasks.filter(t => t.date === date && t.volunteerId === v.id);
+      const vTasks = tasks.filter((t) => t.date === date && t.volunteerId === v.id);
       if (vTasks.length === 0) continue;
 
       let completedCount = 0;
@@ -406,7 +424,9 @@ export class VolunteerDeliveryService implements OnDestroy {
       date,
       volunteerId: '',
       status: mappedTaskStatus,
-      exception: isException ? (exceptionNote || (status === '未接通' ? '配送时未接通电话' : '配送异常')) : '',
+      exception: isException
+        ? exceptionNote || (status === '未接通' ? '配送时未接通电话' : '配送异常')
+        : '',
       isManuallyModified: true,
       specialMealNote: '',
     };
@@ -438,9 +458,10 @@ export class VolunteerDeliveryService implements OnDestroy {
       severity = '较重';
     }
 
-    const description = deliveryStatus === '未接通'
-      ? `志愿者配送上门未接通：${exceptionNote || '电话无人接听'}`
-      : `志愿者配送异常：${exceptionNote || '配送过程中出现异常'}`;
+    const description =
+      deliveryStatus === '未接通'
+        ? `志愿者配送上门未接通：${exceptionNote || '电话无人接听'}`
+        : `志愿者配送异常：${exceptionNote || '配送过程中出现异常'}`;
 
     return {
       id: crypto.randomUUID(),
@@ -470,10 +491,12 @@ export class VolunteerDeliveryService implements OnDestroy {
     const match = elder.contact.match(/1[3-9]\d{9}/);
     const phone = match ? match[0] : elder.contact;
 
-    const notificationStatus: PhoneNotification['notificationStatus'] = deliveryStatus === '未接通' ? '未接通' : '未通知';
-    const remark = deliveryStatus === '未接通'
-      ? `配送未接通通知：${exceptionNote || '电话无人接听，需再次联系'}`
-      : `配送异常通知：${exceptionNote || '需联系老人及家属'}`;
+    const notificationStatus: PhoneNotification['notificationStatus'] =
+      deliveryStatus === '未接通' ? '未接通' : '未通知';
+    const remark =
+      deliveryStatus === '未接通'
+        ? `配送未接通通知：${exceptionNote || '电话无人接听，需再次联系'}`
+        : `配送异常通知：${exceptionNote || '需联系老人及家属'}`;
 
     return {
       id: crypto.randomUUID(),
@@ -535,7 +558,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     taskId: string,
     notificationId: string,
     result: '已通知' | '未接通' | '稍后再拨',
-    remark: string = ''
+    remark: string = '',
   ): void {
     const existing = this.getStoredStatus(date, taskId);
     const newResult = {
@@ -550,11 +573,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     });
   }
 
-  markVisitReminderHandled(
-    date: string,
-    taskId: string,
-    note: string = ''
-  ): void {
+  markVisitReminderHandled(date: string, taskId: string, note: string = ''): void {
     const existing = this.getStoredStatus(date, taskId);
     this.setStoredStatus(date, taskId, {
       ...existing,
@@ -575,23 +594,38 @@ export class VolunteerDeliveryService implements OnDestroy {
     return DELIVERY_STATUS_COLORS[status];
   }
 
-  buildDedupKeyForDeliveryException(taskId: string, source: '配送异常' | '未接通', category?: string): string {
+  buildDedupKeyForDeliveryException(
+    taskId: string,
+    source: '配送异常' | '未接通',
+    category?: string,
+  ): string {
     return this.sync.buildDedupKeyForException({ taskId, source, category });
   }
 
-  buildDedupKeyForDeliveryNotification(taskId: string, source: '配送异常' | '未接通', targetId: string): string {
+  buildDedupKeyForDeliveryNotification(
+    taskId: string,
+    source: '配送异常' | '未接通',
+    targetId: string,
+  ): string {
     return this.sync.buildDedupKeyForNotification({ taskId, source, targetId });
   }
 
-  isDeliveryExceptionDuplicate(taskId: string, source: '配送异常' | '未接通', existingRecords: ExceptionRecord[]): boolean {
-    return existingRecords.some((r) =>
-      r.taskId === taskId && r.source === source
-    );
+  isDeliveryExceptionDuplicate(
+    taskId: string,
+    source: '配送异常' | '未接通',
+    existingRecords: ExceptionRecord[],
+  ): boolean {
+    return existingRecords.some((r) => r.taskId === taskId && r.source === source);
   }
 
-  isDeliveryNotificationDuplicate(taskId: string, source: '配送异常' | '未接通', targetId: string, existingNotifications: PhoneNotification[]): boolean {
-    return existingNotifications.some((n) =>
-      n.taskId === taskId && n.source === source && n.targetId === targetId
+  isDeliveryNotificationDuplicate(
+    taskId: string,
+    source: '配送异常' | '未接通',
+    targetId: string,
+    existingNotifications: PhoneNotification[],
+  ): boolean {
+    return existingNotifications.some(
+      (n) => n.taskId === taskId && n.source === source && n.targetId === targetId,
     );
   }
 
@@ -664,23 +698,25 @@ export class VolunteerDeliveryService implements OnDestroy {
   }
 
   getPendingDraftCount(): number {
-    return this.offlineDrafts.filter(d => d.draftStatus === 'pending').length;
+    return this.offlineDrafts.filter((d) => d.draftStatus === 'pending').length;
   }
 
   getConflictDraftCount(): number {
-    return this.offlineDrafts.filter(d => d.draftStatus === 'conflict').length;
+    return this.offlineDrafts.filter((d) => d.draftStatus === 'conflict').length;
   }
 
   getOfflineDrafts(status?: OfflineDraftStatus): OfflineDeliveryDraft[] {
     const drafts = [...this.offlineDrafts];
     if (status) {
-      return drafts.filter(d => d.draftStatus === status);
+      return drafts.filter((d) => d.draftStatus === status);
     }
     return drafts;
   }
 
   getDraftsForTask(taskId: string): OfflineDeliveryDraft[] {
-    return this.offlineDrafts.filter(d => d.taskId === taskId && d.draftStatus !== 'synced' && d.draftStatus !== 'discarded');
+    return this.offlineDrafts.filter(
+      (d) => d.taskId === taskId && d.draftStatus !== 'synced' && d.draftStatus !== 'discarded',
+    );
   }
 
   private nowString(): string {
@@ -693,7 +729,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     taskId: string,
     date: string,
     volunteerId: string,
-    data: Partial<OfflineDeliveryDraft>
+    data: Partial<OfflineDeliveryDraft>,
   ): OfflineDeliveryDraft {
     const draft: OfflineDeliveryDraft = {
       id: crypto.randomUUID(),
@@ -715,7 +751,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     date: string,
     volunteerId: string,
     status: DeliveryStatus,
-    exceptionNote: string = ''
+    exceptionNote: string = '',
   ): OfflineDeliveryDraft {
     return this.createOfflineDraft('status-update', taskId, date, volunteerId, {
       deliveryStatus: status,
@@ -727,7 +763,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     taskId: string,
     date: string,
     volunteerId: string,
-    exceptionNote: string
+    exceptionNote: string,
   ): OfflineDeliveryDraft {
     return this.createOfflineDraft('exception-note', taskId, date, volunteerId, {
       exceptionNote,
@@ -740,7 +776,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     volunteerId: string,
     phoneNotificationId: string,
     result: '已通知' | '未接通' | '稍后再拨',
-    remark: string = ''
+    remark: string = '',
   ): OfflineDeliveryDraft {
     return this.createOfflineDraft('phone-call-result', taskId, date, volunteerId, {
       phoneNotificationId,
@@ -753,7 +789,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     taskId: string,
     date: string,
     volunteerId: string,
-    note: string = ''
+    note: string = '',
   ): OfflineDeliveryDraft {
     return this.createOfflineDraft('visit-reminder-handled', taskId, date, volunteerId, {
       visitReminderHandled: true,
@@ -768,25 +804,28 @@ export class VolunteerDeliveryService implements OnDestroy {
     return false;
   }
 
-  private getLatestDraftForTask(taskId: string, drafts: OfflineDeliveryDraft[]): OfflineDeliveryDraft | null {
-    const taskDrafts = drafts.filter(d => d.taskId === taskId && d.draftType === 'status-update');
+  private getLatestDraftForTask(
+    taskId: string,
+    drafts: OfflineDeliveryDraft[],
+  ): OfflineDeliveryDraft | null {
+    const taskDrafts = drafts.filter((d) => d.taskId === taskId && d.draftType === 'status-update');
     if (taskDrafts.length === 0) return null;
-    return taskDrafts.sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    return taskDrafts.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     )[0];
   }
 
   detectDraftConflicts(
     tasks: MealTask[],
     existingExceptions: ExceptionRecord[],
-    existingNotifications: PhoneNotification[]
+    existingNotifications: PhoneNotification[],
   ): OfflineDeliveryDraft[] {
     const conflicts: OfflineDeliveryDraft[] = [];
-    const pendingDrafts = this.offlineDrafts.filter(d => d.draftStatus === 'pending');
+    const pendingDrafts = this.offlineDrafts.filter((d) => d.draftStatus === 'pending');
 
     for (const draft of pendingDrafts) {
       if (draft.draftType === 'status-update' && draft.deliveryStatus) {
-        const task = tasks.find(t => t.id === draft.taskId);
+        const task = tasks.find((t) => t.id === draft.taskId);
         if (task) {
           if (this.isStatusProtected(task.status as DeliveryStatus, draft.deliveryStatus)) {
             draft.draftStatus = 'conflict';
@@ -801,9 +840,14 @@ export class VolunteerDeliveryService implements OnDestroy {
 
         const stored = this.getStoredStatus(draft.date, draft.taskId);
         if (stored.status && stored.status !== '待配送') {
-          const storedTime = stored.statusUpdatedAt ? new Date(stored.statusUpdatedAt).getTime() : 0;
+          const storedTime = stored.statusUpdatedAt
+            ? new Date(stored.statusUpdatedAt).getTime()
+            : 0;
           const draftTime = new Date(draft.createdAt).getTime();
-          if (storedTime > draftTime && this.isStatusProtected(stored.status, draft.deliveryStatus)) {
+          if (
+            storedTime > draftTime &&
+            this.isStatusProtected(stored.status, draft.deliveryStatus)
+          ) {
             draft.draftStatus = 'conflict';
             draft.conflictInfo = {
               remoteStatus: stored.status,
@@ -824,7 +868,7 @@ export class VolunteerDeliveryService implements OnDestroy {
   }
 
   resolveDraftConflict(draftId: string, resolution: 'keep-local' | 'adopt-remote') {
-    const draft = this.offlineDrafts.find(d => d.id === draftId);
+    const draft = this.offlineDrafts.find((d) => d.id === draftId);
     if (!draft) return;
 
     if (resolution === 'adopt-remote') {
@@ -841,7 +885,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     tasks?: MealTask[],
     elders?: Elder[],
     existingExceptions?: ExceptionRecord[],
-    existingNotifications?: PhoneNotification[]
+    existingNotifications?: PhoneNotification[],
   ): OfflineDraftMergeResult {
     const result: OfflineDraftMergeResult = {
       conflicts: [],
@@ -853,15 +897,13 @@ export class VolunteerDeliveryService implements OnDestroy {
       return result;
     }
 
-    let pendingDrafts = this.offlineDrafts.filter(d => d.draftStatus === 'pending');
-    pendingDrafts.sort((a, b) =>
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
+    let pendingDrafts = this.offlineDrafts.filter((d) => d.draftStatus === 'pending');
+    pendingDrafts.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     if (tasks && existingExceptions && existingNotifications) {
       const conflicts = this.detectDraftConflicts(tasks, existingExceptions, existingNotifications);
       result.conflicts = conflicts;
-      pendingDrafts = pendingDrafts.filter(d => d.draftStatus === 'pending');
+      pendingDrafts = pendingDrafts.filter((d) => d.draftStatus === 'pending');
     }
 
     const processedTaskIds = new Set<string>();
@@ -876,7 +918,14 @@ export class VolunteerDeliveryService implements OnDestroy {
         }
       }
 
-      const mergeSuccess = this.mergeSingleDraft(draft, tasks, elders, existingExceptions, existingNotifications, result);
+      const mergeSuccess = this.mergeSingleDraft(
+        draft,
+        tasks,
+        elders,
+        existingExceptions,
+        existingNotifications,
+        result,
+      );
       if (mergeSuccess) {
         draft.draftStatus = 'synced';
         draft.syncedAt = this.nowString();
@@ -897,11 +946,18 @@ export class VolunteerDeliveryService implements OnDestroy {
     elders?: Elder[],
     existingExceptions?: ExceptionRecord[],
     existingNotifications?: PhoneNotification[],
-    result?: OfflineDraftMergeResult
+    result?: OfflineDraftMergeResult,
   ): boolean {
     switch (draft.draftType) {
       case 'status-update':
-        return this.mergeStatusUpdateDraft(draft, tasks, elders, existingExceptions, existingNotifications, result);
+        return this.mergeStatusUpdateDraft(
+          draft,
+          tasks,
+          elders,
+          existingExceptions,
+          existingNotifications,
+          result,
+        );
       case 'exception-note':
         return this.mergeExceptionNoteDraft(draft, tasks);
       case 'phone-call-result':
@@ -919,7 +975,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     elders?: Elder[],
     existingExceptions?: ExceptionRecord[],
     existingNotifications?: PhoneNotification[],
-    result?: OfflineDraftMergeResult
+    result?: OfflineDraftMergeResult,
   ): boolean {
     if (!draft.deliveryStatus) return false;
 
@@ -927,7 +983,7 @@ export class VolunteerDeliveryService implements OnDestroy {
       draft.date,
       draft.taskId,
       draft.deliveryStatus,
-      draft.exceptionNote || ''
+      draft.exceptionNote || '',
     );
 
     if (result) {
@@ -940,15 +996,20 @@ export class VolunteerDeliveryService implements OnDestroy {
       }
 
       const isException = draft.deliveryStatus === '异常' || draft.deliveryStatus === '未接通';
-      const task = tasks?.find(t => t.id === draft.taskId);
-      const elder = elders?.find(e => e.id === task?.elderId);
+      const task = tasks?.find((t) => t.id === draft.taskId);
+      const elder = elders?.find((e) => e.id === task?.elderId);
 
       if (isException && task && elder && existingExceptions && existingNotifications) {
         const stored = this.getStoredStatus(draft.date, draft.taskId);
         if (!stored.exceptionRecorded) {
-          const exc = this.createDeliveryExceptionRecord(task, elder, draft.deliveryStatus, draft.exceptionNote || '');
-          const isDuplicate = existingExceptions.some(r =>
-            r.taskId === exc.taskId && r.source === exc.source
+          const exc = this.createDeliveryExceptionRecord(
+            task,
+            elder,
+            draft.deliveryStatus,
+            draft.exceptionNote || '',
+          );
+          const isDuplicate = existingExceptions.some(
+            (r) => r.taskId === exc.taskId && r.source === exc.source,
           );
           if (!isDuplicate) {
             result.exceptionCreated = exc;
@@ -956,9 +1017,17 @@ export class VolunteerDeliveryService implements OnDestroy {
           }
         }
         if (!stored.notificationAdded) {
-          const notif = this.createDeliveryPhoneNotification(task, elder, draft.deliveryStatus, draft.exceptionNote || '');
-          const isDuplicate = existingNotifications.some(n =>
-            n.taskId === notif.taskId && n.source === notif.source && n.targetId === notif.targetId
+          const notif = this.createDeliveryPhoneNotification(
+            task,
+            elder,
+            draft.deliveryStatus,
+            draft.exceptionNote || '',
+          );
+          const isDuplicate = existingNotifications.some(
+            (n) =>
+              n.taskId === notif.taskId &&
+              n.source === notif.source &&
+              n.targetId === notif.targetId,
           );
           if (!isDuplicate) {
             result.notificationCreated = notif;
@@ -971,10 +1040,7 @@ export class VolunteerDeliveryService implements OnDestroy {
     return true;
   }
 
-  private mergeExceptionNoteDraft(
-    draft: OfflineDeliveryDraft,
-    tasks?: MealTask[]
-  ): boolean {
+  private mergeExceptionNoteDraft(draft: OfflineDeliveryDraft, tasks?: MealTask[]): boolean {
     if (!draft.exceptionNote) return false;
 
     const existing = this.getStoredStatus(draft.date, draft.taskId);
@@ -991,20 +1057,18 @@ export class VolunteerDeliveryService implements OnDestroy {
     tasks?: MealTask[],
     elders?: Elder[],
     existingNotifications?: PhoneNotification[],
-    result?: OfflineDraftMergeResult
+    result?: OfflineDraftMergeResult,
   ): boolean {
     if (!draft.phoneCallResult) return false;
 
     let notificationId = draft.phoneNotificationId || '';
     if (!notificationId) {
-      const task = tasks?.find(t => t.id === draft.taskId);
-      const elder = elders?.find(e => e.id === task?.elderId);
+      const task = tasks?.find((t) => t.id === draft.taskId);
+      const elder = elders?.find((e) => e.id === task?.elderId);
       if (!task || !elder) return false;
 
-      const existing = existingNotifications?.find(n =>
-        n.taskId === draft.taskId
-        && n.targetId === elder.id
-        && n.source === '手动登记'
+      const existing = existingNotifications?.find(
+        (n) => n.taskId === draft.taskId && n.targetId === elder.id && n.source === '手动登记',
       );
 
       if (existing) {
@@ -1014,7 +1078,7 @@ export class VolunteerDeliveryService implements OnDestroy {
           task,
           elder,
           draft.phoneCallResult,
-          draft.phoneCallRemark || ''
+          draft.phoneCallRemark || '',
         );
         notificationId = notification.id;
         if (result) {
@@ -1029,7 +1093,7 @@ export class VolunteerDeliveryService implements OnDestroy {
       draft.taskId,
       notificationId,
       draft.phoneCallResult,
-      draft.phoneCallRemark
+      draft.phoneCallRemark,
     );
 
     if (result) {
@@ -1045,15 +1109,11 @@ export class VolunteerDeliveryService implements OnDestroy {
 
   private mergeVisitReminderHandledDraft(
     draft: OfflineDeliveryDraft,
-    result?: OfflineDraftMergeResult
+    result?: OfflineDraftMergeResult,
   ): boolean {
     if (!draft.visitReminderHandled) return false;
 
-    this.markVisitReminderHandled(
-      draft.date,
-      draft.taskId,
-      draft.visitReminderNote
-    );
+    this.markVisitReminderHandled(draft.date, draft.taskId, draft.visitReminderNote);
 
     if (result) {
       result.visitReminderHandled = {
@@ -1066,12 +1126,14 @@ export class VolunteerDeliveryService implements OnDestroy {
   }
 
   clearSyncedDrafts() {
-    this.offlineDrafts = this.offlineDrafts.filter(d => d.draftStatus !== 'synced' && d.draftStatus !== 'discarded');
+    this.offlineDrafts = this.offlineDrafts.filter(
+      (d) => d.draftStatus !== 'synced' && d.draftStatus !== 'discarded',
+    );
     this.saveOfflineDrafts();
   }
 
   discardDraft(draftId: string) {
-    const draft = this.offlineDrafts.find(d => d.id === draftId);
+    const draft = this.offlineDrafts.find((d) => d.id === draftId);
     if (draft) {
       draft.draftStatus = 'discarded';
       this.saveOfflineDrafts();
@@ -1085,10 +1147,10 @@ export class VolunteerDeliveryService implements OnDestroy {
     discarded: number;
   } {
     return {
-      pending: this.offlineDrafts.filter(d => d.draftStatus === 'pending').length,
-      synced: this.offlineDrafts.filter(d => d.draftStatus === 'synced').length,
-      conflict: this.offlineDrafts.filter(d => d.draftStatus === 'conflict').length,
-      discarded: this.offlineDrafts.filter(d => d.draftStatus === 'discarded').length,
+      pending: this.offlineDrafts.filter((d) => d.draftStatus === 'pending').length,
+      synced: this.offlineDrafts.filter((d) => d.draftStatus === 'synced').length,
+      conflict: this.offlineDrafts.filter((d) => d.draftStatus === 'conflict').length,
+      discarded: this.offlineDrafts.filter((d) => d.draftStatus === 'discarded').length,
     };
   }
 }

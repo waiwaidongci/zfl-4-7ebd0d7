@@ -1,5 +1,13 @@
 import { TestBed } from '@angular/core/testing';
-import { VolunteerDeliveryService, TemporaryDeliveryChange, Elder, Volunteer, MealTask, MealTag, VisitRecord } from './volunteer-delivery.service';
+import {
+  VolunteerDeliveryService,
+  TemporaryDeliveryChange,
+  Elder,
+  Volunteer,
+  MealTask,
+  MealTag,
+  VisitRecord,
+} from './volunteer-delivery.service';
 
 describe('VolunteerDeliveryService', () => {
   let service: VolunteerDeliveryService;
@@ -15,7 +23,7 @@ describe('VolunteerDeliveryService', () => {
       note: '需要爬三楼',
       deliveryDays: [1, 2, 3, 4, 5],
       pauseDates: [],
-      specialMealNote: '不要放葱姜蒜'
+      specialMealNote: '不要放葱姜蒜',
     },
     {
       id: 'elder-2',
@@ -27,7 +35,7 @@ describe('VolunteerDeliveryService', () => {
       note: '有糖尿病',
       deliveryDays: [1, 3, 5],
       pauseDates: [],
-      specialMealNote: '低糖饮食'
+      specialMealNote: '低糖饮食',
     },
     {
       id: 'elder-3',
@@ -39,8 +47,8 @@ describe('VolunteerDeliveryService', () => {
       note: '',
       deliveryDays: [1, 2, 3, 4, 5],
       pauseDates: ['2024-06-15'],
-      specialMealNote: ''
-    }
+      specialMealNote: '',
+    },
   ];
 
   const mockVolunteers: Volunteer[] = [
@@ -50,7 +58,7 @@ describe('VolunteerDeliveryService', () => {
       phone: '13900139001',
       capacity: 10,
       area: '朝阳区',
-      availableDays: [1, 2, 3, 4, 5]
+      availableDays: [1, 2, 3, 4, 5],
     },
     {
       id: 'vol-2',
@@ -58,15 +66,15 @@ describe('VolunteerDeliveryService', () => {
       phone: '13900139002',
       capacity: 8,
       area: '朝阳区',
-      availableDays: [1, 3, 5]
-    }
+      availableDays: [1, 3, 5],
+    },
   ];
 
   const mockMealTags: MealTag[] = [
     { id: 'tag-low-salt', name: '低盐', color: '#4a9f6d' },
     { id: 'tag-soft', name: '软食', color: '#d9a84a' },
     { id: 'tag-diabetic', name: '低糖', color: '#5a8fd9' },
-    { id: 'tag-vegetarian', name: '素食', color: '#9a6bd9' }
+    { id: 'tag-vegetarian', name: '素食', color: '#9a6bd9' },
   ];
 
   const mockTasks: MealTask[] = [
@@ -78,7 +86,7 @@ describe('VolunteerDeliveryService', () => {
       status: '待分配',
       exception: '',
       isManuallyModified: false,
-      specialMealNote: ''
+      specialMealNote: '',
     },
     {
       id: 'task-2',
@@ -88,8 +96,8 @@ describe('VolunteerDeliveryService', () => {
       status: '待分配',
       exception: '',
       isManuallyModified: false,
-      specialMealNote: ''
-    }
+      specialMealNote: '',
+    },
   ];
 
   const mockVisitRecords: VisitRecord[] = [
@@ -101,17 +109,19 @@ describe('VolunteerDeliveryService', () => {
       healthFeedback: '身体状况良好',
       mealFeedback: '对餐食满意',
       nextAttention: '下周需要提醒测量血压',
-      createdAt: '2024-06-10 15:30:00'
-    }
+      createdAt: '2024-06-10 15:30:00',
+    },
   ];
 
-  const createTempChange = (overrides: Partial<TemporaryDeliveryChange>): TemporaryDeliveryChange => ({
+  const createTempChange = (
+    overrides: Partial<TemporaryDeliveryChange>,
+  ): TemporaryDeliveryChange => ({
     id: 'temp-1',
     elderId: 'elder-1',
     date: '2024-06-14',
     reason: '临时变更测试',
     createdAt: '2024-06-14 08:00:00',
-    ...overrides
+    ...overrides,
   });
 
   beforeEach(() => {
@@ -127,7 +137,7 @@ describe('VolunteerDeliveryService', () => {
   describe('临时送餐变更 - 地址变更', () => {
     it('应该应用临时地址变更到配送任务', () => {
       const tempChange = createTempChange({
-        address: '临时配送地址：北京市海淀区xxx地点'
+        address: '临时配送地址：北京市海淀区xxx地点',
       });
 
       const summary = service.generateVolunteerSummary(
@@ -139,11 +149,11 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
       expect(summary).not.toBeNull();
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1).toBeDefined();
       expect(task1!.elder.address).toBe('临时配送地址：北京市海淀区xxx地点');
     });
@@ -160,10 +170,10 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.elder.address).toBe('北京市朝阳区xxx小区1号楼101室');
     });
   });
@@ -171,7 +181,7 @@ describe('VolunteerDeliveryService', () => {
   describe('临时送餐变更 - 联系方式变更', () => {
     it('应该应用临时联系方式变更到配送任务', () => {
       const tempChange = createTempChange({
-        contact: '18800188001'
+        contact: '18800188001',
       });
 
       const summary = service.generateVolunteerSummary(
@@ -183,10 +193,10 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.elder.contact).toBe('18800188001');
     });
 
@@ -202,10 +212,10 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.elder.contact).toBe('');
     });
   });
@@ -213,7 +223,7 @@ describe('VolunteerDeliveryService', () => {
   describe('临时送餐变更 - 餐食标签变更', () => {
     it('应该应用临时餐食标签变更到配送任务', () => {
       const tempChange = createTempChange({
-        mealTagIds: ['tag-diabetic', 'tag-vegetarian']
+        mealTagIds: ['tag-diabetic', 'tag-vegetarian'],
       });
 
       const summary = service.generateVolunteerSummary(
@@ -225,12 +235,12 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
-      expect(task1!.elder.mealTags.map(t => t.id)).toEqual(['tag-diabetic', 'tag-vegetarian']);
-      expect(task1!.elder.mealTags.map(t => t.name)).toEqual(['低糖', '素食']);
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
+      expect(task1!.elder.mealTags.map((t) => t.id)).toEqual(['tag-diabetic', 'tag-vegetarian']);
+      expect(task1!.elder.mealTags.map((t) => t.name)).toEqual(['低糖', '素食']);
     });
 
     it('空标签数组应移除所有餐食标签', () => {
@@ -245,10 +255,10 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.elder.mealTags).toEqual([]);
     });
 
@@ -264,18 +274,18 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
-      expect(task1!.elder.mealTags.map(t => t.id)).toEqual(['tag-low-salt', 'tag-soft']);
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
+      expect(task1!.elder.mealTags.map((t) => t.id)).toEqual(['tag-low-salt', 'tag-soft']);
     });
   });
 
   describe('临时送餐变更 - 志愿者分配变更', () => {
     it('临时指定志愿者应将任务分配给该志愿者', () => {
       const tempChange = createTempChange({
-        volunteerId: 'vol-2'
+        volunteerId: 'vol-2',
       });
 
       const summaryVol1 = service.generateVolunteerSummary(
@@ -287,7 +297,7 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
       const summaryVol2 = service.generateVolunteerSummary(
@@ -299,11 +309,11 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const taskInVol1 = summaryVol1!.tasks.find(t => t.taskId === 'task-1');
-      const taskInVol2 = summaryVol2!.tasks.find(t => t.taskId === 'task-1');
+      const taskInVol1 = summaryVol1!.tasks.find((t) => t.taskId === 'task-1');
+      const taskInVol2 = summaryVol2!.tasks.find((t) => t.taskId === 'task-1');
 
       expect(taskInVol1).toBeDefined();
       expect(taskInVol2).toBeDefined();
@@ -315,7 +325,7 @@ describe('VolunteerDeliveryService', () => {
 
     it('临时分配的志愿者信息应正确显示', () => {
       const tempChange = createTempChange({
-        volunteerId: 'vol-2'
+        volunteerId: 'vol-2',
       });
 
       const summary = service.generateVolunteerSummary(
@@ -327,10 +337,10 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.volunteer.id).toBe('vol-2');
       expect(task1!.volunteer.name).toBe('刘志愿者');
       expect(task1!.volunteer.phone).toBe('13900139002');
@@ -338,7 +348,7 @@ describe('VolunteerDeliveryService', () => {
 
     it('未指定临时志愿者时任务保留原志愿者', () => {
       const tempChange = createTempChange({
-        volunteerId: undefined
+        volunteerId: undefined,
       });
 
       const summary = service.generateVolunteerSummary(
@@ -350,11 +360,11 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
       expect(summary!.totalTasks).toBe(2);
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.volunteer.id).toBe('vol-1');
     });
   });
@@ -362,7 +372,7 @@ describe('VolunteerDeliveryService', () => {
   describe('临时送餐变更 - 特殊餐食备注变更', () => {
     it('应该应用临时特殊餐食备注', () => {
       const tempChange = createTempChange({
-        specialMealNote: '今日需要加热后送达'
+        specialMealNote: '今日需要加热后送达',
       });
 
       const summary = service.generateVolunteerSummary(
@@ -374,21 +384,24 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.elder.specialMealNote).toBe('今日需要加热后送达');
     });
 
     it('任务级备注优先于临时备注和老人级备注', () => {
-      const tasksWithNote = [{
-        ...mockTasks[0],
-        specialMealNote: '任务备注：需要敲门三下'
-      }, mockTasks[1]];
+      const tasksWithNote = [
+        {
+          ...mockTasks[0],
+          specialMealNote: '任务备注：需要敲门三下',
+        },
+        mockTasks[1],
+      ];
 
       const tempChange = createTempChange({
-        specialMealNote: '临时备注'
+        specialMealNote: '临时备注',
       });
 
       const summary = service.generateVolunteerSummary(
@@ -400,10 +413,10 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.elder.specialMealNote).toBe('任务备注：需要敲门三下');
     });
   });
@@ -418,7 +431,7 @@ describe('VolunteerDeliveryService', () => {
         status: '待分配',
         exception: '',
         isManuallyModified: false,
-        specialMealNote: ''
+        specialMealNote: '',
       };
 
       const summary = service.generateVolunteerSummary(
@@ -430,10 +443,10 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        []
+        [],
       );
 
-      const task = summary!.tasks.find(t => t.taskId === 'task-3');
+      const task = summary!.tasks.find((t) => t.taskId === 'task-3');
       expect(task!.status).toBe('待配送');
     });
 
@@ -442,7 +455,7 @@ describe('VolunteerDeliveryService', () => {
         elderId: 'elder-3',
         date: '2024-06-15',
         address: '暂停期间临时地址',
-        contact: '18800188003'
+        contact: '18800188003',
       });
 
       const pausedTask: MealTask = {
@@ -453,7 +466,7 @@ describe('VolunteerDeliveryService', () => {
         status: '待分配',
         exception: '',
         isManuallyModified: false,
-        specialMealNote: ''
+        specialMealNote: '',
       };
 
       const summary = service.generateVolunteerSummary(
@@ -465,10 +478,10 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task = summary!.tasks.find(t => t.taskId === 'task-3');
+      const task = summary!.tasks.find((t) => t.taskId === 'task-3');
       expect(task!.elder.address).toBe('暂停期间临时地址');
       expect(task!.elder.contact).toBe('18800188003');
     });
@@ -481,7 +494,7 @@ describe('VolunteerDeliveryService', () => {
         contact: '18800188099',
         mealTagIds: ['tag-vegetarian'],
         volunteerId: 'vol-2',
-        specialMealNote: '综合变更备注'
+        specialMealNote: '综合变更备注',
       });
 
       const summary = service.generateVolunteerSummary(
@@ -493,13 +506,13 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChange]
+        [tempChange],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.elder.address).toBe('综合变更地址');
       expect(task1!.elder.contact).toBe('18800188099');
-      expect(task1!.elder.mealTags.map(t => t.id)).toEqual(['tag-vegetarian']);
+      expect(task1!.elder.mealTags.map((t) => t.id)).toEqual(['tag-vegetarian']);
       expect(task1!.volunteer.id).toBe('vol-2');
       expect(task1!.elder.specialMealNote).toBe('综合变更备注');
     });
@@ -507,18 +520,15 @@ describe('VolunteerDeliveryService', () => {
     it('不同日期的临时变更互不影响', () => {
       const tempChangeToday = createTempChange({
         date: '2024-06-14',
-        address: '今日地址'
+        address: '今日地址',
       });
       const tempChangeTomorrow = createTempChange({
         id: 'temp-2',
         date: '2024-06-15',
-        address: '明日地址'
+        address: '明日地址',
       });
 
-      const tasks = [
-        mockTasks[0],
-        { ...mockTasks[0], id: 'task-1-tomorrow', date: '2024-06-15' }
-      ];
+      const tasks = [mockTasks[0], { ...mockTasks[0], id: 'task-1-tomorrow', date: '2024-06-15' }];
 
       const summaryToday = service.generateVolunteerSummary(
         '2024-06-14',
@@ -529,23 +539,19 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        [tempChangeToday, tempChangeTomorrow]
+        [tempChangeToday, tempChangeTomorrow],
       );
 
-      const taskToday = summaryToday!.tasks.find(t => t.taskId === 'task-1');
+      const taskToday = summaryToday!.tasks.find((t) => t.taskId === 'task-1');
       expect(taskToday!.elder.address).toBe('今日地址');
     });
 
     it('getAllVolunteerRouteGroups 应正确统计各志愿者任务', () => {
       const tempChange = createTempChange({
-        volunteerId: 'vol-2'
+        volunteerId: 'vol-2',
       });
 
-      const groups = service.getAllVolunteerRouteGroups(
-        '2024-06-14',
-        mockTasks,
-        mockVolunteers
-      );
+      const groups = service.getAllVolunteerRouteGroups('2024-06-14', mockTasks, mockVolunteers);
 
       expect(groups.length).toBe(1);
       expect(groups[0].volunteer.id).toBe('vol-1');
@@ -555,11 +561,7 @@ describe('VolunteerDeliveryService', () => {
 
   describe('配送状态更新', () => {
     it('updateDeliveryStatus 应正确更新配送状态', () => {
-      const result = service.updateDeliveryStatus(
-        '2024-06-14',
-        'task-1',
-        '配送中'
-      );
+      const result = service.updateDeliveryStatus('2024-06-14', 'task-1', '配送中');
 
       expect(result.taskUpdated).toBeDefined();
       expect(result.taskUpdated!.status).toBe('配送中');
@@ -601,7 +603,7 @@ describe('VolunteerDeliveryService', () => {
     it('getElderLastVisit 应返回最近的回访记录', () => {
       const visits: VisitRecord[] = [
         { ...mockVisitRecords[0], visitDate: '2024-06-01' },
-        { ...mockVisitRecords[0], id: 'visit-2', visitDate: '2024-06-10' }
+        { ...mockVisitRecords[0], id: 'visit-2', visitDate: '2024-06-10' },
       ];
 
       const lastVisit = service.getElderLastVisit('elder-1', visits);
@@ -610,7 +612,7 @@ describe('VolunteerDeliveryService', () => {
 
     it('有未处理的回访提醒时应标记visitReminder', () => {
       const visits: VisitRecord[] = [
-        { ...mockVisitRecords[0], visitDate: '2024-06-01', nextAttention: '需要关注' }
+        { ...mockVisitRecords[0], visitDate: '2024-06-01', nextAttention: '需要关注' },
       ];
 
       const summary = service.generateVolunteerSummary(
@@ -622,10 +624,10 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         visits,
         undefined,
-        []
+        [],
       );
 
-      const task1 = summary!.tasks.find(t => t.taskId === 'task-1');
+      const task1 = summary!.tasks.find((t) => t.taskId === 'task-1');
       expect(task1!.visitReminder).toBe(true);
     });
 
@@ -642,7 +644,7 @@ describe('VolunteerDeliveryService', () => {
         mockTasks[0],
         mockElders[0],
         '未接通',
-        '电话无人接听'
+        '电话无人接听',
       );
 
       expect(record.category).toBe('无人应答');
@@ -656,7 +658,7 @@ describe('VolunteerDeliveryService', () => {
         mockTasks[0],
         mockElders[0],
         '异常',
-        '地址错误，找不到位置'
+        '地址错误，找不到位置',
       );
 
       expect(record.category).toBe('地址错误');
@@ -668,7 +670,7 @@ describe('VolunteerDeliveryService', () => {
         mockTasks[0],
         mockElders[0],
         '未接通',
-        '无人接听'
+        '无人接听',
       );
 
       expect(notification.targetType).toBe('elder');
@@ -679,7 +681,7 @@ describe('VolunteerDeliveryService', () => {
 
     it('isDeliveryExceptionDuplicate 应检测重复异常', () => {
       const existingRecords = [
-        service.createDeliveryExceptionRecord(mockTasks[0], mockElders[0], '异常', '测试')
+        service.createDeliveryExceptionRecord(mockTasks[0], mockElders[0], '异常', '测试'),
       ];
 
       const result = service.isDeliveryExceptionDuplicate('task-1', '配送异常', existingRecords);
@@ -705,13 +707,7 @@ describe('VolunteerDeliveryService', () => {
 
   describe('电话拨打结果', () => {
     it('recordPhoneCallResult 应记录电话拨打结果', () => {
-      service.recordPhoneCallResult(
-        '2024-06-14',
-        'task-1',
-        'notif-1',
-        '已通知',
-        '已告知家属情况'
-      );
+      service.recordPhoneCallResult('2024-06-14', 'task-1', 'notif-1', '已通知', '已告知家属情况');
 
       const results = service.getPhoneCallResults('2024-06-14', 'task-1');
       expect(results.length).toBe(1);
@@ -724,8 +720,8 @@ describe('VolunteerDeliveryService', () => {
     it('应根据kanbanSort排序任务', () => {
       const sortMap = {
         '2024-06-14': {
-          'vol-1': ['task-2', 'task-1']
-        }
+          'vol-1': ['task-2', 'task-1'],
+        },
       };
 
       const summary = service.generateVolunteerSummary(
@@ -737,7 +733,7 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         sortMap,
-        []
+        [],
       );
 
       expect(summary!.tasks[0].taskId).toBe('task-2');
@@ -761,7 +757,7 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        []
+        [],
       );
 
       expect(summary!.totalTasks).toBe(2);
@@ -780,7 +776,7 @@ describe('VolunteerDeliveryService', () => {
         mockMealTags,
         mockVisitRecords,
         undefined,
-        []
+        [],
       );
 
       expect(summary).toBeNull();

@@ -1,5 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output, OnInit, OnChanges, SimpleChanges } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  Output,
+  OnInit,
+  OnChanges,
+  SimpleChanges,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   PrepStatus,
@@ -38,7 +46,11 @@ export class MealPrepComponent implements OnInit, OnChanges {
 
   @Output() exceptionCreated = new EventEmitter<ExceptionRecord>();
   @Output() notificationCreated = new EventEmitter<PhoneNotification>();
-  @Output() taskUpdated = new EventEmitter<{ taskId: string; status: MealTask['status']; exception: string }>();
+  @Output() taskUpdated = new EventEmitter<{
+    taskId: string;
+    status: MealTask['status'];
+    exception: string;
+  }>();
 
   summary: DailyPrepSummary | null = null;
   editingMissingTaskId: string | null = null;
@@ -55,7 +67,14 @@ export class MealPrepComponent implements OnInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['date'] || changes['tasks'] || changes['elders'] || changes['mealTags'] || changes['volunteers'] || changes['temporaryDeliveryChanges']) {
+    if (
+      changes['date'] ||
+      changes['tasks'] ||
+      changes['elders'] ||
+      changes['mealTags'] ||
+      changes['volunteers'] ||
+      changes['temporaryDeliveryChanges']
+    ) {
       this.refresh();
     }
   }
@@ -74,10 +93,7 @@ export class MealPrepComponent implements OnInit, OnChanges {
 
   openPrintView() {
     if (!this.summary) return;
-    this.printViewData = this.prepService.generateKitchenPrintViewData(
-      this.summary,
-      this.mealTags,
-    );
+    this.printViewData = this.prepService.generateKitchenPrintViewData(this.summary, this.mealTags);
     this.printViewVisible = true;
   }
 
@@ -105,17 +121,19 @@ export class MealPrepComponent implements OnInit, OnChanges {
   }
 
   getItemTagObjs(item: PrepItem): MealTag[] {
-    return this.mealTags.filter(t => item.mealTagIds.includes(t.id));
+    return this.mealTags.filter((t) => item.mealTagIds.includes(t.id));
   }
 
   getItemTask(item: PrepItem): MealTask | undefined {
-    return this.tasks.find(t => t.id === item.taskId);
+    return this.tasks.find((t) => t.id === item.taskId);
   }
 
   getItemElder(item: PrepItem): Elder | undefined {
-    const raw = this.elders.find(e => e.id === item.elder.id);
+    const raw = this.elders.find((e) => e.id === item.elder.id);
     if (!raw || !this.date) return raw;
-    const tc = this.temporaryDeliveryChanges.find(c => c.elderId === raw.id && c.date === this.date);
+    const tc = this.temporaryDeliveryChanges.find(
+      (c) => c.elderId === raw.id && c.date === this.date,
+    );
     if (!tc) return raw;
     return {
       ...raw,
@@ -209,9 +227,7 @@ export class MealPrepComponent implements OnInit, OnChanges {
   }
 
   batchSetStatus(batch: PrepBatch, status: PrepStatus) {
-    const taskIds = batch.items
-      .filter(i => !i.isPaused)
-      .map(i => i.taskId);
+    const taskIds = batch.items.filter((i) => !i.isPaused).map((i) => i.taskId);
     this.prepService.batchUpdateStatus(this.date, taskIds, status);
     this.refresh();
   }

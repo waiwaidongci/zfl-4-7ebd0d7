@@ -638,8 +638,13 @@
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .sync-label {
@@ -701,7 +706,7 @@
   font-weight: 500;
   z-index: 9998;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  animation: toast-in .3s ease-out;
+  animation: toast-in 0.3s ease-out;
   max-width: 90%;
   text-align: center;
 }
@@ -711,8 +716,14 @@
 }
 
 @keyframes toast-in {
-  from { transform: translate(-50%, -10px); opacity: 0; }
-  to { transform: translate(-50%, 0); opacity: 1; }
+  from {
+    transform: translate(-50%, -10px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
 }
 
 .visit-handle-btn {
@@ -786,7 +797,7 @@
   border-color: #c4d0c4;
 }
 
-.result-option input[type="radio"] {
+.result-option input[type='radio'] {
   width: 16px;
   height: 16px;
   accent-color: #4a9f6d;

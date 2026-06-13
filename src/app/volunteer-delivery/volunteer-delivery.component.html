@@ -32,7 +32,11 @@
       </button>
     </div>
 
-    <div class="sync-toast" *ngIf="lastSyncMessage" [class.success]="!lastSyncMessage.includes('冲突')">
+    <div
+      class="sync-toast"
+      *ngIf="lastSyncMessage"
+      [class.success]="!lastSyncMessage.includes('冲突')"
+    >
       {{ lastSyncMessage }}
     </div>
 
@@ -53,7 +57,9 @@
         <svg viewBox="0 0 120 120" class="progress-svg">
           <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e7da" stroke-width="10" />
           <circle
-            cx="60" cy="60" r="52"
+            cx="60"
+            cy="60"
+            r="52"
             fill="none"
             [attr.stroke]="isAllCompleted() ? '#4a9f6d' : '#5a8fd9'"
             stroke-width="10"
@@ -61,7 +67,7 @@
             [attr.stroke-dasharray]="2 * Math.PI * 52"
             [attr.stroke-dashoffset]="2 * Math.PI * 52 * (1 - getProgressPct() / 100)"
             transform="rotate(-90 60 60)"
-            style="transition: stroke-dashoffset .5s ease"
+            style="transition: stroke-dashoffset 0.5s ease"
           />
         </svg>
         <div class="progress-text">
@@ -81,7 +87,12 @@
             <span>总任务</span>
           </div>
           <div class="stat-item pending">
-            <strong>{{ summary.totalTasks - summary.completedTasks - summary.exceptionTasks - summary.unreachableTasks }}</strong>
+            <strong>{{
+              summary.totalTasks -
+                summary.completedTasks -
+                summary.exceptionTasks -
+                summary.unreachableTasks
+            }}</strong>
             <span>待完成</span>
           </div>
         </div>
@@ -102,7 +113,9 @@
         <div class="volunteer-contact">
           <span class="vc-icon">📱</span>
           <span class="vc-label">志愿者电话：</span>
-          <a class="vc-phone" [href]="'tel:' + summary.volunteer.phone">{{ summary.volunteer.phone }}</a>
+          <a class="vc-phone" [href]="'tel:' + summary.volunteer.phone">{{
+            summary.volunteer.phone
+          }}</a>
         </div>
       </div>
     </div>
@@ -119,7 +132,9 @@
           (click)="onSelectTask(i)"
         >
           <div class="route-order" [style.background]="getStatusColor(task.status)">
-            <span [class.done-text]="task.status === '已送达'">{{ task.status === '已送达' ? '✓' : task.routeOrder }}</span>
+            <span [class.done-text]="task.status === '已送达'">{{
+              task.status === '已送达' ? '✓' : task.routeOrder
+            }}</span>
           </div>
 
           <div class="route-line" *ngIf="i < summary!.tasks.length - 1"></div>
@@ -210,14 +225,14 @@
         type="button"
         class="footer-btn"
         *ngIf="summary.tasks.length > 0"
-        (click)="onSelectTask(selectedTaskIndex >= 0 ? selectedTaskIndex : findFirstUndeliveredIndex())"
+        (click)="
+          onSelectTask(selectedTaskIndex >= 0 ? selectedTaskIndex : findFirstUndeliveredIndex())
+        "
         [class.active]="selectedTaskIndex >= 0"
       >
         📍 当前配送
       </button>
-      <button type="button" class="footer-btn ghost" (click)="onBackToSchedule()">
-        📊 主排班
-      </button>
+      <button type="button" class="footer-btn ghost" (click)="onBackToSchedule()">📊 主排班</button>
     </div>
   </div>
 </ng-container>

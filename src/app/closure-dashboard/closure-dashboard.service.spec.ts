@@ -28,7 +28,7 @@ describe('ClosureDashboardService', () => {
       note: '需要爬三楼',
       deliveryDays: [1, 2, 3, 4, 5],
       pauseDates: [],
-      specialMealNote: '不要放葱姜蒜'
+      specialMealNote: '不要放葱姜蒜',
     },
     {
       id: 'elder-2',
@@ -40,7 +40,7 @@ describe('ClosureDashboardService', () => {
       note: '有糖尿病',
       deliveryDays: [1, 3, 5],
       pauseDates: [],
-      specialMealNote: '低糖饮食'
+      specialMealNote: '低糖饮食',
     },
     {
       id: 'elder-3',
@@ -52,8 +52,8 @@ describe('ClosureDashboardService', () => {
       note: '',
       deliveryDays: [1, 2, 3, 4, 5],
       pauseDates: ['2024-06-15'],
-      specialMealNote: ''
-    }
+      specialMealNote: '',
+    },
   ];
 
   const mockVolunteers: Volunteer[] = [
@@ -63,7 +63,7 @@ describe('ClosureDashboardService', () => {
       phone: '13900139001',
       capacity: 10,
       area: '朝阳区',
-      availableDays: [1, 2, 3, 4, 5]
+      availableDays: [1, 2, 3, 4, 5],
     },
     {
       id: 'vol-2',
@@ -71,15 +71,15 @@ describe('ClosureDashboardService', () => {
       phone: '13900139002',
       capacity: 8,
       area: '朝阳区',
-      availableDays: [1, 3, 5]
-    }
+      availableDays: [1, 3, 5],
+    },
   ];
 
   const mockMealTags: MealTag[] = [
     { id: 'tag-low-salt', name: '低盐', color: '#4a9f6d' },
     { id: 'tag-soft', name: '软食', color: '#d9a84a' },
     { id: 'tag-diabetic', name: '低糖', color: '#5a8fd9' },
-    { id: 'tag-vegetarian', name: '素食', color: '#9a6bd9' }
+    { id: 'tag-vegetarian', name: '素食', color: '#9a6bd9' },
   ];
 
   const mockTasks: MealTask[] = [
@@ -91,7 +91,7 @@ describe('ClosureDashboardService', () => {
       status: '配送中',
       exception: '',
       isManuallyModified: false,
-      specialMealNote: ''
+      specialMealNote: '',
     },
     {
       id: 'task-2',
@@ -101,8 +101,8 @@ describe('ClosureDashboardService', () => {
       status: '已送达',
       exception: '',
       isManuallyModified: false,
-      specialMealNote: ''
-    }
+      specialMealNote: '',
+    },
   ];
 
   const mockExceptionRecords: ExceptionRecord[] = [
@@ -119,8 +119,8 @@ describe('ClosureDashboardService', () => {
       result: '',
       source: '未接通',
       createdAt: '2024-06-14 12:00:00',
-      updatedAt: '2024-06-14 12:00:00'
-    }
+      updatedAt: '2024-06-14 12:00:00',
+    },
   ];
 
   const mockVisitRecords: VisitRecord[] = [
@@ -132,7 +132,7 @@ describe('ClosureDashboardService', () => {
       healthFeedback: '身体状况良好',
       mealFeedback: '对餐食满意',
       nextAttention: '下周需要提醒测量血压',
-      createdAt: '2024-06-10 15:30:00'
+      createdAt: '2024-06-10 15:30:00',
     },
     {
       id: 'visit-2',
@@ -142,8 +142,8 @@ describe('ClosureDashboardService', () => {
       healthFeedback: '血糖稳定',
       mealFeedback: '餐食合适',
       nextAttention: '',
-      createdAt: '2024-06-13 10:00:00'
-    }
+      createdAt: '2024-06-13 10:00:00',
+    },
   ];
 
   const mockPhoneNotifications: PhoneNotification[] = [
@@ -157,8 +157,8 @@ describe('ClosureDashboardService', () => {
       notificationStatus: '未通知',
       remark: '配送未接通通知',
       source: '未接通',
-      updatedAt: '2024-06-14 12:05:00'
-    }
+      updatedAt: '2024-06-14 12:05:00',
+    },
   ];
 
   const mockCallbackTasks: CallbackTask[] = [
@@ -176,8 +176,8 @@ describe('ClosureDashboardService', () => {
       callbackCount: 1,
       remark: '需要再次联系',
       createdAt: '2024-06-14 12:10:00',
-      updatedAt: '2024-06-14 12:10:00'
-    }
+      updatedAt: '2024-06-14 12:10:00',
+    },
   ];
 
   const mockPrepData: PrepStorageData = {
@@ -186,15 +186,15 @@ describe('ClosureDashboardService', () => {
         status: '备餐中',
         missingNote: '',
         exceptionRecorded: false,
-        notificationAdded: false
+        notificationAdded: false,
       },
       'task-2': {
         status: '已完成',
         missingNote: '',
         exceptionRecorded: false,
-        notificationAdded: false
-      }
-    }
+        notificationAdded: false,
+      },
+    },
   };
 
   const mockDeliveryData: DeliveryStorageData = {
@@ -204,25 +204,27 @@ describe('ClosureDashboardService', () => {
         exceptionNote: '',
         statusUpdatedAt: '2024-06-14 11:00:00',
         exceptionRecorded: false,
-        notificationAdded: false
+        notificationAdded: false,
       },
       'task-2': {
         status: '已送达',
         exceptionNote: '',
         statusUpdatedAt: '2024-06-14 11:30:00',
         exceptionRecorded: false,
-        notificationAdded: false
-      }
-    }
+        notificationAdded: false,
+      },
+    },
   };
 
-  const createTempChange = (overrides: Partial<TemporaryDeliveryChange>): TemporaryDeliveryChange => ({
+  const createTempChange = (
+    overrides: Partial<TemporaryDeliveryChange>,
+  ): TemporaryDeliveryChange => ({
     id: 'temp-1',
     elderId: 'elder-1',
     date: '2024-06-14',
     reason: '临时变更测试',
     createdAt: '2024-06-14 08:00:00',
-    ...overrides
+    ...overrides,
   });
 
   beforeEach(() => {
@@ -238,7 +240,7 @@ describe('ClosureDashboardService', () => {
   describe('aggregateClosureRows - 地址变更', () => {
     it('应该应用临时地址变更到关站看板行', () => {
       const tempChange = createTempChange({
-        address: '临时地址：海淀区xxx地点'
+        address: '临时地址：海淀区xxx地点',
       });
 
       const rows = service.aggregateClosureRows(
@@ -253,10 +255,10 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row).toBeDefined();
       expect(elder1Row!.elderAddress).toBe('临时地址：海淀区xxx地点');
       expect(elder1Row!.hasTempChange).toBe(true);
@@ -265,7 +267,7 @@ describe('ClosureDashboardService', () => {
 
     it('未提供临时地址时应使用原始地址', () => {
       const tempChange = createTempChange({
-        address: undefined
+        address: undefined,
       });
 
       const rows = service.aggregateClosureRows(
@@ -280,10 +282,10 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.elderAddress).toBe('北京市朝阳区xxx小区1号楼101室');
     });
   });
@@ -291,7 +293,7 @@ describe('ClosureDashboardService', () => {
   describe('aggregateClosureRows - 联系方式变更', () => {
     it('应该应用临时联系方式变更', () => {
       const tempChange = createTempChange({
-        contact: '18800188001'
+        contact: '18800188001',
       });
 
       const rows = service.aggregateClosureRows(
@@ -306,17 +308,17 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.elderContact).toBe('18800188001');
       expect(elder1Row!.tempChangeSummary).toContain('联系方式变更');
     });
 
     it('空联系方式应覆盖原始联系方式', () => {
       const tempChange = createTempChange({
-        contact: ''
+        contact: '',
       });
 
       const rows = service.aggregateClosureRows(
@@ -331,10 +333,10 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.elderContact).toBe('');
     });
   });
@@ -342,7 +344,7 @@ describe('ClosureDashboardService', () => {
   describe('aggregateClosureRows - 餐食标签变更', () => {
     it('应该应用临时餐食标签变更', () => {
       const tempChange = createTempChange({
-        mealTagIds: ['tag-diabetic', 'tag-vegetarian']
+        mealTagIds: ['tag-diabetic', 'tag-vegetarian'],
       });
 
       const rows = service.aggregateClosureRows(
@@ -357,18 +359,18 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
-      expect(elder1Row!.elderMealTags.map(t => t.id)).toEqual(['tag-diabetic', 'tag-vegetarian']);
-      expect(elder1Row!.elderMealTags.map(t => t.name)).toEqual(['低糖', '素食']);
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
+      expect(elder1Row!.elderMealTags.map((t) => t.id)).toEqual(['tag-diabetic', 'tag-vegetarian']);
+      expect(elder1Row!.elderMealTags.map((t) => t.name)).toEqual(['低糖', '素食']);
       expect(elder1Row!.tempChangeSummary).toContain('餐食标签变更');
     });
 
     it('空标签数组应移除所有标签', () => {
       const tempChange = createTempChange({
-        mealTagIds: []
+        mealTagIds: [],
       });
 
       const rows = service.aggregateClosureRows(
@@ -383,16 +385,16 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.elderMealTags).toEqual([]);
     });
 
     it('未提供临时标签时使用原始标签', () => {
       const tempChange = createTempChange({
-        mealTagIds: undefined
+        mealTagIds: undefined,
       });
 
       const rows = service.aggregateClosureRows(
@@ -407,18 +409,18 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
-      expect(elder1Row!.elderMealTags.map(t => t.id)).toEqual(['tag-low-salt', 'tag-soft']);
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
+      expect(elder1Row!.elderMealTags.map((t) => t.id)).toEqual(['tag-low-salt', 'tag-soft']);
     });
   });
 
   describe('aggregateClosureRows - 志愿者分配变更', () => {
     it('临时指定志愿者应更新志愿者信息', () => {
       const tempChange = createTempChange({
-        volunteerId: 'vol-2'
+        volunteerId: 'vol-2',
       });
 
       const rows = service.aggregateClosureRows(
@@ -433,10 +435,10 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.volunteerId).toBe('vol-1');
       expect(elder1Row!.hasTempChange).toBe(true);
       expect(elder1Row!.tempChangeSummary).toContain('指定志愿者');
@@ -446,7 +448,7 @@ describe('ClosureDashboardService', () => {
   describe('aggregateClosureRows - 特殊餐食备注变更', () => {
     it('应该应用临时特殊餐食备注', () => {
       const tempChange = createTempChange({
-        specialMealNote: '今日需要加热，温度40度'
+        specialMealNote: '今日需要加热，温度40度',
       });
 
       const rows = service.aggregateClosureRows(
@@ -461,10 +463,10 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.elderSpecialNote).toBe('今日需要加热，温度40度');
       expect(elder1Row!.tempChangeSummary).toContain('特殊餐食备注');
     });
@@ -475,8 +477,8 @@ describe('ClosureDashboardService', () => {
       const pausedDateTasks: MealTask[] = [
         {
           ...mockTasks[0],
-          date: '2024-06-15'
-        }
+          date: '2024-06-15',
+        },
       ];
 
       const rows = service.aggregateClosureRows(
@@ -491,10 +493,10 @@ describe('ClosureDashboardService', () => {
         [],
         [],
         {},
-        {}
+        {},
       );
 
-      const pausedRow = rows.find(r => r.elderId === 'elder-3');
+      const pausedRow = rows.find((r) => r.elderId === 'elder-3');
       expect(pausedRow).toBeDefined();
       expect(pausedRow!.taskId).toContain('paused-');
       expect(pausedRow!.taskStatus).toBe('待分配');
@@ -508,7 +510,7 @@ describe('ClosureDashboardService', () => {
         date: '2024-06-15',
         address: '暂停期间临时地址',
         contact: '18800188003',
-        mealTagIds: ['tag-soft']
+        mealTagIds: ['tag-soft'],
       });
 
       const rows = service.aggregateClosureRows(
@@ -523,13 +525,13 @@ describe('ClosureDashboardService', () => {
         [],
         [tempChange],
         {},
-        {}
+        {},
       );
 
-      const pausedRow = rows.find(r => r.elderId === 'elder-3');
+      const pausedRow = rows.find((r) => r.elderId === 'elder-3');
       expect(pausedRow!.elderAddress).toBe('暂停期间临时地址');
       expect(pausedRow!.elderContact).toBe('18800188003');
-      expect(pausedRow!.elderMealTags.map(t => t.id)).toEqual(['tag-soft']);
+      expect(pausedRow!.elderMealTags.map((t) => t.id)).toEqual(['tag-soft']);
       expect(pausedRow!.hasTempChange).toBe(true);
     });
 
@@ -546,10 +548,10 @@ describe('ClosureDashboardService', () => {
         [],
         [],
         {},
-        {}
+        {},
       );
 
-      const pausedRow = rows.find(r => r.elderId === 'elder-3');
+      const pausedRow = rows.find((r) => r.elderId === 'elder-3');
       expect(pausedRow!.currentStage).toBe('任务生成');
     });
   });
@@ -561,7 +563,7 @@ describe('ClosureDashboardService', () => {
         contact: '18800188099',
         mealTagIds: ['tag-vegetarian'],
         volunteerId: 'vol-2',
-        specialMealNote: '综合变更备注'
+        specialMealNote: '综合变更备注',
       });
 
       const rows = service.aggregateClosureRows(
@@ -576,13 +578,13 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.elderAddress).toBe('综合变更地址');
       expect(elder1Row!.elderContact).toBe('18800188099');
-      expect(elder1Row!.elderMealTags.map(t => t.id)).toEqual(['tag-vegetarian']);
+      expect(elder1Row!.elderMealTags.map((t) => t.id)).toEqual(['tag-vegetarian']);
       expect(elder1Row!.elderSpecialNote).toBe('综合变更备注');
       expect(elder1Row!.hasTempChange).toBe(true);
       expect(elder1Row!.tempChangeSummary).toContain('地址变更');
@@ -595,13 +597,13 @@ describe('ClosureDashboardService', () => {
     it('不同日期的临时变更互不影响', () => {
       const tempChangeToday = createTempChange({
         date: '2024-06-14',
-        address: '今日地址'
+        address: '今日地址',
       });
       const tempChangeTomorrow = createTempChange({
         id: 'temp-2',
         elderId: 'elder-1',
         date: '2024-06-15',
-        address: '明日地址'
+        address: '明日地址',
       });
 
       const rows = service.aggregateClosureRows(
@@ -616,10 +618,10 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChangeToday, tempChangeTomorrow],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.elderAddress).toBe('今日地址');
     });
 
@@ -636,7 +638,7 @@ describe('ClosureDashboardService', () => {
         [],
         [],
         {},
-        {}
+        {},
       );
 
       expect(rows.length).toBe(0);
@@ -657,7 +659,7 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const stats = service.computeSummaryStats(rows);
@@ -677,7 +679,7 @@ describe('ClosureDashboardService', () => {
 
     it('临时变更应影响specialMealTasks统计', () => {
       const tempChange = createTempChange({
-        specialMealNote: '特殊备注'
+        specialMealNote: '特殊备注',
       });
 
       const rows = service.aggregateClosureRows(
@@ -692,7 +694,7 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const stats = service.computeSummaryStats(rows);
@@ -712,7 +714,7 @@ describe('ClosureDashboardService', () => {
         [],
         [],
         {},
-        {}
+        {},
       );
 
       const stats = service.computeSummaryStats(rows);
@@ -735,7 +737,7 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const timeline = service.buildStageTimeline(rows);
@@ -752,7 +754,7 @@ describe('ClosureDashboardService', () => {
 
     it('临时变更导致的异常应影响阶段时间线', () => {
       const tempChange = createTempChange({
-        address: '临时地址'
+        address: '临时地址',
       });
 
       const rows = service.aggregateClosureRows(
@@ -767,11 +769,11 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const timeline = service.buildStageTimeline(rows);
-      const exceptionStage = timeline.find(t => t.stage === '异常处置');
+      const exceptionStage = timeline.find((t) => t.stage === '异常处置');
       expect(exceptionStage!.count).toBe(1);
     });
   });
@@ -790,10 +792,10 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.currentStage).toBe('异常处置');
     });
 
@@ -810,10 +812,10 @@ describe('ClosureDashboardService', () => {
         [],
         [],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.currentStage).toBe('配送阶段');
     });
 
@@ -830,10 +832,10 @@ describe('ClosureDashboardService', () => {
         [],
         [],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder2Row = rows.find(r => r.elderId === 'elder-2');
+      const elder2Row = rows.find((r) => r.elderId === 'elder-2');
       expect(elder2Row!.currentStage).toBe('配送阶段');
     });
 
@@ -841,8 +843,8 @@ describe('ClosureDashboardService', () => {
       const customTasks: MealTask[] = [
         {
           ...mockTasks[0],
-          status: '待分配'
-        }
+          status: '待分配',
+        },
       ];
       const emptyDeliveryData: DeliveryStorageData = {};
 
@@ -858,10 +860,10 @@ describe('ClosureDashboardService', () => {
         [],
         [],
         mockPrepData,
-        emptyDeliveryData
+        emptyDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.currentStage).toBe('备餐阶段');
     });
   });
@@ -880,7 +882,7 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const filters = service.collectAvailableFilters(rows);
@@ -895,7 +897,7 @@ describe('ClosureDashboardService', () => {
 
     it('临时变更的标签应出现在筛选条件中', () => {
       const tempChange = createTempChange({
-        mealTagIds: ['tag-diabetic']
+        mealTagIds: ['tag-diabetic'],
       });
 
       const rows = service.aggregateClosureRows(
@@ -910,11 +912,11 @@ describe('ClosureDashboardService', () => {
         [],
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const filters = service.collectAvailableFilters(rows);
-      const hasDiabeticTag = filters.mealTags.some(t => t.id === 'tag-diabetic');
+      const hasDiabeticTag = filters.mealTags.some((t) => t.id === 'tag-diabetic');
       expect(hasDiabeticTag).toBe(true);
     });
   });
@@ -933,7 +935,7 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const filtered = service.filterRows(rows, {
@@ -945,7 +947,7 @@ describe('ClosureDashboardService', () => {
         exceptionStatuses: [],
         taskStages: [],
         prepStatuses: [],
-        deliveryStatuses: []
+        deliveryStatuses: [],
       });
 
       expect(filtered.length).toBe(2);
@@ -953,7 +955,7 @@ describe('ClosureDashboardService', () => {
 
     it('应该按餐食标签筛选', () => {
       const tempChange = createTempChange({
-        mealTagIds: ['tag-diabetic']
+        mealTagIds: ['tag-diabetic'],
       });
 
       const rows = service.aggregateClosureRows(
@@ -968,7 +970,7 @@ describe('ClosureDashboardService', () => {
         [],
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const filtered = service.filterRows(rows, {
@@ -980,7 +982,7 @@ describe('ClosureDashboardService', () => {
         exceptionStatuses: [],
         taskStages: [],
         prepStatuses: [],
-        deliveryStatuses: []
+        deliveryStatuses: [],
       });
 
       expect(filtered.length).toBe(1);
@@ -1000,7 +1002,7 @@ describe('ClosureDashboardService', () => {
         mockCallbackTasks,
         [],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const filtered = service.filterRows(rows, {
@@ -1012,7 +1014,7 @@ describe('ClosureDashboardService', () => {
         exceptionStatuses: [],
         taskStages: ['异常处置'],
         prepStatuses: [],
-        deliveryStatuses: []
+        deliveryStatuses: [],
       });
 
       expect(filtered.length).toBe(1);
@@ -1032,7 +1034,7 @@ describe('ClosureDashboardService', () => {
         [],
         [],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
       const filtered = service.filterRows(rows, {
@@ -1044,7 +1046,7 @@ describe('ClosureDashboardService', () => {
         exceptionStatuses: [],
         taskStages: [],
         prepStatuses: [],
-        deliveryStatuses: ['已送达']
+        deliveryStatuses: ['已送达'],
       });
 
       expect(filtered.length).toBe(1);
@@ -1068,10 +1070,10 @@ describe('ClosureDashboardService', () => {
         [],
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.tempChangeSummary).toBe('临时变更');
     });
 
@@ -1079,7 +1081,7 @@ describe('ClosureDashboardService', () => {
       const tempChange = createTempChange({
         address: 'addr',
         contact: 'phone',
-        mealTagIds: ['tag-1']
+        mealTagIds: ['tag-1'],
       });
 
       const rows = service.aggregateClosureRows(
@@ -1094,10 +1096,10 @@ describe('ClosureDashboardService', () => {
         [],
         [tempChange],
         mockPrepData,
-        mockDeliveryData
+        mockDeliveryData,
       );
 
-      const elder1Row = rows.find(r => r.elderId === 'elder-1');
+      const elder1Row = rows.find((r) => r.elderId === 'elder-1');
       expect(elder1Row!.tempChangeSummary).toContain('、');
       expect(elder1Row!.tempChangeSummary).toContain('地址变更');
       expect(elder1Row!.tempChangeSummary).toContain('联系方式变更');

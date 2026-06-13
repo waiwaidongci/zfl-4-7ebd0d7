@@ -66,8 +66,8 @@ export class MealPrepService {
           this.resolvePrepConflicts(prepConflict);
         }
       } else if (n.type === 'synced' && n.dataType === 'prepData') {
-          this.loadStorage();
-        }
+        this.loadStorage();
+      }
     });
   }
 
@@ -111,24 +111,34 @@ export class MealPrepService {
     this.saveStorage();
   }
 
-  private getStoredStatus(date: string, taskId: string): {
+  private getStoredStatus(
+    date: string,
+    taskId: string,
+  ): {
     status: PrepStatus;
     missingNote: string;
     exceptionRecorded: boolean;
     notificationAdded: boolean;
   } {
-    return this.storageData[date]?.[taskId] || {
-      status: '待备餐',
-      missingNote: '',
-      exceptionRecorded: false,
-      notificationAdded: false,
-    };
+    return (
+      this.storageData[date]?.[taskId] || {
+        status: '待备餐',
+        missingNote: '',
+        exceptionRecorded: false,
+        notificationAdded: false,
+      }
+    );
   }
 
   private setStoredStatus(
     date: string,
     taskId: string,
-    data: { status: PrepStatus; missingNote: string; exceptionRecorded: boolean; notificationAdded: boolean }
+    data: {
+      status: PrepStatus;
+      missingNote: string;
+      exceptionRecorded: boolean;
+      notificationAdded: boolean;
+    },
   ) {
     if (!this.storageData[date]) {
       this.storageData[date] = {};
@@ -145,17 +155,17 @@ export class MealPrepService {
     volunteers: Volunteer[] = [],
     temporaryDeliveryChanges: TemporaryDeliveryChange[] = [],
   ): DailyPrepSummary {
-    const elderMap = new Map(elders.map(e => [e.id, e]));
-    const tagMap = new Map(mealTags.map(t => [t.id, t]));
-    const volunteerMap = new Map(volunteers.map(v => [v.id, v]));
+    const elderMap = new Map(elders.map((e) => [e.id, e]));
+    const tagMap = new Map(mealTags.map((t) => [t.id, t]));
+    const volunteerMap = new Map(volunteers.map((v) => [v.id, v]));
     const tempChangeMap = new Map<string, TemporaryDeliveryChange>();
     for (const tc of temporaryDeliveryChanges) {
       if (tc.date === date) {
         tempChangeMap.set(tc.elderId, tc);
       }
     }
-    const dateTasks = tasks.filter(t => t.date === date);
-    const dateTaskElderIds = new Set(dateTasks.map(t => t.elderId));
+    const dateTasks = tasks.filter((t) => t.date === date);
+    const dateTaskElderIds = new Set(dateTasks.map((t) => t.elderId));
 
     const applyTempChange = (elder: Elder): Elder => {
       const change = tempChangeMap.get(elder.id);
@@ -165,51 +175,56 @@ export class MealPrepService {
         address: change.address !== undefined ? change.address : elder.address,
         contact: change.contact !== undefined ? change.contact : elder.contact,
         mealTags: change.mealTagIds !== undefined ? change.mealTagIds : elder.mealTags,
-        specialMealNote: change.specialMealNote !== undefined ? change.specialMealNote : elder.specialMealNote,
+        specialMealNote:
+          change.specialMealNote !== undefined ? change.specialMealNote : elder.specialMealNote,
       };
     };
 
-    const taskItems: PrepItem[] = dateTasks.map(task => {
-      const rawElder = elderMap.get(task.elderId);
-      if (!rawElder) return null;
-      const elder = applyTempChange(rawElder);
+    const taskItems: PrepItem[] = dateTasks
+      .map((task) => {
+        const rawElder = elderMap.get(task.elderId);
+        if (!rawElder) return null;
+        const elder = applyTempChange(rawElder);
 
-      const stored = this.getStoredStatus(date, task.id);
-      const isPaused = elder.pauseDates?.includes(date) || false;
-      const elderRef: ElderRef = {
-        id: elder.id,
-        name: elder.name,
-        address: elder.address,
-        contact: elder.contact,
-      };
+        const stored = this.getStoredStatus(date, task.id);
+        const isPaused = elder.pauseDates?.includes(date) || false;
+        const elderRef: ElderRef = {
+          id: elder.id,
+          name: elder.name,
+          address: elder.address,
+          contact: elder.contact,
+        };
 
-      const effectiveVolunteerId = tempChangeMap.get(elder.id)?.volunteerId || task.volunteerId;
-      const volunteerRaw = volunteerMap.get(effectiveVolunteerId);
-      const volunteerRef: VolunteerRef | undefined = volunteerRaw ? {
-        id: volunteerRaw.id,
-        name: volunteerRaw.name,
-        phone: volunteerRaw.phone,
-        area: volunteerRaw.area,
-      } : undefined;
+        const effectiveVolunteerId = tempChangeMap.get(elder.id)?.volunteerId || task.volunteerId;
+        const volunteerRaw = volunteerMap.get(effectiveVolunteerId);
+        const volunteerRef: VolunteerRef | undefined = volunteerRaw
+          ? {
+              id: volunteerRaw.id,
+              name: volunteerRaw.name,
+              phone: volunteerRaw.phone,
+              area: volunteerRaw.area,
+            }
+          : undefined;
 
-      return {
-        id: crypto.randomUUID() as string,
-        taskId: task.id,
-        elder: elderRef,
-        mealTagIds: elder.mealTags || [],
-        specialMealNote: task.specialMealNote || elder.specialMealNote || '',
-        isPaused,
-        status: isPaused ? '待备餐' : stored.status,
-        missingNote: stored.missingNote,
-        exceptionRecorded: stored.exceptionRecorded,
-        notificationAdded: stored.notificationAdded,
-        volunteer: volunteerRef,
-      } as PrepItem;
-    }).filter((item): item is PrepItem => item !== null);
+        return {
+          id: crypto.randomUUID() as string,
+          taskId: task.id,
+          elder: elderRef,
+          mealTagIds: elder.mealTags || [],
+          specialMealNote: task.specialMealNote || elder.specialMealNote || '',
+          isPaused,
+          status: isPaused ? '待备餐' : stored.status,
+          missingNote: stored.missingNote,
+          exceptionRecorded: stored.exceptionRecorded,
+          notificationAdded: stored.notificationAdded,
+          volunteer: volunteerRef,
+        } as PrepItem;
+      })
+      .filter((item): item is PrepItem => item !== null);
 
     const pausedOnlyItems: PrepItem[] = elders
-      .filter(elder => elder.pauseDates?.includes(date) && !dateTaskElderIds.has(elder.id))
-      .map(rawElder => {
+      .filter((elder) => elder.pauseDates?.includes(date) && !dateTaskElderIds.has(elder.id))
+      .map((rawElder) => {
         const elder = applyTempChange(rawElder);
         return {
           id: `paused-${date}-${elder.id}`,
@@ -232,11 +247,13 @@ export class MealPrepService {
 
     const items = [...taskItems, ...pausedOnlyItems];
 
-    const pausedItems = items.filter(i => i.isPaused);
-    const activeItems = items.filter(i => !i.isPaused);
+    const pausedItems = items.filter((i) => i.isPaused);
+    const activeItems = items.filter((i) => !i.isPaused);
 
-    const specialItems = activeItems.filter(i => i.specialMealNote && i.specialMealNote.trim());
-    const nonSpecialItems = activeItems.filter(i => !i.specialMealNote || !i.specialMealNote.trim());
+    const specialItems = activeItems.filter((i) => i.specialMealNote && i.specialMealNote.trim());
+    const nonSpecialItems = activeItems.filter(
+      (i) => !i.specialMealNote || !i.specialMealNote.trim(),
+    );
 
     const tagBatches = new Map<string, PrepItem[]>();
     const standardItems: PrepItem[] = [];
@@ -258,47 +275,32 @@ export class MealPrepService {
     for (const [tagId, batchItems] of tagBatches.entries()) {
       const tag = tagMap.get(tagId);
       if (!tag) continue;
-      batches.push(this.createBatch(
-        `tag-${tagId}`,
-        tag.name,
-        'tag',
-        tag.color,
-        tagId,
-        batchItems,
-      ));
+      batches.push(this.createBatch(`tag-${tagId}`, tag.name, 'tag', tag.color, tagId, batchItems));
     }
 
     if (specialItems.length > 0) {
-      batches.push(this.createBatch(
-        'special-notes',
-        '特殊餐食备注',
-        'special',
-        '#b36a2e',
-        undefined,
-        specialItems,
-      ));
+      batches.push(
+        this.createBatch(
+          'special-notes',
+          '特殊餐食备注',
+          'special',
+          '#b36a2e',
+          undefined,
+          specialItems,
+        ),
+      );
     }
 
     if (standardItems.length > 0) {
-      batches.push(this.createBatch(
-        'standard',
-        '标准餐',
-        'standard',
-        '#5a8fd9',
-        undefined,
-        standardItems,
-      ));
+      batches.push(
+        this.createBatch('standard', '标准餐', 'standard', '#5a8fd9', undefined, standardItems),
+      );
     }
 
     if (pausedItems.length > 0) {
-      batches.push(this.createBatch(
-        'paused',
-        '暂停送餐',
-        'paused',
-        '#8a9783',
-        undefined,
-        pausedItems,
-      ));
+      batches.push(
+        this.createBatch('paused', '暂停送餐', 'paused', '#8a9783', undefined, pausedItems),
+      );
     }
 
     const itemsById: Record<string, PrepItem> = {};
@@ -306,9 +308,9 @@ export class MealPrepService {
       itemsById[item.taskId] = item;
     }
 
-    const activeNonPaused = items.filter(i => !i.isPaused);
+    const activeNonPaused = items.filter((i) => !i.isPaused);
     const standardOnlyCount = standardItems.length;
-    const noTagCount = activeNonPaused.filter(i => i.mealTagIds.length === 0).length;
+    const noTagCount = activeNonPaused.filter((i) => i.mealTagIds.length === 0).length;
 
     const tagBreakdown = this.computeTagBreakdown(items, mealTags);
     const pausedSummary = this.computePausedSummary(pausedItems, activeNonPaused, mealTags);
@@ -316,9 +318,9 @@ export class MealPrepService {
     return {
       date,
       totalMeals: activeNonPaused.length,
-      completedMeals: activeNonPaused.filter(i => i.status === '已完成').length,
-      inProgressMeals: activeNonPaused.filter(i => i.status === '备餐中').length,
-      missingMeals: activeNonPaused.filter(i => i.status === '缺餐异常').length,
+      completedMeals: activeNonPaused.filter((i) => i.status === '已完成').length,
+      inProgressMeals: activeNonPaused.filter((i) => i.status === '备餐中').length,
+      missingMeals: activeNonPaused.filter((i) => i.status === '缺餐异常').length,
       pausedMeals: pausedItems.length,
       batches,
       standardItems,
@@ -332,23 +334,23 @@ export class MealPrepService {
     };
   }
 
-  private computeTagBreakdown(
-    allItems: PrepItem[],
-    mealTags: MealTag[],
-  ): TagBreakdownStat[] {
-    const tagMap = new Map(mealTags.map(t => [t.id, t]));
-    const stats = new Map<string, {
-      totalCount: number;
-      uniqueElderIds: Set<string>;
-      pausedCount: number;
-      activeCount: number;
-      completedCount: number;
-      inProgressCount: number;
-      missingCount: number;
-      withSpecialNoteCount: number;
-      elderIdToOtherTags: Map<string, Set<string>>;
-      order: number;
-    }>();
+  private computeTagBreakdown(allItems: PrepItem[], mealTags: MealTag[]): TagBreakdownStat[] {
+    const tagMap = new Map(mealTags.map((t) => [t.id, t]));
+    const stats = new Map<
+      string,
+      {
+        totalCount: number;
+        uniqueElderIds: Set<string>;
+        pausedCount: number;
+        activeCount: number;
+        completedCount: number;
+        inProgressCount: number;
+        missingCount: number;
+        withSpecialNoteCount: number;
+        elderIdToOtherTags: Map<string, Set<string>>;
+        order: number;
+      }
+    >();
 
     mealTags.forEach((tag, idx) => {
       stats.set(tag.id, {
@@ -376,18 +378,24 @@ export class MealPrepService {
         } else {
           s.activeCount++;
           switch (item.status) {
-            case '已完成': s.completedCount++; break;
-            case '备餐中': s.inProgressCount++; break;
-            case '缺餐异常': s.missingCount++; break;
+            case '已完成':
+              s.completedCount++;
+              break;
+            case '备餐中':
+              s.inProgressCount++;
+              break;
+            case '缺餐异常':
+              s.missingCount++;
+              break;
           }
         }
         if (item.specialMealNote && item.specialMealNote.trim()) {
           s.withSpecialNoteCount++;
         }
-        const otherTags = item.mealTagIds.filter(t => t !== tagId);
+        const otherTags = item.mealTagIds.filter((t) => t !== tagId);
         if (otherTags.length > 0) {
           const existing = s.elderIdToOtherTags.get(item.elder.id) || new Set<string>();
-          otherTags.forEach(t => existing.add(t));
+          otherTags.forEach((t) => existing.add(t));
           s.elderIdToOtherTags.set(item.elder.id, existing);
         }
       }
@@ -442,11 +450,13 @@ export class MealPrepService {
     activeItems: PrepItem[],
     mealTags: MealTag[],
   ): PausedSummary {
-    const tagMap = new Map(mealTags.map(t => [t.id, t]));
+    const tagMap = new Map(mealTags.map((t) => [t.id, t]));
     const totalPaused = pausedItems.length;
     const activeTotal = activeItems.length;
-    const pauseRate = totalPaused + activeTotal === 0 ? 0 :
-      Math.round((totalPaused / (totalPaused + activeTotal)) * 1000) / 10;
+    const pauseRate =
+      totalPaused + activeTotal === 0
+        ? 0
+        : Math.round((totalPaused / (totalPaused + activeTotal)) * 1000) / 10;
 
     const tagCounts = new Map<string, number>();
     for (const item of pausedItems) {
@@ -464,12 +474,12 @@ export class MealPrepService {
     byTags.sort((a, b) => b.count - a.count);
 
     const pausedWithSpecialNote = pausedItems.filter(
-      i => i.specialMealNote && i.specialMealNote.trim()
+      (i) => i.specialMealNote && i.specialMealNote.trim(),
     );
 
-    const pausedElderList = pausedItems.map(item => {
+    const pausedElderList = pausedItems.map((item) => {
       const tagNames = item.mealTagIds
-        .map(tid => tagMap.get(tid)?.name)
+        .map((tid) => tagMap.get(tid)?.name)
         .filter((n): n is string => !!n);
       return {
         elderName: item.elder.name,
@@ -506,18 +516,13 @@ export class MealPrepService {
       color,
       items,
       totalCount: items.length,
-      completedCount: items.filter(i => i.status === '已完成').length,
-      missingCount: items.filter(i => i.status === '缺餐异常').length,
-      inProgressCount: items.filter(i => i.status === '备餐中').length,
+      completedCount: items.filter((i) => i.status === '已完成').length,
+      missingCount: items.filter((i) => i.status === '缺餐异常').length,
+      inProgressCount: items.filter((i) => i.status === '备餐中').length,
     };
   }
 
-  updateItemStatus(
-    date: string,
-    taskId: string,
-    status: PrepStatus,
-    missingNote: string = '',
-  ) {
+  updateItemStatus(date: string, taskId: string, status: PrepStatus, missingNote: string = '') {
     const existing = this.getStoredStatus(date, taskId);
     this.setStoredStatus(date, taskId, {
       status,
@@ -543,11 +548,7 @@ export class MealPrepService {
     });
   }
 
-  createExceptionRecord(
-    task: MealTask,
-    elder: Elder,
-    missingNote: string,
-  ): ExceptionRecord {
+  createExceptionRecord(task: MealTask, elder: Elder, missingNote: string): ExceptionRecord {
     const now = new Date();
     const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     return {
@@ -567,11 +568,7 @@ export class MealPrepService {
     };
   }
 
-  createPhoneNotification(
-    task: MealTask,
-    elder: Elder,
-    missingNote: string,
-  ): PhoneNotification {
+  createPhoneNotification(task: MealTask, elder: Elder, missingNote: string): PhoneNotification {
     const now = new Date();
     const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const match = elder.contact.match(/1[3-9]\d{9}/);
@@ -590,11 +587,7 @@ export class MealPrepService {
     };
   }
 
-  batchUpdateStatus(
-    date: string,
-    taskIds: string[],
-    status: PrepStatus,
-  ) {
+  batchUpdateStatus(date: string, taskIds: string[], status: PrepStatus) {
     for (const taskId of taskIds) {
       this.updateItemStatus(date, taskId, status);
     }
@@ -602,11 +595,16 @@ export class MealPrepService {
 
   getPrepStatusColor(status: PrepStatus): string {
     switch (status) {
-      case '待备餐': return '#8a9783';
-      case '备餐中': return '#5a8fd9';
-      case '已完成': return '#4a9f6d';
-      case '缺餐异常': return '#c75454';
-      default: return '#8a9783';
+      case '待备餐':
+        return '#8a9783';
+      case '备餐中':
+        return '#5a8fd9';
+      case '已完成':
+        return '#4a9f6d';
+      case '缺餐异常':
+        return '#c75454';
+      default:
+        return '#8a9783';
     }
   }
 
@@ -620,17 +618,26 @@ export class MealPrepService {
 
   isExceptionDuplicate(taskId: string, existingRecords: ExceptionRecord[]): boolean {
     const key = this.buildDedupKeyForPrepException(taskId);
-    return existingRecords.some((r) =>
-      r.source === '备餐缺餐' && r.taskId === taskId &&
-      this.sync.buildDedupKeyForException(r) === key
+    return existingRecords.some(
+      (r) =>
+        r.source === '备餐缺餐' &&
+        r.taskId === taskId &&
+        this.sync.buildDedupKeyForException(r) === key,
     );
   }
 
-  isNotificationDuplicate(taskId: string, targetId: string, existingNotifications: PhoneNotification[]): boolean {
+  isNotificationDuplicate(
+    taskId: string,
+    targetId: string,
+    existingNotifications: PhoneNotification[],
+  ): boolean {
     const key = this.buildDedupKeyForPrepNotification(taskId, targetId);
-    return existingNotifications.some((n) =>
-      n.source === '备餐缺餐' && n.taskId === taskId && n.targetId === targetId &&
-      this.sync.buildDedupKeyForNotification(n) === key
+    return existingNotifications.some(
+      (n) =>
+        n.source === '备餐缺餐' &&
+        n.taskId === taskId &&
+        n.targetId === targetId &&
+        this.sync.buildDedupKeyForNotification(n) === key,
     );
   }
 
@@ -650,21 +657,21 @@ export class MealPrepService {
     summary: DailyPrepSummary,
     mealTags: MealTag[],
   ): KitchenPrintViewData {
-    const tagMap = new Map(mealTags.map(t => [t.id, t]));
+    const tagMap = new Map(mealTags.map((t) => [t.id, t]));
     const now = new Date();
     const generatedAt = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    const allItems = summary.batches.flatMap(b => b.items);
-    const activeItems = allItems.filter(i => !i.isPaused);
-    const pausedItems = allItems.filter(i => i.isPaused);
-    const missingItems = activeItems.filter(i => i.status === '缺餐异常');
-    const specialItems = activeItems.filter(i => i.specialMealNote && i.specialMealNote.trim());
+    const allItems = summary.batches.flatMap((b) => b.items);
+    const activeItems = allItems.filter((i) => !i.isPaused);
+    const pausedItems = allItems.filter((i) => i.isPaused);
+    const missingItems = activeItems.filter((i) => i.status === '缺餐异常');
+    const specialItems = activeItems.filter((i) => i.specialMealNote && i.specialMealNote.trim());
 
     const toPrintItem = (item: PrepItem): PrintItem => {
       const tags = item.mealTagIds
-        .map(tid => tagMap.get(tid))
+        .map((tid) => tagMap.get(tid))
         .filter((t): t is MealTag => !!t)
-        .map(t => ({ id: t.id, name: t.name, color: t.color }));
+        .map((t) => ({ id: t.id, name: t.name, color: t.color }));
 
       return {
         id: item.id,
@@ -787,7 +794,10 @@ export class MealPrepService {
     };
   }
 
-  onTempChangeCancelled(change: TemporaryDeliveryChange, elderIdToTaskIdMap?: Map<string, Map<string, string>>): string[] {
+  onTempChangeCancelled(
+    change: TemporaryDeliveryChange,
+    elderIdToTaskIdMap?: Map<string, Map<string, string>>,
+  ): string[] {
     const cleanedTaskIds: string[] = [];
     const taskId = elderIdToTaskIdMap?.get(change.elderId)?.get(change.date);
     if (!taskId) return cleanedTaskIds;
@@ -798,7 +808,10 @@ export class MealPrepService {
     return cleanedTaskIds;
   }
 
-  onTempChangesCancelledBatch(changes: TemporaryDeliveryChange[], elderIdToTaskIdMap?: Map<string, Map<string, string>>): Map<string, string[]> {
+  onTempChangesCancelledBatch(
+    changes: TemporaryDeliveryChange[],
+    elderIdToTaskIdMap?: Map<string, Map<string, string>>,
+  ): Map<string, string[]> {
     const result = new Map<string, string[]>();
     for (const change of changes) {
       const cleaned = this.onTempChangeCancelled(change, elderIdToTaskIdMap);
@@ -841,20 +854,23 @@ export class MealPrepService {
     }
   }
 
-  getTempChangePrepImpactSummary(changes: TemporaryDeliveryChange[], date: string): {
+  getTempChangePrepImpactSummary(
+    changes: TemporaryDeliveryChange[],
+    date: string,
+  ): {
     affectedCount: number;
     tagChangedCount: number;
     addressChangedCount: number;
     specialNoteChangedCount: number;
     volunteerChangedCount: number;
   } {
-    const dateChanges = changes.filter(c => c.date === date);
+    const dateChanges = changes.filter((c) => c.date === date);
     return {
       affectedCount: dateChanges.length,
-      tagChangedCount: dateChanges.filter(c => c.mealTagIds !== undefined).length,
-      addressChangedCount: dateChanges.filter(c => c.address !== undefined).length,
-      specialNoteChangedCount: dateChanges.filter(c => c.specialMealNote !== undefined).length,
-      volunteerChangedCount: dateChanges.filter(c => c.volunteerId !== undefined).length,
+      tagChangedCount: dateChanges.filter((c) => c.mealTagIds !== undefined).length,
+      addressChangedCount: dateChanges.filter((c) => c.address !== undefined).length,
+      specialNoteChangedCount: dateChanges.filter((c) => c.specialMealNote !== undefined).length,
+      volunteerChangedCount: dateChanges.filter((c) => c.volunteerId !== undefined).length,
     };
   }
 }
