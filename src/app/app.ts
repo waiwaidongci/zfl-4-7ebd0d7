@@ -823,9 +823,12 @@ type SimulationDiffResult = {
         [elders]="elders"
         [mealTags]="mealTags"
         [visitRecords]="visitRecords"
+        [exceptionRecords]="exceptionRecords"
+        [phoneNotifications]="phoneNotifications"
         [kanbanSort]="kanbanSort"
         [temporaryDeliveryChanges]="temporaryDeliveryChanges"
         (statusUpdated)="onDeliveryStatusUpdated($event)"
+        (conflictDetected)="onDraftConflictsDetected($event)"
         (backToSchedule)="setViewMode('schedule')"
       ></app-volunteer-delivery>
 
@@ -2406,6 +2409,72 @@ type SimulationDiffResult = {
         <span>{{ lastSyncMessage }}</span>
       </div>
 
+      <div class="conflict-modal-backdrop" *ngIf="showDraftConflictPanel" (click)="showDraftConflictPanel = false">
+        <div class="conflict-modal" (click)="$event.stopPropagation()">
+          <header class="conflict-modal-header">
+            <div>
+              <h2>⚠️ 离线草稿冲突检测</h2>
+              <p class="conflict-subtitle">
+                检测到 {{ offlineDraftConflicts.length }} 个离线操作冲突，需要手动处理
+              </p>
+            </div>
+            <button type="button" class="close-btn" (click)="showDraftConflictPanel = false">✕</button>
+          </header>
+
+          <div class="conflict-body">
+            <div class="conflict-content" style="width: 100%;">
+              <div class="conflict-type-header">
+                <h3>冲突列表</h3>
+                <div class="global-resolution-bar" style="margin-left: auto;">
+                  <button type="button" class="ghost" (click)="resolveAllDraftConflicts('keep-local')">📌 全部保留本地</button>
+                  <button type="button" class="ghost" (click)="resolveAllDraftConflicts('adopt-remote')">🔄 全部采用远程</button>
+                </div>
+              </div>
+
+              <div class="conflict-record-list" *ngFor="let conflict of offlineDraftConflicts">
+                <div class="conflict-draft-card" style="border: 1px solid #e2e7da; border-radius: 8px; padding: 16px; margin-bottom: 12px; background: #fff;">
+                  <div class="conflict-draft-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <div>
+                      <strong style="font-size: 15px;">任务 #{{ conflict.taskId.slice(-4) }}</strong>
+                      <span class="conflict-type-tag" style="margin-left: 8px; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #c7545420; color: #c75454;">
+                        {{ getConflictTypeLabel(conflict.conflictInfo?.conflictType) }}
+                      </span>
+                    </div>
+                    <small style="color: #65715f;">{{ conflict.createdAt }}</small>
+                  </div>
+
+                  <div class="conflict-draft-detail" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px;">
+                    <div class="local-version" style="background: #f0f8f0; border: 1px solid #c4e0c4; border-radius: 8px; padding: 12px;">
+                      <h4 style="margin: 0 0 8px; font-size: 13px; color: #4a9f6d;">📝 本地离线修改</h4>
+                      <p style="margin: 4px 0; font-size: 13px;"><strong>状态：</strong>{{ conflict.deliveryStatus }}</p>
+                      <p style="margin: 4px 0; font-size: 13px;"><strong>备注：</strong>{{ conflict.exceptionNote || '无' }}</p>
+                      <p style="margin: 4px 0; font-size: 12px; color: #65715f;">修改时间：{{ conflict.createdAt }}</p>
+                    </div>
+                    <div class="remote-version" style="background: #fff5f5; border: 1px solid #f0c4c4; border-radius: 8px; padding: 12px;">
+                      <h4 style="margin: 0 0 8px; font-size: 13px; color: #c75454;">⚠️ 远程当前状态</h4>
+                      <p style="margin: 4px 0; font-size: 13px;"><strong>状态：</strong>{{ conflict.conflictInfo?.remoteStatus || '未知' }}</p>
+                      <p style="margin: 4px 0; font-size: 13px; color: #c75454;">
+                        <strong>警告：</strong>任务已完成，本地修改可能覆盖已送达状态
+                      </p>
+                      <p style="margin: 4px 0; font-size: 12px; color: #65715f;">更新时间：{{ conflict.conflictInfo?.remoteUpdatedAt || '未知' }}</p>
+                    </div>
+                  </div>
+
+                  <div class="conflict-draft-actions" style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button type="button" class="ghost" (click)="resolveDraftConflict(conflict.id, 'adopt-remote')">
+                      🔄 采用远程版本
+                    </button>
+                    <button type="button" class="primary" style="background: #5a8fd9;" (click)="resolveDraftConflict(conflict.id, 'keep-local')">
+                      📌 保留本地修改
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="conflict-modal-backdrop" *ngIf="conflictPanelVisible" (click)="dismissConflictPanel()">
         <div class="conflict-modal" (click)="$event.stopPropagation()">
           <header class="conflict-modal-header">
@@ -3809,6 +3878,23 @@ export class App implements AfterViewChecked, OnInit {
   }
 
   onDeliveryStatusUpdated(data: any) {
+    if (data.draftCreated) {
+      this.showSyncToast('操作已保存为离线草稿，恢复同步后将自动处理', 'info');
+    }
+
+    if (data.mergeResult) {
+      const mr = data.mergeResult;
+      if (mr.mergedCount > 0) {
+        this.showSyncToast(`已合并 ${mr.mergedCount} 条离线操作`, 'success');
+      }
+      if (mr.skippedCount > 0) {
+        this.showSyncToast(`跳过 ${mr.skippedCount} 条重复操作`, 'warn');
+      }
+      if (mr.conflicts && mr.conflicts.length > 0) {
+        this.showSyncToast(`检测到 ${mr.conflicts.length} 个冲突，需要手动处理`, 'error');
+      }
+    }
+
     if (data.taskUpdated) {
       this.tasks = this.tasks.map(t =>
         t.id === data.taskUpdated.taskId ? {
@@ -3846,6 +3932,59 @@ export class App implements AfterViewChecked, OnInit {
         }
       }
     }
+    if (data.notificationUpdated) {
+      const nu = data.notificationUpdated;
+      if (nu.notificationId) {
+        this.updateNotificationStatus(nu.notificationId, nu.status, nu.remark);
+        if ((nu.status === '未接通' || nu.status === '稍后再拨')) {
+          const notif = this.phoneNotifications.find(n => n.id === nu.notificationId);
+          if (notif && this.shouldCreateAutoCallback(notif)) {
+            this.createAutoCallbackTask(notif, 1);
+          }
+        }
+      }
+    }
+  }
+
+  offlineDraftConflicts: any[] = [];
+  showDraftConflictPanel = false;
+
+  onDraftConflictsDetected(conflicts: any[]) {
+    this.offlineDraftConflicts = conflicts;
+    this.showDraftConflictPanel = true;
+  }
+
+  resolveDraftConflict(draftId: string, resolution: 'keep-local' | 'adopt-remote') {
+    this.volunteerDeliveryService.resolveDraftConflict(draftId, resolution);
+    this.offlineDraftConflicts = this.offlineDraftConflicts.filter(c => c.id !== draftId);
+    if (this.offlineDraftConflicts.length === 0) {
+      this.showDraftConflictPanel = false;
+    }
+    this.showSyncToast(
+      resolution === 'keep-local' ? '已保留本地修改' : '已采用远程版本',
+      'info'
+    );
+  }
+
+  resolveAllDraftConflicts(resolution: 'keep-local' | 'adopt-remote') {
+    for (const conflict of this.offlineDraftConflicts) {
+      this.volunteerDeliveryService.resolveDraftConflict(conflict.id, resolution);
+    }
+    const count = this.offlineDraftConflicts.length;
+    this.offlineDraftConflicts = [];
+    this.showDraftConflictPanel = false;
+    this.showSyncToast(
+      resolution === 'keep-local' ? `已保留 ${count} 个本地修改` : `已采用 ${count} 个远程版本`,
+      'info'
+    );
+  }
+
+  getConflictTypeLabel(type: string): string {
+    const labels: Record<string, string> = {
+      'status-override': '状态覆盖冲突',
+      'concurrent-modification': '并发修改冲突',
+    };
+    return labels[type] || type;
   }
 
   refreshDashboardData() {

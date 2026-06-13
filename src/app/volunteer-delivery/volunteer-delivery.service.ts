@@ -8,6 +8,11 @@ import {
   DeliveryStorageData,
   LS_DELIVERY_DATA_KEY,
   DELIVERY_STATUS_COLORS,
+  OfflineDeliveryDraft,
+  OfflineDraftType,
+  OfflineDraftStatus,
+  OfflineDraftMergeResult,
+  LS_OFFLINE_DRAFT_KEY,
 } from './volunteer-delivery.types';
 import { SYNC_INSTANCE, SyncConflictGroup, SyncNotification } from '../sync.service';
 
@@ -116,21 +121,36 @@ export type TaskWritebackResult = {
 @Injectable({ providedIn: 'root' })
 export class VolunteerDeliveryService implements OnDestroy {
   private storageData: DeliveryStorageData = {};
+  private offlineDrafts: OfflineDeliveryDraft[] = [];
+  private syncAvailable = true;
+  private lastSyncCheck = 0;
   private sync = SYNC_INSTANCE();
   private syncUnsub?: () => void;
+  private readonly SYNC_CHECK_INTERVAL = 5000;
+  private readonly ONLINE_CHECK_KEY = 'zfl-4-sync-online-check';
 
   constructor() {
     this.loadStorage();
+    this.loadOfflineDrafts();
     this.syncUnsub = this.sync.subscribe((n) => {
       if (n.type === 'conflicts' && n.conflicts) {
         const delivConflict = n.conflicts.find((c) => c.dataType === 'deliveryData');
         if (delivConflict) {
           this.resolveDeliveryConflicts(delivConflict);
         }
+        const draftConflict = n.conflicts.find((c) => c.dataType === 'offlineDeliveryDrafts');
+        if (draftConflict) {
+          this.resolveDraftConflicts(draftConflict);
+        }
       } else if (n.type === 'synced' && n.dataType === 'deliveryData') {
         this.loadStorage();
+      } else if (n.type === 'synced' && n.dataType === 'offlineDeliveryDrafts') {
+        this.loadOfflineDrafts();
+      } else if (n.type === 'error') {
+        this.syncAvailable = false;
       }
     });
+    this.startSyncMonitoring();
   }
 
   ngOnDestroy() {
@@ -576,5 +596,429 @@ export class VolunteerDeliveryService implements OnDestroy {
     this.storageData = merged;
     this.saveStorage();
     return merged;
+  }
+
+  private loadOfflineDrafts() {
+    const raw = this.sync.readLocalData<OfflineDeliveryDraft[]>('offlineDeliveryDrafts');
+    if (raw && Array.isArray(raw)) {
+      this.offlineDrafts = raw;
+    } else {
+      this.offlineDrafts = [];
+    }
+    this.sync.captureLocalSnapshot('offlineDeliveryDrafts', this.offlineDrafts);
+  }
+
+  private saveOfflineDrafts() {
+    this.sync.writeLocalData('offlineDeliveryDrafts', this.offlineDrafts);
+  }
+
+  private resolveDraftConflicts(group: SyncConflictGroup) {
+    const merged = this.sync.mergeConflicts(group, this.offlineDrafts);
+    this.offlineDrafts = merged;
+    this.saveOfflineDrafts();
+  }
+
+  private startSyncMonitoring() {
+    setInterval(() => this.checkSyncAvailability(), this.SYNC_CHECK_INTERVAL);
+    window.addEventListener('online', () => {
+      this.syncAvailable = true;
+      this.attemptMergePendingDrafts();
+    });
+    window.addEventListener('offline', () => {
+      this.syncAvailable = false;
+    });
+  }
+
+  private checkSyncAvailability(): boolean {
+    const now = Date.now();
+    if (now - this.lastSyncCheck < this.SYNC_CHECK_INTERVAL) {
+      return this.syncAvailable;
+    }
+    this.lastSyncCheck = now;
+
+    try {
+      const testKey = `${this.ONLINE_CHECK_KEY}-${this.sync.windowId}`;
+      const testValue = String(now);
+      localStorage.setItem(testKey, testValue);
+      const readBack = localStorage.getItem(testKey);
+      localStorage.removeItem(testKey);
+      this.syncAvailable = readBack === testValue && navigator.onLine !== false;
+    } catch {
+      this.syncAvailable = false;
+    }
+
+    return this.syncAvailable;
+  }
+
+  isSyncAvailable(): boolean {
+    return this.checkSyncAvailability();
+  }
+
+  getPendingDraftCount(): number {
+    return this.offlineDrafts.filter(d => d.draftStatus === 'pending').length;
+  }
+
+  getConflictDraftCount(): number {
+    return this.offlineDrafts.filter(d => d.draftStatus === 'conflict').length;
+  }
+
+  getOfflineDrafts(status?: OfflineDraftStatus): OfflineDeliveryDraft[] {
+    const drafts = [...this.offlineDrafts];
+    if (status) {
+      return drafts.filter(d => d.draftStatus === status);
+    }
+    return drafts;
+  }
+
+  getDraftsForTask(taskId: string): OfflineDeliveryDraft[] {
+    return this.offlineDrafts.filter(d => d.taskId === taskId && d.draftStatus !== 'synced' && d.draftStatus !== 'discarded');
+  }
+
+  private nowString(): string {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  }
+
+  private createOfflineDraft(
+    draftType: OfflineDraftType,
+    taskId: string,
+    date: string,
+    volunteerId: string,
+    data: Partial<OfflineDeliveryDraft>
+  ): OfflineDeliveryDraft {
+    const draft: OfflineDeliveryDraft = {
+      id: crypto.randomUUID(),
+      draftType,
+      taskId,
+      date,
+      volunteerId,
+      createdAt: this.nowString(),
+      draftStatus: 'pending',
+      ...data,
+    };
+    this.offlineDrafts.push(draft);
+    this.saveOfflineDrafts();
+    return draft;
+  }
+
+  createStatusUpdateDraft(
+    taskId: string,
+    date: string,
+    volunteerId: string,
+    status: DeliveryStatus,
+    exceptionNote: string = ''
+  ): OfflineDeliveryDraft {
+    return this.createOfflineDraft('status-update', taskId, date, volunteerId, {
+      deliveryStatus: status,
+      exceptionNote,
+    });
+  }
+
+  createExceptionNoteDraft(
+    taskId: string,
+    date: string,
+    volunteerId: string,
+    exceptionNote: string
+  ): OfflineDeliveryDraft {
+    return this.createOfflineDraft('exception-note', taskId, date, volunteerId, {
+      exceptionNote,
+    });
+  }
+
+  createPhoneCallResultDraft(
+    taskId: string,
+    date: string,
+    volunteerId: string,
+    phoneNotificationId: string,
+    result: '已通知' | '未接通' | '稍后再拨',
+    remark: string = ''
+  ): OfflineDeliveryDraft {
+    return this.createOfflineDraft('phone-call-result', taskId, date, volunteerId, {
+      phoneNotificationId,
+      phoneCallResult: result,
+      phoneCallRemark: remark,
+    });
+  }
+
+  createVisitReminderHandledDraft(
+    taskId: string,
+    date: string,
+    volunteerId: string,
+    note: string = ''
+  ): OfflineDeliveryDraft {
+    return this.createOfflineDraft('visit-reminder-handled', taskId, date, volunteerId, {
+      visitReminderHandled: true,
+      visitReminderNote: note,
+    });
+  }
+
+  private isStatusProtected(currentStatus: DeliveryStatus, newStatus: DeliveryStatus): boolean {
+    if (currentStatus === '已送达' && newStatus !== '已送达') {
+      return true;
+    }
+    return false;
+  }
+
+  private getLatestDraftForTask(taskId: string, drafts: OfflineDeliveryDraft[]): OfflineDeliveryDraft | null {
+    const taskDrafts = drafts.filter(d => d.taskId === taskId && d.draftType === 'status-update');
+    if (taskDrafts.length === 0) return null;
+    return taskDrafts.sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )[0];
+  }
+
+  detectDraftConflicts(
+    tasks: MealTask[],
+    existingExceptions: ExceptionRecord[],
+    existingNotifications: PhoneNotification[]
+  ): OfflineDeliveryDraft[] {
+    const conflicts: OfflineDeliveryDraft[] = [];
+    const pendingDrafts = this.offlineDrafts.filter(d => d.draftStatus === 'pending');
+
+    for (const draft of pendingDrafts) {
+      if (draft.draftType === 'status-update' && draft.deliveryStatus) {
+        const task = tasks.find(t => t.id === draft.taskId);
+        if (task) {
+          if (this.isStatusProtected(task.status as DeliveryStatus, draft.deliveryStatus)) {
+            draft.draftStatus = 'conflict';
+            draft.conflictInfo = {
+              remoteStatus: task.status as DeliveryStatus,
+              conflictType: 'status-override',
+            };
+            conflicts.push(draft);
+            continue;
+          }
+        }
+
+        const stored = this.getStoredStatus(draft.date, draft.taskId);
+        if (stored.status && stored.status !== '待配送') {
+          const storedTime = stored.statusUpdatedAt ? new Date(stored.statusUpdatedAt).getTime() : 0;
+          const draftTime = new Date(draft.createdAt).getTime();
+          if (storedTime > draftTime && this.isStatusProtected(stored.status, draft.deliveryStatus)) {
+            draft.draftStatus = 'conflict';
+            draft.conflictInfo = {
+              remoteStatus: stored.status,
+              remoteUpdatedAt: stored.statusUpdatedAt,
+              conflictType: 'concurrent-modification',
+            };
+            conflicts.push(draft);
+          }
+        }
+      }
+    }
+
+    if (conflicts.length > 0) {
+      this.saveOfflineDrafts();
+    }
+
+    return conflicts;
+  }
+
+  resolveDraftConflict(draftId: string, resolution: 'keep-local' | 'adopt-remote') {
+    const draft = this.offlineDrafts.find(d => d.id === draftId);
+    if (!draft) return;
+
+    if (resolution === 'adopt-remote') {
+      draft.draftStatus = 'discarded';
+    } else if (draft.conflictInfo) {
+      draft.conflictInfo.resolution = 'keep-local';
+      draft.draftStatus = 'pending';
+    }
+
+    this.saveOfflineDrafts();
+  }
+
+  attemptMergePendingDrafts(
+    tasks?: MealTask[],
+    elders?: Elder[],
+    existingExceptions?: ExceptionRecord[],
+    existingNotifications?: PhoneNotification[]
+  ): OfflineDraftMergeResult {
+    const result: OfflineDraftMergeResult = {
+      conflicts: [],
+      mergedCount: 0,
+      skippedCount: 0,
+    };
+
+    if (!this.isSyncAvailable()) {
+      return result;
+    }
+
+    let pendingDrafts = this.offlineDrafts.filter(d => d.draftStatus === 'pending');
+    pendingDrafts.sort((a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    if (tasks && existingExceptions && existingNotifications) {
+      const conflicts = this.detectDraftConflicts(tasks, existingExceptions, existingNotifications);
+      result.conflicts = conflicts;
+      pendingDrafts = pendingDrafts.filter(d => d.draftStatus === 'pending');
+    }
+
+    const processedTaskIds = new Set<string>();
+
+    for (const draft of pendingDrafts) {
+      if (processedTaskIds.has(draft.taskId) && draft.draftType === 'status-update') {
+        const latest = this.getLatestDraftForTask(draft.taskId, pendingDrafts);
+        if (latest && latest.id !== draft.id) {
+          draft.draftStatus = 'discarded';
+          result.skippedCount++;
+          continue;
+        }
+      }
+
+      const mergeSuccess = this.mergeSingleDraft(draft, tasks, elders, existingExceptions, existingNotifications, result);
+      if (mergeSuccess) {
+        draft.draftStatus = 'synced';
+        draft.syncedAt = this.nowString();
+        result.mergedCount++;
+        processedTaskIds.add(draft.taskId);
+      } else {
+        result.skippedCount++;
+      }
+    }
+
+    this.saveOfflineDrafts();
+    return result;
+  }
+
+  private mergeSingleDraft(
+    draft: OfflineDeliveryDraft,
+    tasks?: MealTask[],
+    elders?: Elder[],
+    existingExceptions?: ExceptionRecord[],
+    existingNotifications?: PhoneNotification[],
+    result?: OfflineDraftMergeResult
+  ): boolean {
+    switch (draft.draftType) {
+      case 'status-update':
+        return this.mergeStatusUpdateDraft(draft, tasks, elders, existingExceptions, existingNotifications, result);
+      case 'exception-note':
+        return this.mergeExceptionNoteDraft(draft, tasks);
+      case 'phone-call-result':
+        return this.mergePhoneCallResultDraft(draft, existingNotifications, result);
+      case 'visit-reminder-handled':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  private mergeStatusUpdateDraft(
+    draft: OfflineDeliveryDraft,
+    tasks?: MealTask[],
+    elders?: Elder[],
+    existingExceptions?: ExceptionRecord[],
+    existingNotifications?: PhoneNotification[],
+    result?: OfflineDraftMergeResult
+  ): boolean {
+    if (!draft.deliveryStatus) return false;
+
+    const updateResult = this.updateDeliveryStatus(
+      draft.date,
+      draft.taskId,
+      draft.deliveryStatus,
+      draft.exceptionNote || ''
+    );
+
+    if (result) {
+      if (updateResult.taskUpdated) {
+        result.taskUpdated = {
+          taskId: updateResult.taskUpdated.id,
+          status: updateResult.taskUpdated.status,
+          exception: updateResult.taskUpdated.exception,
+        };
+      }
+
+      const isException = draft.deliveryStatus === '异常' || draft.deliveryStatus === '未接通';
+      const task = tasks?.find(t => t.id === draft.taskId);
+      const elder = elders?.find(e => e.id === task?.elderId);
+
+      if (isException && task && elder && existingExceptions && existingNotifications) {
+        const stored = this.getStoredStatus(draft.date, draft.taskId);
+        if (!stored.exceptionRecorded) {
+          const exc = this.createDeliveryExceptionRecord(task, elder, draft.deliveryStatus, draft.exceptionNote || '');
+          const isDuplicate = existingExceptions.some(r =>
+            r.taskId === exc.taskId && r.source === exc.source
+          );
+          if (!isDuplicate) {
+            result.exceptionCreated = exc;
+            this.markDeliveryExceptionRecorded(draft.date, draft.taskId);
+          }
+        }
+        if (!stored.notificationAdded) {
+          const notif = this.createDeliveryPhoneNotification(task, elder, draft.deliveryStatus, draft.exceptionNote || '');
+          const isDuplicate = existingNotifications.some(n =>
+            n.taskId === notif.taskId && n.source === notif.source && n.targetId === notif.targetId
+          );
+          if (!isDuplicate) {
+            result.notificationCreated = notif;
+            this.markDeliveryNotificationAdded(draft.date, draft.taskId);
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+
+  private mergeExceptionNoteDraft(
+    draft: OfflineDeliveryDraft,
+    tasks?: MealTask[]
+  ): boolean {
+    if (!draft.exceptionNote) return false;
+
+    const existing = this.getStoredStatus(draft.date, draft.taskId);
+    this.setStoredStatus(draft.date, draft.taskId, {
+      ...existing,
+      exceptionNote: draft.exceptionNote,
+    });
+
+    return true;
+  }
+
+  private mergePhoneCallResultDraft(
+    draft: OfflineDeliveryDraft,
+    existingNotifications?: PhoneNotification[],
+    result?: OfflineDraftMergeResult
+  ): boolean {
+    if (!draft.phoneNotificationId || !draft.phoneCallResult) return false;
+
+    if (result) {
+      result.notificationUpdated = {
+        notificationId: draft.phoneNotificationId,
+        status: draft.phoneCallResult,
+        remark: draft.phoneCallRemark,
+      };
+    }
+
+    return true;
+  }
+
+  clearSyncedDrafts() {
+    this.offlineDrafts = this.offlineDrafts.filter(d => d.draftStatus !== 'synced' && d.draftStatus !== 'discarded');
+    this.saveOfflineDrafts();
+  }
+
+  discardDraft(draftId: string) {
+    const draft = this.offlineDrafts.find(d => d.id === draftId);
+    if (draft) {
+      draft.draftStatus = 'discarded';
+      this.saveOfflineDrafts();
+    }
+  }
+
+  getDraftSummary(): {
+    pending: number;
+    synced: number;
+    conflict: number;
+    discarded: number;
+  } {
+    return {
+      pending: this.offlineDrafts.filter(d => d.draftStatus === 'pending').length,
+      synced: this.offlineDrafts.filter(d => d.draftStatus === 'synced').length,
+      conflict: this.offlineDrafts.filter(d => d.draftStatus === 'conflict').length,
+      discarded: this.offlineDrafts.filter(d => d.draftStatus === 'discarded').length,
+    };
   }
 }

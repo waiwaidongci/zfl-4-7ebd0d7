@@ -9,6 +9,33 @@
 
 <ng-container *ngIf="viewMode === 'delivery' && summary">
   <div class="mobile-delivery-wrapper">
+    <div class="sync-status-bar" [class.offline]="!isOnline">
+      <div class="sync-status-indicator">
+        <span class="sync-dot" [class.online]="isOnline" [class.offline]="!isOnline"></span>
+        <span class="sync-label">{{ isOnline ? '✓ 同步正常' : '⚠️ 离线模式' }}</span>
+      </div>
+      <div class="sync-draft-info">
+        <span class="draft-count" *ngIf="pendingDraftCount > 0">
+          📝 {{ pendingDraftCount }} 条待同步
+        </span>
+        <span class="conflict-count" *ngIf="conflictDraftCount > 0">
+          ⚠️ {{ conflictDraftCount }} 个冲突
+        </span>
+      </div>
+      <button
+        type="button"
+        class="sync-now-btn"
+        *ngIf="pendingDraftCount > 0 && isOnline"
+        (click)="tryMergeDrafts()"
+      >
+        立即同步
+      </button>
+    </div>
+
+    <div class="sync-toast" *ngIf="lastSyncMessage" [class.success]="!lastSyncMessage.includes('冲突')">
+      {{ lastSyncMessage }}
+    </div>
+
     <div class="mobile-header">
       <button type="button" class="back-btn" (click)="onBackToSelector()">← 选择志愿者</button>
       <div class="volunteer-info">
@@ -143,10 +170,13 @@
       [task]="getCurrentTask()"
       [index]="selectedTaskIndex"
       [total]="summary.tasks.length"
+      [isOnline]="isOnline"
       (updateStatus)="onUpdateTaskStatus($event)"
       (prevTask)="onPrevTask()"
       (nextTask)="onNextTask()"
       (backToList)="onBackToList()"
+      (phoneCallResult)="onPhoneCallResult($event)"
+      (visitReminderHandled)="onVisitReminderHandled($event)"
     ></app-delivery-detail>
 
     <div class="empty-section" *ngIf="summary.totalTasks === 0">

@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { LS_PREP_DATA_KEY } from './meal-prep/meal-prep.types';
-import { LS_DELIVERY_DATA_KEY } from './volunteer-delivery/volunteer-delivery.types';
+import { LS_DELIVERY_DATA_KEY, LS_OFFLINE_DRAFT_KEY } from './volunteer-delivery/volunteer-delivery.types';
 
 export type SyncDataType =
   | 'elders'
@@ -14,7 +14,8 @@ export type SyncDataType =
   | 'kanbanSort'
   | 'prepData'
   | 'deliveryData'
-  | 'temporaryDeliveryChanges';
+  | 'temporaryDeliveryChanges'
+  | 'offlineDeliveryDrafts';
 
 export const LS_KEY_MAP: Record<SyncDataType, string> = {
   elders: 'zfl-4-elders',
@@ -29,6 +30,7 @@ export const LS_KEY_MAP: Record<SyncDataType, string> = {
   prepData: LS_PREP_DATA_KEY,
   deliveryData: LS_DELIVERY_DATA_KEY,
   temporaryDeliveryChanges: 'zfl-4-temp-delivery-changes',
+  offlineDeliveryDrafts: LS_OFFLINE_DRAFT_KEY,
 };
 
 export type ConflictResolution = 'keep-local' | 'adopt-remote' | 'field-level';
@@ -87,6 +89,7 @@ const DATA_TYPE_LABELS: Record<SyncDataType, string> = {
   prepData: '备餐本地状态',
   deliveryData: '配送本地状态',
   temporaryDeliveryChanges: '临时送餐变更',
+  offlineDeliveryDrafts: '离线配送草稿',
 };
 
 @Injectable({ providedIn: 'root' })
@@ -488,6 +491,7 @@ export class MultiWindowSyncService implements OnDestroy {
       case 'phoneNotifications': return new Set(['updatedAt']);
       case 'callbackTasks': return new Set(['updatedAt']);
       case 'visitRecords': return new Set(['createdAt']);
+      case 'offlineDeliveryDrafts': return new Set(['syncedAt', 'status']);
       default: return new Set();
     }
   }
@@ -510,6 +514,8 @@ export class MultiWindowSyncService implements OnDestroy {
         return `${record?.date} 通知#${record?.id?.slice(-4)}`;
       case 'callbackTasks':
         return `${record?.date} 回拨#${record?.id?.slice(-4)}`;
+      case 'offlineDeliveryDrafts':
+        return `${record?.date} 草稿#${record?.id?.slice(-4)} ${record?.draftType}`;
       default:
         return `#${record?.id?.slice(-4) || 'unknown'}`;
     }

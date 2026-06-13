@@ -63,6 +63,62 @@
       <span class="action-hint" *ngIf="task.elder.contact">拨打电话</span>
     </div>
 
+    <div class="phone-call-result-modal" *ngIf="showPhoneCallResult">
+      <div class="modal-overlay" (click)="cancelPhoneCallResult()"></div>
+      <div class="modal-content">
+        <h4>📞 记录电话拨打结果</h4>
+        <div class="result-options">
+          <label class="result-option">
+            <input type="radio" name="phoneResult" [(ngModel)]="phoneCallResultValue" value="已通知" />
+            <span>已通知</span>
+          </label>
+          <label class="result-option">
+            <input type="radio" name="phoneResult" [(ngModel)]="phoneCallResultValue" value="未接通" />
+            <span>未接通</span>
+          </label>
+          <label class="result-option">
+            <input type="radio" name="phoneResult" [(ngModel)]="phoneCallResultValue" value="稍后再拨" />
+            <span>稍后再拨</span>
+          </label>
+        </div>
+        <div class="remark-input">
+          <label>备注说明</label>
+          <textarea [(ngModel)]="phoneCallRemark" placeholder="请输入备注说明（可选）" rows="2"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="ghost" (click)="cancelPhoneCallResult()">取消</button>
+          <button type="button" class="primary" (click)="confirmPhoneCallResult()">确认记录</button>
+        </div>
+        <p class="offline-hint" *ngIf="!isOnline" style="color: #d9a84a; margin-top: 10px; font-size: 12px;">
+          ⚠️ 当前同步不可用，结果将保存为草稿待同步
+        </p>
+      </div>
+    </div>
+
+    <div class="visit-reminder-section" *ngIf="task.visitReminder">
+      <button type="button" class="visit-handle-btn" (click)="markVisitReminderHandled()">
+        ✅ 标记回访提醒已处理
+      </button>
+    </div>
+
+    <div class="visit-reminder-modal" *ngIf="showVisitReminderNote">
+      <div class="modal-overlay" (click)="cancelVisitReminderHandled()"></div>
+      <div class="modal-content">
+        <h4>📝 记录回访处理情况</h4>
+        <div class="remark-input">
+          <label>处理说明</label>
+          <textarea [(ngModel)]="visitReminderNote" placeholder="请输入回访处理情况（可选）" rows="3"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="ghost" (click)="cancelVisitReminderHandled()">取消</button>
+          <button type="button" class="primary" (click)="confirmVisitReminderHandled()">确认标记</button>
+        </div>
+        <p class="offline-hint" *ngIf="!isOnline" style="color: #d9a84a; margin-top: 10px; font-size: 12px;">
+          ⚠️ 当前同步不可用，结果将保存为草稿待同步
+        </p>
+      </div>
+    </div>
+
     <div class="tag-section" *ngIf="task.elder.mealTags.length > 0">
       <label>🍽️ 餐食标签</label>
       <div class="tag-row">

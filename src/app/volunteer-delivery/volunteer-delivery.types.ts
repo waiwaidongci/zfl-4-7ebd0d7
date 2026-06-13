@@ -102,3 +102,48 @@ export type DeliveryStorageData = Record<
 >;
 
 export type DeliveryViewMode = 'selector' | 'delivery';
+
+export const LS_OFFLINE_DRAFT_KEY = 'zfl-4-offline-delivery-drafts';
+
+export type OfflineDraftType =
+  | 'status-update'
+  | 'exception-note'
+  | 'phone-call-result'
+  | 'visit-reminder-handled';
+
+export type OfflineDraftStatus = 'pending' | 'syncing' | 'synced' | 'conflict' | 'discarded';
+
+export type OfflineDeliveryDraft = {
+  id: string;
+  draftType: OfflineDraftType;
+  taskId: string;
+  date: string;
+  volunteerId: string;
+  deliveryStatus?: DeliveryStatus;
+  exceptionNote?: string;
+  phoneNotificationId?: string;
+  phoneCallResult?: '已通知' | '未接通' | '稍后再拨';
+  phoneCallRemark?: string;
+  visitReminderHandled?: boolean;
+  visitReminderNote?: string;
+  createdAt: string;
+  syncedAt?: string;
+  draftStatus: OfflineDraftStatus;
+  conflictInfo?: {
+    remoteStatus?: DeliveryStatus;
+    remoteUpdatedAt?: string;
+    conflictType: 'status-override' | 'concurrent-modification';
+    resolution?: 'keep-local' | 'adopt-remote';
+  };
+};
+
+export type OfflineDraftMergeResult = {
+  taskUpdated?: { taskId: string; status: any; exception: string };
+  exceptionCreated?: any;
+  notificationCreated?: any;
+  notificationUpdated?: { notificationId: string; status: any; remark?: string };
+  callbackCreated?: any;
+  conflicts: OfflineDeliveryDraft[];
+  mergedCount: number;
+  skippedCount: number;
+};
