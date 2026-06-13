@@ -98,14 +98,14 @@ export class ClosureDashboardService {
         prepMissingNote: prepData?.missingNote || '',
         deliveryStatus: isPaused ? '' : (deliveryData?.status || ''),
         deliveryExceptionNote: deliveryData?.exceptionNote || '',
-        currentStage: this.determineCurrentStage(task, prepData?.status, deliveryData?.status, elderExceptions, lastVisit, isPaused),
+        currentStage: this.determineCurrentStage(task, prepData?.status, deliveryData?.status, elderExceptions, lastVisit, isPaused, date),
         exceptionRecords: elderExceptions,
         hasUnresolvedException: elderExceptions.some((e) => e.status !== '已解决'),
         phoneNotifications: elderNotifications,
         callbackTasks: elderCallbacks,
         hasPendingCallback: elderCallbacks.some((c) => c.status === '待回拨' || c.status === '回拨中'),
         lastVisit,
-        visitReminder: this.needsVisitReminder(lastVisit),
+        visitReminder: this.needsVisitReminder(lastVisit, date),
         createdAt: task?.id ? task.id.split('-').slice(0, 3).join('-') : date,
         assignedAt: task?.volunteerId ? date : '',
       };
@@ -127,7 +127,7 @@ export class ClosureDashboardService {
     const tempChange = tempChanges.find((tc) => tc.elderId === elderId);
 
     let tagIds: string[] = [];
-    if (tempChange?.mealTagIds && tempChange.mealTagIds.length > 0) {
+    if (tempChange?.mealTagIds !== undefined) {
       tagIds = tempChange.mealTagIds;
     } else {
       tagIds = elder?.mealTags || [];
@@ -145,7 +145,7 @@ export class ClosureDashboardService {
     const elder = elders.find((e) => e.id === elderId);
     const tempChange = tempChanges.find((tc) => tc.elderId === elderId);
 
-    if (tempChange?.specialMealNote) {
+    if (tempChange?.specialMealNote !== undefined) {
       return tempChange.specialMealNote;
     }
     return elder?.specialMealNote || '';
@@ -160,7 +160,7 @@ export class ClosureDashboardService {
     const elder = elders.find((e) => e.id === elderId);
     const tempChange = tempChanges.find((tc) => tc.elderId === elderId);
 
-    if (tempChange?.address) {
+    if (tempChange?.address !== undefined) {
       return tempChange.address;
     }
     return elder?.address || '';
@@ -175,7 +175,7 @@ export class ClosureDashboardService {
     const elder = elders.find((e) => e.id === elderId);
     const tempChange = tempChanges.find((tc) => tc.elderId === elderId);
 
-    if (tempChange?.contact) {
+    if (tempChange?.contact !== undefined) {
       return tempChange.contact;
     }
     return elder?.contact || '';
@@ -197,7 +197,8 @@ export class ClosureDashboardService {
     deliveryStatus: DeliveryStatus | undefined,
     exceptions: ExceptionRecord[],
     lastVisit: VisitRecord | undefined,
-    isPaused: boolean
+    isPaused: boolean,
+    date: string
   ): TaskStage {
     if (isPaused || !task) return '任务生成';
 
@@ -205,7 +206,7 @@ export class ClosureDashboardService {
     if (hasUnresolvedException) return '异常处置';
 
     if (deliveryStatus === '已送达' || task.status === '已送达') {
-      return this.needsVisitReminder(lastVisit) ? '回访关注' : '配送阶段';
+      return this.needsVisitReminder(lastVisit, date) ? '回访关注' : '配送阶段';
     }
 
     if (deliveryStatus === '配送中' || deliveryStatus === '异常' || deliveryStatus === '未接通' || task.status === '配送中' || task.status === '异常') {
@@ -223,11 +224,11 @@ export class ClosureDashboardService {
     return '自动分配';
   }
 
-  private needsVisitReminder(lastVisit: VisitRecord | undefined): boolean {
+  private needsVisitReminder(lastVisit: VisitRecord | undefined, asOfDate: string): boolean {
     if (!lastVisit) return true;
 
     const visitDate = new Date(lastVisit.visitDate);
-    const now = new Date();
+    const now = new Date(asOfDate);
     const diffDays = Math.floor((now.getTime() - visitDate.getTime()) / (1000 * 60 * 60 * 24));
 
     return diffDays >= 7;

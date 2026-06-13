@@ -6,7 +6,9 @@
     "start": "ng serve --host 0.0.0.0 --port 5174",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "dev": "ng serve --host 0.0.0.0 --port 5174"
+    "dev": "ng serve --host 0.0.0.0 --port 5174",
+    "test": "ng test",
+    "test:ci": "ng test --watch=false --browsers=ChromeHeadless"
   },
   "prettier": {
     "printWidth": 100,
@@ -33,9 +35,16 @@
     "zone.js": "~0.15.0"
   },
   "devDependencies": {
+    "@angular-devkit/build-angular": "^20.3.28",
     "@angular/build": "^20.3.27",
     "@angular/cli": "^20.3.27",
     "@angular/compiler-cli": "^20.3.0",
+    "@angular/platform-browser-dynamic": "^21.2.17",
+    "@types/jasmine": "^5.1.15",
+    "jasmine": "^5.13.0",
+    "karma": "^6.4.4",
+    "karma-chrome-launcher": "^3.2.0",
+    "karma-jasmine": "^5.1.0",
     "typescript": "~5.9.2"
   }
 }
