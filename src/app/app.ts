@@ -4814,14 +4814,15 @@ export class App implements AfterViewChecked, OnInit {
     }
     if (!confirm(`确认清理 ${expired.length} 条已过期的临时变更？\n这些变更日期已过，不再影响任何排班数据。`)) return;
 
-    const batchImpact = this.mealPrepService.onTempChangesCancelledBatch(expired);
+    const elderIdToTaskIdMap = this.buildElderIdDateTaskIdMap();
+    const batchImpact = this.mealPrepService.onTempChangesCancelledBatch(expired, elderIdToTaskIdMap);
     if (batchImpact.size > 0) {
       const dateTaskMap = new Map<string, string[]>();
-      for (const [, taskIds] of batchImpact) {
-        for (const tid of taskIds) {
-          const tc = expired.find(c => batchImpact.get(c.id)?.includes(tid));
-          if (tc) {
-            if (!dateTaskMap.has(tc.date)) dateTaskMap.set(tc.date, []);
+      for (const [changeId, taskIds] of batchImpact) {
+        const tc = expired.find(c => c.id === changeId);
+        if (tc) {
+          if (!dateTaskMap.has(tc.date)) dateTaskMap.set(tc.date, []);
+          for (const tid of taskIds) {
             if (!dateTaskMap.get(tc.date)!.includes(tid)) {
               dateTaskMap.get(tc.date)!.push(tid);
             }

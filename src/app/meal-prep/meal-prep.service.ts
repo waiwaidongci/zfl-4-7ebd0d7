@@ -853,32 +853,19 @@ export class MealPrepService {
 
   onTempChangeCancelled(change: TemporaryDeliveryChange, elderIdToTaskIdMap?: Map<string, Map<string, string>>): string[] {
     const cleanedTaskIds: string[] = [];
-    const taskIdByElderAndDate = elderIdToTaskIdMap?.get(change.elderId)?.get(change.date);
-    if (taskIdByElderAndDate) {
-      const stored = this.getStoredStatus(change.date, taskIdByElderAndDate);
-      if (stored.status === '备餐中' || stored.status === '缺餐异常') {
-        cleanedTaskIds.push(taskIdByElderAndDate);
-      }
-      return cleanedTaskIds;
-    }
-    const dateMap = this.storageData[change.date];
-    if (!dateMap) return cleanedTaskIds;
-    for (const taskId of Object.keys(dateMap)) {
-      const stored = dateMap[taskId];
-      const tcAffectsPrep = change.mealTagIds !== undefined ||
-        change.specialMealNote !== undefined ||
-        change.address !== undefined;
-      if (tcAffectsPrep && (stored.status === '备餐中' || stored.status === '缺餐异常')) {
-        cleanedTaskIds.push(taskId);
-      }
+    const taskId = elderIdToTaskIdMap?.get(change.elderId)?.get(change.date);
+    if (!taskId) return cleanedTaskIds;
+    const stored = this.getStoredStatus(change.date, taskId);
+    if (stored.status === '备餐中' || stored.status === '缺餐异常') {
+      cleanedTaskIds.push(taskId);
     }
     return cleanedTaskIds;
   }
 
-  onTempChangesCancelledBatch(changes: TemporaryDeliveryChange[]): Map<string, string[]> {
+  onTempChangesCancelledBatch(changes: TemporaryDeliveryChange[], elderIdToTaskIdMap?: Map<string, Map<string, string>>): Map<string, string[]> {
     const result = new Map<string, string[]>();
     for (const change of changes) {
-      const cleaned = this.onTempChangeCancelled(change);
+      const cleaned = this.onTempChangeCancelled(change, elderIdToTaskIdMap);
       if (cleaned.length > 0) {
         result.set(change.id, cleaned);
       }
