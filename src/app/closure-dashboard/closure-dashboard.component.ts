@@ -669,10 +669,6 @@ export class ClosureDashboardComponent implements OnInit, OnChanges, OnDestroy {
     return this.stageTimeline.find((s) => s.stage === stage);
   }
 
-  quickAssignVolunteer(row: ClosureTaskRow) {
-    this.detailVolunteerId = row.volunteerId;
-  }
-
   confirmAssignVolunteer(row: ClosureTaskRow) {
     if (row.taskId.startsWith('paused-')) return;
 

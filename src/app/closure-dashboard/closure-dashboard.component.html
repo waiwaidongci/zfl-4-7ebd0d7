@@ -158,7 +158,7 @@
             <span class="filter-badge" *ngIf="filters.mealTagIds.length > 0">{{ filters.mealTagIds.length }}</span>
             <span class="dd-arrow">▼</span>
           </button>
-          <div class="dropdown-panel">
+          <div class="dropdown-panel" *ngIf="dropdownOpen.mealTag">
             <label class="chk-item" *ngFor="let tag of availableFilters.mealTags">
               <input type="checkbox" [checked]="filters.mealTagIds.includes(tag.id)" (change)="toggleMealTagFilter(tag.id)" />
               <span class="tag-chip sm" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
@@ -173,7 +173,7 @@
             <span class="filter-badge" *ngIf="filters.exceptionSources.length > 0">{{ filters.exceptionSources.length }}</span>
             <span class="dd-arrow">▼</span>
           </button>
-          <div class="dropdown-panel">
+          <div class="dropdown-panel" *ngIf="dropdownOpen.excSource">
             <label class="chk-item" *ngFor="let src of availableFilters.exceptionSources">
               <input type="checkbox" [checked]="filters.exceptionSources.includes(src)" (change)="toggleExceptionSource(src)" />
               <span>{{ src }}</span>
@@ -188,7 +188,7 @@
             <span class="filter-badge" *ngIf="filters.exceptionStatuses.length > 0">{{ filters.exceptionStatuses.length }}</span>
             <span class="dd-arrow">▼</span>
           </button>
-          <div class="dropdown-panel">
+          <div class="dropdown-panel" *ngIf="dropdownOpen.excStatus">
             <label class="chk-item" *ngFor="let st of availableFilters.exceptionStatuses">
               <input type="checkbox" [checked]="filters.exceptionStatuses.includes(st)" (change)="toggleExceptionStatus(st)" />
               <span>{{ st }}</span>
@@ -203,7 +203,7 @@
             <span class="filter-badge" *ngIf="filters.prepStatuses.length > 0">{{ filters.prepStatuses.length }}</span>
             <span class="dd-arrow">▼</span>
           </button>
-          <div class="dropdown-panel">
+          <div class="dropdown-panel" *ngIf="dropdownOpen.prepStatus">
             <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('待备餐')" (change)="togglePrepStatus('待备餐')" /><span>待备餐</span></label>
             <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('备餐中')" (change)="togglePrepStatus('备餐中')" /><span>备餐中</span></label>
             <label class="chk-item"><input type="checkbox" [checked]="filters.prepStatuses.includes('已完成')" (change)="togglePrepStatus('已完成')" /><span>已完成</span></label>
@@ -217,7 +217,7 @@
             <span class="filter-badge" *ngIf="filters.deliveryStatuses.length > 0">{{ filters.deliveryStatuses.length }}</span>
             <span class="dd-arrow">▼</span>
           </button>
-          <div class="dropdown-panel">
+          <div class="dropdown-panel" *ngIf="dropdownOpen.deliveryStatus">
             <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('待配送')" (change)="toggleDeliveryStatus('待配送')" /><span>待配送</span></label>
             <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('配送中')" (change)="toggleDeliveryStatus('配送中')" /><span>配送中</span></label>
             <label class="chk-item"><input type="checkbox" [checked]="filters.deliveryStatuses.includes('已送达')" (change)="toggleDeliveryStatus('已送达')" /><span>已送达</span></label>
@@ -400,7 +400,7 @@
         <div class="detail-row">
           <label>分配志愿者</label>
           <div class="field-group">
-            <select [(ngModel)]="detailVolunteerId" (change)="quickAssignVolunteer(selectedRow)">
+            <select [(ngModel)]="detailVolunteerId">
               <option value="">未分配</option>
               <option *ngFor="let v of volunteers" [value]="v.id">
                 {{ v.name }} · {{ v.area }} ({{ assignedCount(v.id) }}单)
