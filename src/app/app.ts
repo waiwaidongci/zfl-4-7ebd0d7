@@ -3972,9 +3972,14 @@ export class App implements AfterViewChecked, OnInit {
       ];
     }
 
-    this.applyTempChangeToTasks(this.tempChangeFormElderId, form.date);
+    if (!this.tempChangeConflictInfo || this.tempChangeConflictResolution === 'overwrite-task') {
+      this.applyTempChangeToTasks(this.tempChangeFormElderId, form.date);
+    } else if (this.tempChangeConflictResolution === 'keep-both') {
+      this.markTaskTempChangeConflict(this.tempChangeFormElderId, form.date);
+    }
     this.saveTempChanges();
     this.tempChangeConflictInfo = null;
+    this.tempChangeConflictResolution = 'keep-both';
     this.editingTempChangeId = null;
     this.tempChangeForm = { date: today, reason: '' };
   }
@@ -4004,6 +4009,13 @@ export class App implements AfterViewChecked, OnInit {
       });
       this.save();
     }
+  }
+
+  private markTaskTempChangeConflict(elderId: string, date: string) {
+    const task = this.tasks.find(t => t.elderId === elderId && t.date === date);
+    if (!task) return;
+    this.tasks = this.tasks.map(t => t.id === task.id ? { ...t, isManuallyModified: true } : t);
+    this.save();
   }
 
   applyTempChangeToElderRef(elder: Elder, date: string): Elder {
@@ -4504,8 +4516,9 @@ export class App implements AfterViewChecked, OnInit {
         this.callbackTasks,
         (c) => this.sync.buildDedupKeyForCallback({ notificationId: c.notificationId, status: c.status })
       );
+      this.temporaryDeliveryChanges = mergeById(this.temporaryDeliveryChanges, backup.temporaryDeliveryChanges || []);
       this.save(); this.saveKanbanSort(); this.saveMealTags(); this.saveExceptions();
-      this.saveVisits(); this.savePhoneNotifications(); this.saveCallbackTasks();
+      this.saveVisits(); this.savePhoneNotifications(); this.saveCallbackTasks(); this.saveTempChanges();
       this.finalizeImportComplete();
     }
 
@@ -4550,6 +4563,10 @@ export class App implements AfterViewChecked, OnInit {
       case 'kanbanSort':
         this.kanbanSort = this.sync.mergeConflicts(group, this.kanbanSort) as KanbanSortMap;
         this.saveKanbanSort();
+        break;
+      case 'temporaryDeliveryChanges':
+        this.temporaryDeliveryChanges = this.sync.mergeConflicts(group, this.temporaryDeliveryChanges) as TemporaryDeliveryChange[];
+        this.saveTempChanges();
         break;
       case 'prepData':
         this.mealPrepService.mergeResolvedConflicts(group);
@@ -4926,7 +4943,7 @@ export class App implements AfterViewChecked, OnInit {
 
     const totalCount = backup.elders.length + backup.volunteers.length + backup.tasks.length
       + backup.mealTags.length + backup.exceptionRecords.length + backup.visitRecords.length
-      + backup.phoneNotifications.length + backup.callbackTasks.length
+      + backup.phoneNotifications.length + backup.callbackTasks.length + (backup.temporaryDeliveryChanges || []).length
       + nestedStatusCount(backup.prepData) + nestedStatusCount(backup.deliveryData);
 
     if (totalCount === 0) {
