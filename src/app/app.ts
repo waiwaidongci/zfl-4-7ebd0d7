@@ -249,6 +249,10 @@ type SimulationData = {
   kanbanSort: KanbanSortMap;
   autoAssignResults: Record<string, AutoAssignResult>;
   dayStats: Record<string, DaySimulationStats>;
+  baselineTasks: MealTask[];
+  baselineElders: Elder[];
+  baselineTempChanges: TemporaryDeliveryChange[];
+  baselineKanbanSort: KanbanSortMap;
 };
 
 type SimDiffTaskItem = {
@@ -4194,6 +4198,81 @@ export class App implements AfterViewChecked, OnInit {
     return dates;
   }
 
+  private cloneTasks(tasks: MealTask[]): MealTask[] {
+    return tasks.map((task) => ({ ...task }));
+  }
+
+  private cloneElders(elders: Elder[]): Elder[] {
+    return elders.map((elder) => ({
+      ...elder,
+      mealTags: [...(elder.mealTags || [])],
+      deliveryDays: [...(elder.deliveryDays || [])],
+      pauseDates: [...(elder.pauseDates || [])],
+    }));
+  }
+
+  private cloneTempChanges(changes: TemporaryDeliveryChange[]): TemporaryDeliveryChange[] {
+    return changes.map((change) => ({
+      ...change,
+      mealTagIds: change.mealTagIds ? [...change.mealTagIds] : undefined,
+    }));
+  }
+
+  private cloneKanbanSort(sort: KanbanSortMap): KanbanSortMap {
+    const cloned: KanbanSortMap = {};
+    for (const [date, byVolunteer] of Object.entries(sort || {})) {
+      cloned[date] = {};
+      for (const [volunteerId, ids] of Object.entries(byVolunteer || {})) {
+        cloned[date][volunteerId] = [...ids];
+      }
+    }
+    return cloned;
+  }
+
+  private getTempChangeFromList(
+    changes: TemporaryDeliveryChange[],
+    elderId: string,
+    date: string
+  ): TemporaryDeliveryChange | undefined {
+    return changes.find((change) => change.elderId === elderId && change.date === date);
+  }
+
+  private applyTempChangeToElderFromList(
+    elder: Elder,
+    date: string,
+    changes: TemporaryDeliveryChange[]
+  ): Elder {
+    const change = this.getTempChangeFromList(changes, elder.id, date);
+    if (!change) return elder;
+    return {
+      ...elder,
+      address: change.address !== undefined ? change.address : elder.address,
+      contact: change.contact !== undefined ? change.contact : elder.contact,
+      mealTags: change.mealTagIds !== undefined ? change.mealTagIds : elder.mealTags,
+      specialMealNote: change.specialMealNote !== undefined ? change.specialMealNote : elder.specialMealNote,
+    };
+  }
+
+  private getEffectiveSpecialMealNote(
+    task: MealTask | undefined,
+    elder: Elder | undefined,
+    date: string,
+    changes: TemporaryDeliveryChange[]
+  ): { note: string; source?: SimDiffSpecialMealItem['oldSource']; tempChange?: TemporaryDeliveryChange } {
+    if (!elder) return { note: task?.specialMealNote ?? '' };
+    const tempChange = this.getTempChangeFromList(changes, elder.id, date);
+    if (tempChange?.specialMealNote !== undefined) {
+      return { note: tempChange.specialMealNote, source: 'temp-change', tempChange };
+    }
+    if (task?.isManuallyModified) {
+      return { note: task.specialMealNote ?? '', source: 'task-override' };
+    }
+    if (elder.specialMealNote) {
+      return { note: elder.specialMealNote, source: 'elder-basic' };
+    }
+    return { note: '' };
+  }
+
   startSimulation() {
     if (this.simulationStartDate > this.simulationEndDate) {
       this.showSyncToast('开始日期不能晚于结束日期', 'error');
@@ -4212,6 +4291,10 @@ export class App implements AfterViewChecked, OnInit {
       kanbanSort: {},
       autoAssignResults: {},
       dayStats: {},
+      baselineTasks: this.cloneTasks(this.tasks),
+      baselineElders: this.cloneElders(this.elders),
+      baselineTempChanges: this.cloneTempChanges(this.temporaryDeliveryChanges),
+      baselineKanbanSort: this.cloneKanbanSort(this.kanbanSort),
     };
     this.simulationViewDate = dates[0];
     this.simulationMode = 'active';
@@ -4230,19 +4313,31 @@ export class App implements AfterViewChecked, OnInit {
       );
       const created = dayElders
         .filter((elder) => !existingTaskIds.has(elder.id))
-        .map((elder) => ({
-          id: `sim-${date}-${elder.id}`,
-          elderId: elder.id,
-          date,
-          volunteerId: '',
-          status: '待分配' as const,
-          exception: '',
-          isManuallyModified: false,
-          specialMealNote: elder.specialMealNote || '',
-        }));
+        .map((elder) => this.applyTempChangeToElderFromList(elder, date, this.temporaryDeliveryChanges))
+        .filter((elder) => !elder.pauseDates?.includes(date))
+        .map((elder) => {
+          const special = this.getEffectiveSpecialMealNote(undefined, elder, date, this.temporaryDeliveryChanges);
+          return {
+            id: `sim-${date}-${elder.id}`,
+            elderId: elder.id,
+            date,
+            volunteerId: '',
+            status: '待分配' as const,
+            exception: '',
+            isManuallyModified: false,
+            specialMealNote: special.note,
+          };
+        });
       const existingTasks = this.tasks
         .filter((t) => t.date === date)
-        .map((t) => ({ ...t, id: `sim-${t.id}` }));
+        .map((t) => {
+          const elder = this.elders.find((e) => e.id === t.elderId);
+          const effectiveElder = elder ? this.applyTempChangeToElderFromList(elder, date, this.temporaryDeliveryChanges) : undefined;
+          if (effectiveElder?.pauseDates?.includes(date)) return null;
+          const special = this.getEffectiveSpecialMealNote(t, effectiveElder, date, this.temporaryDeliveryChanges);
+          return { ...t, id: `sim-${t.id}`, specialMealNote: special.note };
+        })
+        .filter((task): task is MealTask => !!task);
       allTasks.push(...existingTasks, ...created);
     }
     this.simulationData.tasks = allTasks;
@@ -4274,11 +4369,12 @@ export class App implements AfterViewChecked, OnInit {
     const assigned: AutoAssignEntry[] = [];
     const failed: AutoAssignFailure[] = [];
     for (const task of unassigned) {
-      const elder = this.elders.find((e) => e.id === task.elderId);
-      if (!elder) {
+      const rawElder = this.elders.find((e) => e.id === task.elderId);
+      if (!rawElder) {
         failed.push({ taskId: task.id, elderId: task.elderId, elderName: '未知老人', elderAddress: '', reason: '老人档案不存在' });
         continue;
       }
+      const elder = this.applyTempChangeToElderFromList(rawElder, date, this.temporaryDeliveryChanges);
       const isPaused = elder.pauseDates?.includes(date);
       if (isPaused) {
         failed.push({ taskId: task.id, elderId: elder.id, elderName: elder.name, elderAddress: elder.address, reason: '当日暂停送餐' });
@@ -4382,7 +4478,7 @@ export class App implements AfterViewChecked, OnInit {
     for (const task of dateTasks) {
       const rawElder = elderMap.get(task.elderId);
       if (!rawElder) continue;
-      const elder = this.applyTempChangeToElderRef(rawElder, date);
+      const elder = this.applyTempChangeToElderFromList(rawElder, date, this.temporaryDeliveryChanges);
       const isPaused = elder.pauseDates?.includes(date);
       if (isPaused) {
         pausedCount++;
@@ -4393,7 +4489,7 @@ export class App implements AfterViewChecked, OnInit {
           contact: elder.contact,
         });
       }
-      if (task.specialMealNote || elder.specialMealNote) {
+      if (this.getEffectiveSpecialMealNote(task, elder, date, this.temporaryDeliveryChanges).note) {
         specialMealCount++;
       }
       for (const tagId of elder.mealTags || []) {
@@ -4477,10 +4573,11 @@ export class App implements AfterViewChecked, OnInit {
 
     for (const date of this.simulationData.dates) {
       const simTasks = this.simulationData.tasks.filter((t) => t.date === date);
-      const realTasks = this.tasks.filter((t) => t.date === date);
+      const realTasks = this.simulationData.baselineTasks.filter((t) => t.date === date);
       const simTaskMap = new Map(simTasks.map((t) => [t.elderId, t]));
       const realTaskMap = new Map(realTasks.map((t) => [t.elderId, t]));
       const elderMap = new Map(this.elders.map((e) => [e.id, e]));
+      const baselineElderMap = new Map(this.simulationData.baselineElders.map((e) => [e.id, e]));
       const volunteerMap = new Map(this.volunteers.map((v) => [v.id, v]));
 
       const addedTasks: SimDiffAddedTask[] = [];
@@ -4495,29 +4592,49 @@ export class App implements AfterViewChecked, OnInit {
         const simTask = simTaskMap.get(elderId);
         const realTask = realTaskMap.get(elderId);
         const elder = elderMap.get(elderId);
-        const elderName = elder?.name || '未知老人';
-        const elderAddress = elder?.address || '';
+        const baselineElder = baselineElderMap.get(elderId);
+        const effectiveSimElder = elder
+          ? this.applyTempChangeToElderFromList(elder, date, this.temporaryDeliveryChanges)
+          : undefined;
+        const effectiveRealElder = baselineElder
+          ? this.applyTempChangeToElderFromList(baselineElder, date, this.simulationData.baselineTempChanges)
+          : undefined;
+        const displayElder = effectiveSimElder || effectiveRealElder || elder || baselineElder;
+        const elderName = displayElder?.name || '未知老人';
+        const elderAddress = displayElder?.address || '';
         const simVolId = simTask?.volunteerId;
         const realVolId = realTask?.volunteerId;
         const simVolName = simVolId ? volunteerMap.get(simVolId)?.name : undefined;
         const realVolName = realVolId ? volunteerMap.get(realVolId)?.name : undefined;
-        const isPausedNow = elder?.pauseDates?.includes(date) || false;
+        const isPausedNow = effectiveSimElder?.pauseDates?.includes(date) || false;
 
         const simSort = this.simulationData.kanbanSort[date]?.[simVolId || ''] || [];
-        const realSort = this.kanbanSort[date]?.[realVolId || ''] || [];
+        const realSort = this.simulationData.baselineKanbanSort[date]?.[realVolId || ''] || [];
         const simRouteOrder = simVolId && simTask ? simSort.indexOf(simTask.id) + 1 : undefined;
         const realRouteOrder = realVolId && realTask ? realSort.indexOf(realTask.id) + 1 : undefined;
 
-        const simSpecialNote = simTask?.specialMealNote || elder?.specialMealNote || '';
-        const realSpecialNote = realTask?.specialMealNote || elder?.specialMealNote || '';
+        const simSpecial = this.getEffectiveSpecialMealNote(
+          simTask,
+          effectiveSimElder,
+          date,
+          this.temporaryDeliveryChanges
+        );
+        const realSpecial = this.getEffectiveSpecialMealNote(
+          realTask,
+          effectiveRealElder,
+          date,
+          this.simulationData.baselineTempChanges
+        );
+        const simSpecialNote = simSpecial.note;
+        const realSpecialNote = realSpecial.note;
 
-        const wasPaused = elder?.pauseDates?.includes(date) || false;
+        const wasPaused = effectiveRealElder?.pauseDates?.includes(date) || false;
         if (!realTask && simTask) {
           let addReason: SimDiffAddedTask['addReason'];
           if (wasPaused && !isPausedNow) {
             addReason = 'resumed-from-pause';
           } else {
-            const elderHasAnyRealTask = this.tasks.some(t => t.elderId === elderId);
+            const elderHasAnyRealTask = this.simulationData.baselineTasks.some(t => t.elderId === elderId);
             if (!elderHasAnyRealTask) {
               addReason = 'new-elder';
             } else {
@@ -4583,16 +4700,14 @@ export class App implements AfterViewChecked, OnInit {
           let pauseChangeType: SimDiffPausedItem['changeType'] = 'pause-unchanged';
           let pauseChangeSource: SimDiffPausedItem['changeSource'];
           let pauseChangeDetail = '';
-          const realTaskForElder = realTaskMap.get(elderId);
-          const simTaskForElder = simTaskMap.get(elderId);
-          const wasInReal = !!realTaskForElder && !wasPaused;
-          const isInSim = !!simTaskForElder && !isPausedNow;
 
           if (!wasPaused && isPausedNow) {
             pauseChangeType = 'pause-new';
             totalPauseChanges++;
             totalPausedNew++;
-            if (elder.pauseDates?.includes(date)) {
+            const baseHadPause = baselineElder?.pauseDates?.includes(date) || false;
+            const currentHasPause = elder.pauseDates?.includes(date) || false;
+            if (!baseHadPause && currentHasPause) {
               pauseChangeSource = 'elder-pause-date';
               pauseChangeDetail = `老人基础信息中新增暂停日期：${date}`;
             } else {
@@ -4603,7 +4718,9 @@ export class App implements AfterViewChecked, OnInit {
             pauseChangeType = 'pause-resume';
             totalPauseChanges++;
             totalPausedResumed++;
-            if (!elder.pauseDates?.includes(date)) {
+            const baseHadPause = baselineElder?.pauseDates?.includes(date) || false;
+            const currentHasPause = elder.pauseDates?.includes(date) || false;
+            if (baseHadPause && !currentHasPause) {
               pauseChangeSource = 'elder-pause-date';
               pauseChangeDetail = `老人基础信息中移除暂停日期：${date}`;
             } else {
@@ -4616,8 +4733,8 @@ export class App implements AfterViewChecked, OnInit {
             pausedChanges.push({
               elderId,
               elderName: elder.name,
-              address: elder.address,
-              contact: elder.contact,
+              address: displayElder?.address || elder.address,
+              contact: displayElder?.contact || elder.contact,
               wasPaused,
               isPaused: isPausedNow,
               changeType: pauseChangeType,
@@ -4631,31 +4748,10 @@ export class App implements AfterViewChecked, OnInit {
           let specialChangeType: SimDiffSpecialMealItem['changeType'] = 'special-unchanged';
           let specialChangeSource: SimDiffSpecialMealItem['changeSource'];
           let specialChangeDetail = '';
-          let oldSource: SimDiffSpecialMealItem['oldSource'];
-          let newSource: SimDiffSpecialMealItem['newSource'];
-          let relatedTempChangeId: string | undefined;
-          let relatedTempChangeReason: string | undefined;
-
-          const realTempChange = this.temporaryDeliveryChanges.find(c => c.elderId === elderId && c.date === date);
-          if (realTempChange?.specialMealNote !== undefined) {
-            oldSource = 'temp-change';
-            relatedTempChangeId = realTempChange.id;
-            relatedTempChangeReason = realTempChange.reason;
-          } else if (realTask?.specialMealNote) {
-            oldSource = 'task-override';
-          } else if (elder?.specialMealNote) {
-            oldSource = 'elder-basic';
-          }
-
-          const simTaskInSim = simTask;
-          const elderInSim = elder;
-          if (realTempChange?.specialMealNote !== undefined) {
-            newSource = 'temp-change';
-          } else if (simTaskInSim?.specialMealNote) {
-            newSource = 'task-override';
-          } else if (elderInSim?.specialMealNote) {
-            newSource = 'elder-basic';
-          }
+          const oldSource = realSpecial.source;
+          const newSource = simSpecial.source;
+          const relatedTempChangeId = simSpecial.tempChange?.id || realSpecial.tempChange?.id;
+          const relatedTempChangeReason = simSpecial.tempChange?.reason || realSpecial.tempChange?.reason;
 
           if (!realSpecialNote && simSpecialNote) {
             specialChangeType = 'special-new';
@@ -4706,13 +4802,15 @@ export class App implements AfterViewChecked, OnInit {
       const routeChanges: SimDiffRouteChange[] = [];
       for (const volunteer of this.volunteers) {
         const simDateSort = this.simulationData.kanbanSort[date]?.[volunteer.id] || [];
-        const realDateSort = this.kanbanSort[date]?.[volunteer.id] || [];
+        const realDateSort = this.simulationData.baselineKanbanSort[date]?.[volunteer.id] || [];
         const simVolTasks = simTasks
           .filter((t) => t.volunteerId === volunteer.id)
           .map((t, i) => {
             const idx = simDateSort.indexOf(t.id);
             const pos = idx >= 0 ? idx + 1 : simDateSort.length + i + 1;
-            return { taskId: t.id, elderId: t.elderId, elderName: elderMap.get(t.elderId)?.name || '', position: pos };
+            const simElder = elderMap.get(t.elderId);
+            const baseElder = baselineElderMap.get(t.elderId);
+            return { taskId: t.id, elderId: t.elderId, elderName: simElder?.name || baseElder?.name || '', position: pos };
           })
           .sort((a, b) => a.position - b.position);
         const realVolTasks = realTasks
@@ -4720,7 +4818,9 @@ export class App implements AfterViewChecked, OnInit {
           .map((t, i) => {
             const idx = realDateSort.indexOf(t.id);
             const pos = idx >= 0 ? idx + 1 : realDateSort.length + i + 1;
-            return { taskId: t.id, elderId: t.elderId, elderName: elderMap.get(t.elderId)?.name || '', position: pos };
+            const baseElder = baselineElderMap.get(t.elderId);
+            const simElder = elderMap.get(t.elderId);
+            return { taskId: t.id, elderId: t.elderId, elderName: baseElder?.name || simElder?.name || '', position: pos };
           })
           .sort((a, b) => a.position - b.position);
         const oldOrderMap = new Map(realVolTasks.map((o) => [o.elderId, o.position]));
@@ -5091,7 +5191,7 @@ export class App implements AfterViewChecked, OnInit {
         existing.volunteerId = simTask.volunteerId;
         existing.status = simTask.volunteerId ? '配送中' : '待分配';
         existing.isManuallyModified = true;
-        existing.specialMealNote = simTask.specialMealNote || existing.specialMealNote;
+        existing.specialMealNote = simTask.specialMealNote;
         submittedTasks.push(existing);
         updatedExistingTaskIds.add(existing.id);
         countUpdated++;
