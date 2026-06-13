@@ -171,7 +171,20 @@ export class VolunteerDeliveryComponent implements OnInit, OnChanges, OnDestroy 
 
     const isException = data.status === '异常' || data.status === '未接通';
     const origTask = this.tasks.find(t => t.id === data.taskId);
-    const origElder = this.elders.find(e => origTask ? e.id === origTask.elderId : false);
+    let origElder = this.elders.find(e => origTask ? e.id === origTask.elderId : false);
+
+    if (origTask && origElder && this.date) {
+      const tc = this.temporaryDeliveryChanges.find(c => c.elderId === origElder!.id && c.date === this.date);
+      if (tc) {
+        origElder = {
+          ...origElder,
+          address: tc.address !== undefined ? tc.address : origElder.address,
+          contact: tc.contact !== undefined ? tc.contact : origElder.contact,
+          mealTags: tc.mealTagIds !== undefined ? tc.mealTagIds : origElder.mealTags,
+          specialMealNote: tc.specialMealNote !== undefined ? tc.specialMealNote : origElder.specialMealNote,
+        };
+      }
+    }
 
     if (isException && origTask && origElder) {
       const stored = this.deliveryService.exportStorageData();

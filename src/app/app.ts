@@ -491,22 +491,26 @@ type SimulationData = {
           </div>
 
           <div class="taskList">
-            <article *ngFor="let task of filteredTasks()" [class.warn]="task.status === '异常'">
+            <article *ngFor="let task of filteredTasks()" [class.warn]="task.status === '异常'" [class.temp-change-card]="hasTempChangeOnDate(task.elderId, task.date)">
               <div>
-                <strong>{{ elderName(task.elderId) }}</strong>
-                <span>{{ elderAddress(task.elderId) }}</span>
-                <small>{{ elderPreference(task.elderId) }}</small>
-                <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
-                  <span class="tag-chip" *ngFor="let tag of elderMealTags(task.elderId)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                <strong>{{ elderName(task.elderId) }} <span class="temp-change-badge" *ngIf="hasTempChangeOnDate(task.elderId, task.date)">临时变更</span></strong>
+                <span>{{ elderAddress(task.elderId, task.date) }}</span>
+                <small>{{ elderPreference(task.elderId, task.date) }}</small>
+                <small class="temp-change-detail" *ngIf="hasTempChangeOnDate(task.elderId, task.date)">{{ tempChangeSummary(task.elderId, task.date) }}</small>
+                <div class="tag-row" *ngIf="elderMealTags(task.elderId, task.date).length > 0">
+                  <span class="tag-chip" *ngFor="let tag of elderMealTags(task.elderId, task.date)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                </div>
+                <div class="special-note" *ngIf="elderSpecialNote(task.elderId, task.date)">
+                  <small>📝 {{ elderSpecialNote(task.elderId, task.date) }}</small>
                 </div>
               </div>
-              <select [ngModel]="task.volunteerId" (ngModelChange)="assignTask(task.id, $event)">
+              <select [ngModel]="task.volunteerId" (ngModelChange)="assignTaskWithConflictCheck(task.id, $event)">
                 <option value="">未分配</option>
                 <option *ngFor="let volunteer of volunteers" [value]="volunteer.id">{{ volunteer.name }} · {{ volunteer.area }}</option>
               </select>
               <div class="actions">
-                <button type="button" (click)="setStatus(task.id, '配送中')">配送中</button>
-                <button type="button" (click)="setStatus(task.id, '已送达')">已送达</button>
+                <button type="button" (click)="setStatusWithConflictCheck(task.id, '配送中')">配送中</button>
+                <button type="button" (click)="setStatusWithConflictCheck(task.id, '已送达')">已送达</button>
                 <button type="button" class="ghost" (click)="recordException(task.id)">异常</button>
               </div>
               <p>{{ task.status }} <span *ngIf="task.exception">· {{ task.exception }}</span></p>
@@ -633,11 +637,14 @@ type SimulationData = {
               <div class="kanban-card" *ngFor="let task of group.tasks; let i = index" [class.temp-change-card]="hasTempChangeOnDate(task.elderId, task.date)">
                 <div class="kanban-card-info">
                   <strong>{{ elderName(task.elderId) }} <span class="temp-change-badge" *ngIf="hasTempChangeOnDate(task.elderId, task.date)">临时变更</span></strong>
-                  <span>{{ elderAddress(task.elderId) }}</span>
-                  <small>{{ elderPreference(task.elderId) }}</small>
+                  <span>{{ elderAddress(task.elderId, task.date) }}</span>
+                  <small>{{ elderPreference(task.elderId, task.date) }}</small>
                   <small class="temp-change-detail" *ngIf="hasTempChangeOnDate(task.elderId, task.date)">{{ tempChangeSummary(task.elderId, task.date) }}</small>
-                  <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
-                    <span class="tag-chip sm" *ngFor="let tag of elderMealTags(task.elderId)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                  <div class="tag-row" *ngIf="elderMealTags(task.elderId, task.date).length > 0">
+                    <span class="tag-chip sm" *ngFor="let tag of elderMealTags(task.elderId, task.date)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                  </div>
+                  <div class="special-note" *ngIf="elderSpecialNote(task.elderId, task.date)">
+                    <small>📝 {{ elderSpecialNote(task.elderId, task.date) }}</small>
                   </div>
                   <p class="kanban-status" [class.warn]="task.status === '异常'">{{ task.status }}</p>
                 </div>
@@ -659,10 +666,14 @@ type SimulationData = {
               <div class="kanban-card" *ngFor="let task of unassignedKanbanTasks()" [class.temp-change-card]="hasTempChangeOnDate(task.elderId, task.date)">
                 <div class="kanban-card-info">
                   <strong>{{ elderName(task.elderId) }} <span class="temp-change-badge" *ngIf="hasTempChangeOnDate(task.elderId, task.date)">临时变更</span></strong>
-                  <span>{{ elderAddress(task.elderId) }}</span>
-                  <small>{{ elderPreference(task.elderId) }}</small>
-                  <div class="tag-row" *ngIf="elderMealTags(task.elderId).length > 0">
-                    <span class="tag-chip sm" *ngFor="let tag of elderMealTags(task.elderId)">{{ tag.name }}</span>
+                  <span>{{ elderAddress(task.elderId, task.date) }}</span>
+                  <small>{{ elderPreference(task.elderId, task.date) }}</small>
+                  <small class="temp-change-detail" *ngIf="hasTempChangeOnDate(task.elderId, task.date)">{{ tempChangeSummary(task.elderId, task.date) }}</small>
+                  <div class="tag-row" *ngIf="elderMealTags(task.elderId, task.date).length > 0">
+                    <span class="tag-chip sm" *ngFor="let tag of elderMealTags(task.elderId, task.date)" [style.background]="tag.color + '20'" [style.color]="tag.color" [style.borderColor]="tag.color + '50'">{{ tag.name }}</span>
+                  </div>
+                  <div class="special-note" *ngIf="elderSpecialNote(task.elderId, task.date)">
+                    <small>📝 {{ elderSpecialNote(task.elderId, task.date) }}</small>
                   </div>
                   <p class="kanban-status">{{ task.status }}</p>
                 </div>
@@ -899,6 +910,56 @@ type SimulationData = {
                 <button type="submit">{{ editingTempChangeId ? '保存修改' : '添加临时变更' }}</button>
               </div>
             </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-overlay" *ngIf="taskModConflictVisible" (click)="closeTaskModConflict()">
+        <div class="modal-panel" style="max-width:520px" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <div>
+              <h2>⚠️ 临时变更冲突检测</h2>
+              <p class="muted" *ngIf="taskModConflict">{{ elderName(taskModConflict.tempChange.elderId) }} · {{ taskModConflict.tempChange.date }}</p>
+            </div>
+            <button type="button" class="ghost sm" (click)="closeTaskModConflict()">关闭</button>
+          </div>
+          <div class="modal-body">
+            <div class="temp-change-existing" *ngIf="taskModConflict">
+              <h3>当前临时变更内容</h3>
+              <div class="temp-change-list-item">
+                <div class="temp-change-list-info">
+                  <strong>{{ taskModConflict.tempChange.date }}</strong>
+                  <span class="temp-change-list-summary">{{ tempChangeSummary(taskModConflict.tempChange.elderId, taskModConflict.tempChange.date) }}</span>
+                  <small class="muted">原因：{{ taskModConflict.tempChange.reason }}</small>
+                </div>
+              </div>
+
+              <h3 style="margin-top:16px">检测到的冲突</h3>
+              <ul class="conflict-list">
+                <li *ngFor="let c of taskModConflict.conflicts">{{ c }}</li>
+              </ul>
+
+              <h3 style="margin-top:16px">请选择处理方式</h3>
+              <div class="conflict-resolution">
+                <label *ngIf="taskModConflict.operation === 'assign-volunteer'">
+                  <input type="radio" name="taskModResolution" [(ngModel)]="taskModConflict.resolution" value="override-temp" />
+                  <span><strong>同步修改临时变更</strong>：同时更新临时变更中的志愿者为当前选择</span>
+                </label>
+                <label>
+                  <input type="radio" name="taskModResolution" [(ngModel)]="taskModConflict.resolution" value="apply-task-only" />
+                  <span><strong>仅修改当日任务</strong>：临时变更保持不变，本次操作单独生效</span>
+                </label>
+                <label>
+                  <input type="radio" name="taskModResolution" [(ngModel)]="taskModConflict.resolution" value="cancel" />
+                  <span><strong>取消本次操作</strong></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-actions" style="margin-top:24px">
+              <button type="button" class="ghost" (click)="closeTaskModConflict()">取消</button>
+              <button type="button" (click)="resolveTaskModConflict()">确认执行</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1265,6 +1326,7 @@ type SimulationData = {
                   <li><strong>{{ visitRecords.length }}</strong> 条回访记录</li>
                   <li><strong>{{ phoneNotifications.length }}</strong> 条电话通知</li>
                   <li><strong>{{ callbackTasks.length }}</strong> 条回拨任务</li>
+                  <li><strong>{{ temporaryDeliveryChanges.length }}</strong> 条临时送餐变更</li>
                 </ul>
               </div>
               <button type="button" class="export-btn" (click)="exportData()">📥 导出备份文件</button>
@@ -1382,6 +1444,25 @@ type SimulationData = {
                       <span class="stat new">+{{ importPreviewSummary.callbackTasks.new }}</span>
                       <span class="stat overwrite">~{{ importPreviewSummary.callbackTasks.overwrite }}</span>
                       <span class="stat duplicate">={{ importPreviewSummary.callbackTasks.duplicate }}</span>
+                    </div>
+                  </div>
+
+                  <div class="preview-card" *ngIf="importPreviewSummary.temporaryDeliveryChanges.total > 0">
+                    <h4>📋 临时送餐变更</h4>
+                    <div class="preview-stats">
+                      <span class="stat new">+{{ importPreviewSummary.temporaryDeliveryChanges.new }}</span>
+                      <span class="stat overwrite">~{{ importPreviewSummary.temporaryDeliveryChanges.overwrite }}</span>
+                      <span class="stat duplicate">={{ importPreviewSummary.temporaryDeliveryChanges.duplicate }}</span>
+                    </div>
+                    <div class="preview-items-sample" *ngIf="importPreview && importPreview.temporaryDeliveryChanges.length > 0">
+                      <div class="preview-item" *ngFor="let item of importPreview.temporaryDeliveryChanges.slice(0, 5)" [class]="'status-'+item.status">
+                        <div class="preview-item-info">
+                          <strong>{{ getPreviewTempChangeElderName(item.item) }}</strong>
+                          <small class="muted">{{ item.item.date }} · {{ item.item.reason }}</small>
+                        </div>
+                        <span class="status-tag">{{ previewStatusLabel(item.status) }}</span>
+                      </div>
+                      <p class="muted" *ngIf="importPreview.temporaryDeliveryChanges.length > 5">...还有 {{ importPreview.temporaryDeliveryChanges.length - 5 }} 条未显示</p>
                     </div>
                   </div>
                 </div>
@@ -2273,6 +2354,10 @@ type SimulationData = {
     .required { color: #c75454; }
     .temp-change-card { border-left: 3px solid #d9a84a !important; background: #fffdf5 !important; }
     .temp-change-detail { color: #b36a2e; font-size: 11px; }
+    .special-note { margin: 4px 0; padding: 4px 8px; background: #fff7ef; border-left: 2px solid #d9a84a; border-radius: 3px; }
+    .special-note small { color: #8a5a2a; }
+    .conflict-list { padding-left: 20px; margin: 4px 0; }
+    .conflict-list li { font-size: 13px; color: #65715f; margin-bottom: 4px; }
 
     @media (max-width: 900px) {
       .simulation-summary { grid-template-columns: repeat(2, 1fr); }
@@ -2624,13 +2709,14 @@ export class App implements AfterViewChecked, OnInit {
   private buildPhoneNotification(task: MealTask, elder: Elder, remark: string, source: ExceptionSource): PhoneNotification {
     const now = new Date();
     const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const match = elder.contact.match(/1[3-9]\d{9}/);
+    const effectiveElder = this.applyTempChangeToElderRef(elder, task.date);
+    const match = effectiveElder.contact.match(/1[3-9]\d{9}/);
     return {
       id: crypto.randomUUID(),
       date: task.date,
       targetType: 'elder',
       targetId: elder.id,
-      phone: match ? match[0] : elder.contact,
+      phone: match ? match[0] : effectiveElder.contact,
       taskId: task.id,
       notificationStatus: '未通知',
       remark,
@@ -3044,8 +3130,9 @@ export class App implements AfterViewChecked, OnInit {
     let specialMealCount = 0;
     const tagCounts = new Map<string, number>();
     for (const task of dateTasks) {
-      const elder = elderMap.get(task.elderId);
-      if (!elder) continue;
+      const rawElder = elderMap.get(task.elderId);
+      if (!rawElder) continue;
+      const elder = this.applyTempChangeToElderRef(rawElder, date);
       const isPaused = elder.pauseDates?.includes(date);
       if (isPaused) {
         pausedCount++;
@@ -3240,6 +3327,112 @@ export class App implements AfterViewChecked, OnInit {
     this.save();
   }
 
+  taskModConflictVisible = false;
+  taskModConflict: {
+    taskId: string;
+    operation: 'assign-volunteer' | 'set-status';
+    newValue: any;
+    tempChange: TemporaryDeliveryChange;
+    conflicts: string[];
+    resolution: 'override-temp' | 'apply-task-only' | 'cancel';
+  } | null = null;
+
+  private openTaskModConflict(
+    taskId: string,
+    operation: 'assign-volunteer' | 'set-status',
+    newValue: any,
+    tempChange: TemporaryDeliveryChange,
+    conflicts: string[],
+  ) {
+    this.taskModConflict = {
+      taskId,
+      operation,
+      newValue,
+      tempChange,
+      conflicts,
+      resolution: 'apply-task-only',
+    };
+    this.taskModConflictVisible = true;
+  }
+
+  closeTaskModConflict() {
+    this.taskModConflictVisible = false;
+    this.taskModConflict = null;
+  }
+
+  resolveTaskModConflict() {
+    if (!this.taskModConflict) { this.closeTaskModConflict(); return; }
+    const c = this.taskModConflict;
+
+    if (c.resolution === 'cancel') {
+      this.closeTaskModConflict();
+      return;
+    }
+
+    if (c.operation === 'assign-volunteer') {
+      const newVolunteerId = c.resolution === 'override-temp' ? c.newValue : c.newValue;
+      if (c.resolution === 'override-temp') {
+        this.temporaryDeliveryChanges = this.temporaryDeliveryChanges.map(tc => {
+          if (tc.id === c.tempChange.id) {
+            return { ...tc, volunteerId: newVolunteerId || undefined };
+          }
+          return tc;
+        });
+        this.saveTempChanges();
+      }
+      this.assignTask(c.taskId, newVolunteerId);
+    } else if (c.operation === 'set-status') {
+      this.setStatus(c.taskId, c.newValue);
+    }
+
+    this.closeTaskModConflict();
+  }
+
+  assignTaskWithConflictCheck(taskId: string, volunteerId: string) {
+    const task = this.currentScheduleTasks().find(t => t.id === taskId);
+    if (!task) { this.assignTask(taskId, volunteerId); return; }
+    const tempChange = this.getTempChangeForElderDate(task.elderId, task.date);
+    if (!tempChange) { this.assignTask(taskId, volunteerId); return; }
+
+    const conflicts: string[] = [];
+    if (tempChange.volunteerId && tempChange.volunteerId !== volunteerId) {
+      const curVol = this.volunteers.find(v => v.id === tempChange.volunteerId);
+      const newVol = volunteerId ? this.volunteers.find(v => v.id === volunteerId)?.name : '未分配';
+      conflicts.push(`临时变更中原本指定志愿者为「${curVol?.name || tempChange.volunteerId}」，当前选择为「${newVol}」`);
+    }
+    if (tempChange.volunteerId && !volunteerId) {
+      const curVol = this.volunteers.find(v => v.id === tempChange.volunteerId);
+      conflicts.push(`临时变更原本指定了志愿者「${curVol?.name || tempChange.volunteerId}」，当前选择「未分配」将取消指定`);
+    }
+
+    if (conflicts.length === 0) {
+      this.assignTask(taskId, volunteerId);
+      return;
+    }
+    this.openTaskModConflict(taskId, 'assign-volunteer', volunteerId, tempChange, conflicts);
+  }
+
+  setStatusWithConflictCheck(taskId: string, status: MealTask['status']) {
+    const task = this.currentScheduleTasks().find(t => t.id === taskId);
+    if (!task) { this.setStatus(taskId, status); return; }
+    const tempChange = this.getTempChangeForElderDate(task.elderId, task.date);
+    if (!tempChange) { this.setStatus(taskId, status); return; }
+
+    const conflicts: string[] = [];
+    if (status === '已送达' && tempChange.address !== undefined && tempChange.address !== '') {
+      conflicts.push(`该日期有临时送餐地址变更「${tempChange.address}」，请确认配送至正确地址`);
+    }
+    if (status === '配送中' && tempChange.contact !== undefined && tempChange.contact !== '') {
+      conflicts.push(`该日期有临时联系方式变更「${tempChange.contact}」，请使用最新联系方式`);
+    }
+
+    if (conflicts.length === 0) {
+      this.setStatus(taskId, status);
+      return;
+    }
+    this.openTaskModConflict(taskId, 'set-status', status, tempChange, conflicts);
+  }
+
   recordException(taskId: string) {
     const task = this.tasks.find((t) => t.id === taskId);
     if (!task) return;
@@ -3393,16 +3586,37 @@ export class App implements AfterViewChecked, OnInit {
     return this.elders.find((elder) => elder.id === id)?.name || '未知老人';
   }
 
-  elderAddress(id: string) {
-    return this.elders.find((elder) => elder.id === id)?.address || '';
+  elderAddress(id: string, date?: string) {
+    const elder = this.elders.find((elder) => elder.id === id);
+    if (!elder) return '';
+    if (!date) return elder.address;
+    return this.applyTempChangeToElderRef(elder, date).address;
   }
 
-  elderPreference(id: string) {
-    return this.elders.find((elder) => elder.id === id)?.preference || '';
+  elderPreference(id: string, date?: string) {
+    const elder = this.elders.find((elder) => elder.id === id);
+    if (!elder) return '';
+    if (!date) return elder.preference;
+    const change = this.getTempChangeForElderDate(id, date);
+    if (change?.mealTagIds) {
+      const tagNames = change.mealTagIds.map(tid => this.mealTags.find(t => t.id === tid)?.name).filter(Boolean).join('、');
+      return tagNames || elder.preference;
+    }
+    return elder.preference;
   }
 
-  elderSpecialNote(id: string) {
-    return this.elders.find((elder) => elder.id === id)?.specialMealNote || '';
+  elderSpecialNote(id: string, date?: string) {
+    const elder = this.elders.find((elder) => elder.id === id);
+    if (!elder) return '';
+    if (!date) return elder.specialMealNote || '';
+    return this.applyTempChangeToElderRef(elder, date).specialMealNote || '';
+  }
+
+  elderContact(id: string, date?: string) {
+    const elder = this.elders.find((elder) => elder.id === id);
+    if (!elder) return '';
+    if (!date) return elder.contact;
+    return this.applyTempChangeToElderRef(elder, date).contact;
   }
 
   safeLoadPercent(assigned: number, capacity: number): number {
@@ -3834,20 +4048,23 @@ export class App implements AfterViewChecked, OnInit {
     return parts.length > 0 ? parts.join('、') : '临时变更';
   }
 
-  elderMealTags(elderId: string): MealTag[] {
+  elderMealTags(elderId: string, date?: string): MealTag[] {
     const elder = this.elders.find((e) => e.id === elderId);
     if (!elder) return [];
-    return this.mealTags.filter((t) => (elder.mealTags || []).includes(t.id));
+    if (!date) {
+      return this.mealTags.filter((t) => (elder.mealTags || []).includes(t.id));
+    }
+    const effectiveElder = this.applyTempChangeToElderRef(elder, date);
+    return this.mealTags.filter((t) => (effectiveElder.mealTags || []).includes(t.id));
   }
 
   todayTagStats(): { tag: MealTag; count: number }[] {
     const todayTasks = this.filteredTasks();
     const tagCount = new Map<string, number>();
     for (const task of todayTasks) {
-      const elder = this.elders.find((e) => e.id === task.elderId);
-      if (!elder) continue;
-      for (const tagId of (elder.mealTags || [])) {
-        tagCount.set(tagId, (tagCount.get(tagId) || 0) + 1);
+      const tags = this.elderMealTags(task.elderId, task.date);
+      for (const tag of tags) {
+        tagCount.set(tag.id, (tagCount.get(tag.id) || 0) + 1);
       }
     }
     return this.mealTags
@@ -5059,6 +5276,23 @@ export class App implements AfterViewChecked, OnInit {
     this.importedData = null;
     this.pendingImportData = null;
     this.isImportConflictResolutionMode = false;
+  }
+
+  getPreviewTempChangeElderName(change: TemporaryDeliveryChange): string {
+    if (this.importedData?.elders) {
+      const fromImported = this.importedData.elders.find(e => e.id === change.elderId);
+      if (fromImported) return fromImported.name;
+    }
+    const fromCurrent = this.elders.find(e => e.id === change.elderId);
+    if (fromCurrent) return fromCurrent.name;
+    return '未知老人(' + change.elderId.substring(0, 6) + ')';
+  }
+
+  previewStatusLabel(status: 'new' | 'duplicate' | 'overwrite'): string {
+    if (status === 'new') return '新增';
+    if (status === 'duplicate') return '重复';
+    if (status === 'overwrite') return '覆盖';
+    return '';
   }
 
   resetImport() {

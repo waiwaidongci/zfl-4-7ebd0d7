@@ -113,7 +113,17 @@ export class MealPrepComponent implements OnInit, OnChanges {
   }
 
   getItemElder(item: PrepItem): Elder | undefined {
-    return this.elders.find(e => e.id === item.elder.id);
+    const raw = this.elders.find(e => e.id === item.elder.id);
+    if (!raw || !this.date) return raw;
+    const tc = this.temporaryDeliveryChanges.find(c => c.elderId === raw.id && c.date === this.date);
+    if (!tc) return raw;
+    return {
+      ...raw,
+      address: tc.address !== undefined ? tc.address : raw.address,
+      contact: tc.contact !== undefined ? tc.contact : raw.contact,
+      mealTags: tc.mealTagIds !== undefined ? tc.mealTagIds : raw.mealTags,
+      specialMealNote: tc.specialMealNote !== undefined ? tc.specialMealNote : raw.specialMealNote,
+    };
   }
 
   getStatusColor(status: PrepStatus): string {
